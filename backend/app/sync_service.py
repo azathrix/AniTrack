@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from pathlib import PurePosixPath
+import asyncio
+import shutil
+from pathlib import Path, PurePosixPath
 
 from .db import connect, log, now
-from .library import render_episode_name, target_dir
+from .library import render_episode_name, render_season_dir, render_series_dir, target_dir
+from .metadata import generate_nfo_for_series
 
 
 def cloud_asset_path(task: dict, release: dict, series: dict, settings: dict[str, str]) -> tuple[str, str]:
@@ -77,3 +80,178 @@ def ensure_sync_rule(series_id: int, settings: dict[str, str], enabled: bool = F
                 ts,
             ),
         )
+
+
+def local_episode_path(cloud_asset: dict, series: dict, settings: dict[str, str]) -> str:
+    root = Path(settings.get("local_library_root") or "/media/anime")
+    series_dir = render_series_dir(series, settings)
+    season_dir = render_season_dir(int(series.get("season_number") or 1), settings)
+    suffix = Path(cloud_asset.get("cloud_name") or "").suffix
+    filename = cloud_asset.get("cloud_name") or render_episode_name(
+        series,
+        int(cloud_asset.get("episode_number") or 0),
+        "",
+        settings,
+    )
+    if suffix and not filename.endswith(suffix):
+        filename = f"{filename}{suffix}"
+    return str(root / series_dir / season_dir / filename)
+
+
+def queue_sync_for_series(series_id: int, settings: dict[str, str]) -> tuple[int, str]:
+    ensure_sync_rule(series_id, settings, enabled=True)
+    with connect() as conn:
+        assets = conn.execute(
+            """
+            SELECT ca.*, s.title_cn
+            FROM cloud_assets ca
+            JOIN series s ON s.id=ca.series_id
+            WHERE ca.series_id=? AND ca.status='available'
+            ORDER BY ca.episode_number ASC
+            """,
+            (series_id,),
+        ).fetchall()
+        if not assets:
+            return 0, "没有已完成的云盘资源可同步"
+        ts = now()
+        queued = 0
+        for asset in assets:
+            series = conn.execute("SELECT * FROM series WHERE id=?", (asset["series_id"],)).fetchone()
+            target = local_episode_path(dict(asset), dict(series), settings)
+            conn.execute(
+                """
+                INSERT INTO sync_tasks
+                  (cloud_asset_id, release_id, series_id, status, source_path, target_path,
+                   created_at, updated_at)
+                VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)
+                ON CONFLICT(cloud_asset_id, sync_direction) DO UPDATE SET
+                  status=CASE WHEN sync_tasks.status='synced' THEN sync_tasks.status ELSE 'pending' END,
+                  source_path=excluded.source_path,
+                  target_path=excluded.target_path,
+                  last_error='',
+                  updated_at=excluded.updated_at
+                """,
+                (
+                    asset["id"],
+                    asset["release_id"],
+                    asset["series_id"],
+                    asset["cloud_path"],
+                    target,
+                    ts,
+                    ts,
+                ),
+            )
+            queued += 1
+    return queued, f"已加入本地同步队列: {queued} 条"
+
+
+async def run_sync_command(source: str, target: str, settings: dict[str, str]) -> None:
+    template = settings.get("sync_command_template", "").strip()
+    if template:
+        command = template.format(source=source, target=target)
+        proc = await asyncio.create_subprocess_shell(
+            command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            message = (stderr or stdout).decode(errors="ignore").strip()
+            raise RuntimeError(message or f"同步命令失败: {proc.returncode}")
+        return
+
+    source_path = Path(source)
+    target_path = Path(target)
+    if not source_path.exists():
+        raise RuntimeError("未配置同步命令，且云盘路径不是本机可访问文件")
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source_path, target_path)
+
+
+async def process_sync_tasks(settings: dict[str, str], limit: int = 5) -> None:
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT st.*, ca.cloud_name
+            FROM sync_tasks st
+            JOIN cloud_assets ca ON ca.id=st.cloud_asset_id
+            WHERE st.status IN ('pending', 'failed') AND st.attempts < 3
+            ORDER BY st.id ASC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+    for task in rows:
+        with connect() as conn:
+            conn.execute(
+                "UPDATE sync_tasks SET status='running', attempts=attempts+1, updated_at=? WHERE id=?",
+                (now(), task["id"]),
+            )
+        try:
+            await run_sync_command(task["source_path"], task["target_path"], settings)
+        except Exception as exc:
+            with connect() as conn:
+                conn.execute(
+                    "UPDATE sync_tasks SET status='failed', last_error=?, updated_at=? WHERE id=?",
+                    (str(exc)[:2000], now(), task["id"]),
+                )
+            log("error", f"本地同步失败: {task['cloud_name']} - {exc}")
+            continue
+
+        with connect() as conn:
+            ts = now()
+            conn.execute(
+                """
+                INSERT INTO local_assets
+                  (cloud_asset_id, release_id, series_id, episode_number, local_path,
+                   nfo_status, status, created_at, updated_at)
+                SELECT id, release_id, series_id, episode_number, ?, 'pending', 'synced', ?, ?
+                FROM cloud_assets
+                WHERE id=?
+                ON CONFLICT(cloud_asset_id) DO UPDATE SET
+                  local_path=excluded.local_path,
+                  status='synced',
+                  updated_at=excluded.updated_at
+                """,
+                (task["target_path"], ts, ts, task["cloud_asset_id"]),
+            )
+            conn.execute(
+                "UPDATE sync_tasks SET status='synced', last_error='', updated_at=? WHERE id=?",
+                (ts, task["id"]),
+            )
+        nfo_settings = dict(settings)
+        nfo_settings["nfo_output_root"] = settings.get("local_library_root") or "/media/anime"
+        generate_nfo_for_series(task["series_id"], nfo_settings)
+        with connect() as conn:
+            conn.execute(
+                "UPDATE local_assets SET nfo_status='generated', updated_at=? WHERE cloud_asset_id=?",
+                (now(), task["cloud_asset_id"]),
+            )
+        log("info", f"已同步到本地: {task['cloud_name']}")
+
+
+def cancel_sync_for_series(series_id: int) -> tuple[int, str]:
+    removed = 0
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM local_assets WHERE series_id=? AND status='synced'",
+            (series_id,),
+        ).fetchall()
+        for row in rows:
+            path = Path(row["local_path"])
+            try:
+                if path.exists():
+                    path.unlink()
+                removed += 1
+            except Exception as exc:
+                log("warn", f"删除本地文件失败: {path} - {exc}")
+            conn.execute(
+                "UPDATE local_assets SET status='removed', updated_at=? WHERE id=?",
+                (now(), row["id"]),
+            )
+        conn.execute(
+            "UPDATE sync_rules SET sync_enabled=0, updated_at=? WHERE series_id=?",
+            (now(), series_id),
+        )
+    return removed, f"已取消同步并清理本地文件: {removed} 个"

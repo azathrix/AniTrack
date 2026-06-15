@@ -8,7 +8,7 @@ from .library import bool_setting, render_episode_name, target_dir
 from .metadata import generate_nfo_for_series, refresh_series_metadata
 from .parser import ParsedRelease, fingerprint, parse_entry, split_lines
 from .pikpak_service import list_offline_tasks, rename_cloud_file, submit_offline_download
-from .sync_service import ensure_sync_rule, upsert_cloud_asset
+from .sync_service import ensure_sync_rule, process_sync_tasks, queue_sync_for_series, upsert_cloud_asset
 
 
 async def fetch_entries(settings: dict[str, str]) -> list[ParsedRelease]:
@@ -382,7 +382,17 @@ async def poll_submitted_tasks(settings: dict[str, str]) -> None:
             except Exception as exc:
                 log("warn", f"云端重命名失败: {task['title']} - {exc}")
         if status == "completed":
-            upsert_cloud_asset(task["id"], settings)
+            asset_id = upsert_cloud_asset(task["id"], settings)
+            if asset_id:
+                with connect() as conn:
+                    rule = conn.execute(
+                        "SELECT * FROM sync_rules WHERE series_id=?",
+                        (task["series_id"],),
+                    ).fetchone()
+                if rule and rule["sync_enabled"] and rule["auto_sync_following"]:
+                    queued, _ = queue_sync_for_series(task["series_id"], settings)
+                    if queued:
+                        await process_sync_tasks(settings)
 
 
 async def scan_and_queue(settings: dict[str, str]) -> None:

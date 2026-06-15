@@ -16,6 +16,7 @@ from .db import connect, get_settings, init_db, log, now, save_settings
 from .library import bool_setting
 from .metadata import generate_nfo_for_series, refresh_series_metadata
 from .scanner import mark_selected_releases, poll_submitted_tasks, process_tasks, queue_release, resolve_series_choice, scan_and_queue
+from .sync_service import cancel_sync_for_series, process_sync_tasks, queue_sync_for_series
 
 
 scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
@@ -39,6 +40,9 @@ class SettingsPayload(BaseModel):
     pikpak_refresh_token: str = ""
     pikpak_proxy: str = ""
     library_root: str = "/Anime"
+    local_library_root: str = "/media/anime"
+    sync_command_template: str = ""
+    auto_sync_following: bool = False
     nfo_output_root: str = ""
     series_dir_template: str = ""
     season_dir_template: str = ""
@@ -76,6 +80,7 @@ def settings_response() -> dict[str, Any]:
     result["auto_scan"] = bool_setting(settings.get("auto_scan", "false"))
     result["auto_download_unique"] = bool_setting(settings.get("auto_download_unique", "true"))
     result["auto_download_by_priority"] = bool_setting(settings.get("auto_download_by_priority", "true"))
+    result["auto_sync_following"] = bool_setting(settings.get("auto_sync_following", "false"))
     result["subtitle_priority"] = split_setting(settings.get("subtitle_priority", ""))
     result["resolution_priority"] = split_setting(settings.get("resolution_priority", ""))
     result["language_priority"] = split_setting(settings.get("language_priority", ""))
@@ -238,6 +243,9 @@ async def api_update_settings(payload: SettingsPayload) -> dict[str, Any]:
             "pikpak_refresh_token": payload.pikpak_refresh_token.strip(),
             "pikpak_proxy": payload.pikpak_proxy.strip(),
             "library_root": payload.library_root.strip() or "/Anime",
+            "local_library_root": payload.local_library_root.strip() or "/media/anime",
+            "sync_command_template": payload.sync_command_template.strip(),
+            "auto_sync_following": str(payload.auto_sync_following).lower(),
             "nfo_output_root": payload.nfo_output_root.strip(),
             "series_dir_template": payload.series_dir_template.strip(),
             "season_dir_template": payload.season_dir_template.strip(),
@@ -323,6 +331,12 @@ async def api_poll_tasks() -> dict[str, str]:
     return {"status": "started", "message": "状态刷新已启动"}
 
 
+@app.post("/api/sync/tasks/process")
+async def api_process_sync_tasks() -> dict[str, str]:
+    asyncio.create_task(process_sync_tasks(get_settings()))
+    return {"status": "started", "message": "本地同步处理已启动"}
+
+
 @app.post("/api/tasks/retry-failed")
 async def api_retry_failed() -> dict[str, str]:
     with connect() as conn:
@@ -378,6 +392,22 @@ async def api_refresh_metadata(series_id: int) -> dict[str, str]:
 async def api_generate_nfo(series_id: int) -> dict[str, str]:
     generate_nfo_for_series(series_id, get_settings())
     return {"status": "generated"}
+
+
+@app.post("/api/series/{series_id}/sync")
+async def api_sync_series(series_id: int) -> dict[str, str]:
+    settings = get_settings()
+    count, message = queue_sync_for_series(series_id, settings)
+    if count <= 0:
+        return {"status": "skipped", "count": "0", "message": message}
+    asyncio.create_task(process_sync_tasks(settings))
+    return {"status": "queued", "count": str(count), "message": message}
+
+
+@app.post("/api/series/{series_id}/sync/cancel")
+async def api_cancel_sync_series(series_id: int) -> dict[str, str]:
+    count, message = cancel_sync_for_series(series_id)
+    return {"status": "completed", "count": str(count), "message": message}
 
 
 frontend_dir = APP_DIR.parent / "frontend_dist"
