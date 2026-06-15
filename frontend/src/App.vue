@@ -40,6 +40,7 @@
           <el-button :icon="Refresh" @click="reload" :loading="loading">刷新</el-button>
           <el-button type="primary" :icon="Search" @click="runAction('/scan')">扫描 RSS</el-button>
           <el-button type="success" :icon="VideoPlay" @click="runAction('/tasks/process')">处理队列</el-button>
+          <el-button :icon="Refresh" @click="runAction('/sync/tasks/process')">处理同步</el-button>
           <el-button type="warning" @click="runAction('/tasks/retry-failed')">重试失败</el-button>
         </div>
       </header>
@@ -121,6 +122,8 @@
                 <el-tag size="small">{{ item.group_count }} 字幕组</el-tag>
                 <el-tag size="small" type="success">{{ item.resolution_count }} 分辨率</el-tag>
                 <el-tag size="small" type="info">{{ item.release_count }} 发布</el-tag>
+                <el-tag size="small" type="warning">云盘 {{ item.cloud_asset_count || 0 }}</el-tag>
+                <el-tag size="small" type="success">本地 {{ item.local_asset_count || 0 }}</el-tag>
               </div>
               <el-progress :percentage="progressOf(item)" :show-text="false" />
             </div>
@@ -146,6 +149,23 @@
             <el-table-column prop="resolution" label="分辨率" width="110" />
             <el-table-column prop="language" label="语言" width="90" />
             <el-table-column prop="target_dir" label="目标目录" min-width="260" />
+            <el-table-column prop="last_error" label="错误" min-width="220" />
+          </el-table>
+        </el-card>
+        <el-card class="task-card">
+          <template #header>
+            <div class="card-header">
+              <span>本地同步队列</span>
+              <el-button :icon="Refresh" @click="runAction('/sync/tasks/process')">处理同步</el-button>
+            </div>
+          </template>
+          <el-table :data="dashboard.sync_tasks" height="360">
+            <el-table-column prop="status" label="状态" width="120">
+              <template #default="{ row }"><el-tag :type="taskTag(row.status)">{{ row.status }}</el-tag></template>
+            </el-table-column>
+            <el-table-column prop="title_cn" label="番剧" min-width="180" />
+            <el-table-column prop="source_path" label="云盘路径" min-width="260" />
+            <el-table-column prop="target_path" label="本地路径" min-width="260" />
             <el-table-column prop="last_error" label="错误" min-width="220" />
           </el-table>
         </el-card>
@@ -221,9 +241,12 @@
               </el-tab-pane>
               <el-tab-pane label="媒体库">
                 <div class="form-row">
-                  <el-form-item label="媒体库根目录"><el-input v-model="settings.library_root" /></el-form-item>
-                  <el-form-item label="NFO 输出目录"><el-input v-model="settings.nfo_output_root" placeholder="/media/anime" /></el-form-item>
+                  <el-form-item label="云盘库根目录"><el-input v-model="settings.library_root" /></el-form-item>
+                  <el-form-item label="本地媒体库目录"><el-input v-model="settings.local_library_root" placeholder="/media/anime" /></el-form-item>
                 </div>
+                <el-form-item label="同步命令模板"><el-input v-model="settings.sync_command_template" placeholder='rclone copy "{source}" "{target}"' /></el-form-item>
+                <el-form-item label="追更自动同步"><el-switch v-model="settings.auto_sync_following" /></el-form-item>
+                <el-form-item label="NFO 输出目录"><el-input v-model="settings.nfo_output_root" placeholder="留空；同步后默认写入本地媒体库" /></el-form-item>
                 <el-form-item label="番剧目录模板"><el-input v-model="settings.series_dir_template" /></el-form-item>
                 <el-form-item label="季目录模板"><el-input v-model="settings.season_dir_template" /></el-form-item>
                 <el-form-item label="单集名模板"><el-input v-model="settings.episode_name_template" /></el-form-item>
@@ -286,6 +309,8 @@
         <div class="drawer-actions">
           <el-button type="primary" @click="saveCurrentSeries">保存</el-button>
           <el-button @click="runSeriesAction('download')">下载这部番</el-button>
+          <el-button type="success" @click="runSeriesAction('sync')">同步到本地</el-button>
+          <el-button type="danger" @click="runSeriesAction('sync/cancel')">取消同步</el-button>
           <el-button @click="runSeriesAction('metadata')">刷新元数据</el-button>
           <el-button @click="runSeriesAction('nfo')">生成 NFO</el-button>
         </div>
@@ -321,7 +346,16 @@ const keyword = ref('')
 const seriesFilter = ref('全部')
 const seriesDrawer = ref(false)
 const selectedSeries = ref(null)
-const dashboard = reactive({ series: [], tasks: [], logs: [], calendar: [], active_tasks: [], task_counts: {} })
+const dashboard = reactive({
+  series: [],
+  tasks: [],
+  sync_tasks: [],
+  cloud_assets: [],
+  logs: [],
+  calendar: [],
+  active_tasks: [],
+  task_counts: {}
+})
 const settings = reactive({})
 
 const pageTitle = computed(() => ({
@@ -349,7 +383,7 @@ const filteredSeries = computed(() => {
 
 function taskTag(status) {
   if (status === 'failed') return 'danger'
-  if (status === 'completed' || status === 'submitted') return 'success'
+  if (status === 'completed' || status === 'submitted' || status === 'synced') return 'success'
   if (status === 'running') return 'warning'
   return 'info'
 }
