@@ -217,6 +217,7 @@ docker compose up -d --build
 - PikPak 离线提交已接入。
 - 默认云盘执行方式改为 rclone：
   - `rclone backend addurl` 提交 magnet/torrent 到 PikPak。
+  - 提交前必须先 `rclone mkdir` 目标目录；否则 PikPak 会把 addurl 资源放到默认 `My Pack`。
   - `rclone lsjson` 扫描云盘目录，发现已完成文件。
   - `rclone copyto` 同步云盘文件到 NAS 本地。
   - 如果 `/data/rclone/rclone.conf` 中没有默认 remote，会用现有 PikPak 用户名和密码自动生成 `type=pikpak` 配置。

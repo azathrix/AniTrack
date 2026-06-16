@@ -294,7 +294,7 @@ def queue_summary(settings: dict[str, str]) -> list[dict[str, Any]]:
             "waiting": cloud_retry["count"] if cloud_retry else 0,
             "next_retry_after": cloud_retry["next_retry_after"] if cloud_retry else "",
             "next_retry_seconds": seconds_until(cloud_retry["next_retry_after"] if cloud_retry else ""),
-            "description": "提交离线任务并轮询 PikPak 状态",
+            "description": "提交离线任务；submitted 表示已交给 PikPak/rclone 等待云盘完成",
         },
         {
             "key": "cloud_poll",

@@ -186,6 +186,7 @@ async def run_rclone(settings: dict[str, str], args: list[str], timeout: float |
 
 
 async def add_url(settings: dict[str, str], source: str, target_dir: str, name: str = "") -> dict[str, Any]:
+    await mkdir(settings, target_dir)
     args = ["backend", "addurl", remote_path(settings, target_dir), source]
     if name:
         args.extend(["-o", f"name={name}"])
@@ -197,6 +198,10 @@ async def add_url(settings: dict[str, str], source: str, target_dir: str, name: 
         return data if isinstance(data, dict) else {"result": data}
     except json.JSONDecodeError:
         return {"output": output}
+
+
+async def mkdir(settings: dict[str, str], path: str) -> None:
+    await run_rclone(settings, ["mkdir", remote_path(settings, path)], timeout=300)
 
 
 async def list_files(settings: dict[str, str], path: str, recursive: bool = True) -> list[dict[str, Any]]:

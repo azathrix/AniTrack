@@ -839,7 +839,7 @@ async def process_tasks(settings: dict[str, str], limit: int = 6, force: bool = 
                 (1 if force else 0, now(), task["id"]),
             )
         try:
-            result = await submit_offline_download(settings, source, task["target_dir"])
+            result = await submit_offline_download(settings, source, task["target_dir"], task["normalized_name"])
             task_id = extract_task_id(result) if isinstance(result, dict) else ""
             file_id = extract_file_id(result) if isinstance(result, dict) else ""
         except Exception as exc:

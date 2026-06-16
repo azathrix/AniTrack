@@ -67,9 +67,9 @@ async def prepare_offline_captcha(api: Any) -> None:
         api.captcha_token = captcha_token
 
 
-async def submit_offline_download(settings: dict[str, str], source: str, target_dir: str) -> dict[str, Any]:
+async def submit_offline_download(settings: dict[str, str], source: str, target_dir: str, name: str = "") -> dict[str, Any]:
     if rclone_service.enabled(settings):
-        return await rclone_service.add_url(settings, source, target_dir)
+        return await rclone_service.add_url(settings, source, target_dir, name)
     api = build_client(settings)
     if settings.get("pikpak_auth_mode") == "password":
         await api.login()

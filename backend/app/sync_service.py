@@ -579,6 +579,13 @@ async def reconcile_rclone_submitted_tasks(settings: dict[str, str], limit: int 
         try:
             files = await rclone_service.list_files(settings, task["target_dir"], recursive=False)
         except Exception as exc:
+            error_text = str(exc)
+            if "directory not found" in error_text.lower():
+                try:
+                    await rclone_service.mkdir(settings, task["target_dir"])
+                    error_text = "目标目录刚创建，等待 PikPak 完成后自动重试"
+                except Exception as mkdir_exc:
+                    error_text = f"目标目录不存在且创建失败: {mkdir_exc}"
             with connect() as conn:
                 conn.execute(
                     """
@@ -586,9 +593,9 @@ async def reconcile_rclone_submitted_tasks(settings: dict[str, str], limit: int 
                     SET retry_after=?, last_error=?, updated_at=?
                     WHERE id=?
                     """,
-                    (task_retry_after(settings, int(task["attempts"] or 0) + 1), str(exc)[:2000], now(), task["id"]),
+                    (task_retry_after(settings, int(task["attempts"] or 0) + 1), error_text[:2000], now(), task["id"]),
                 )
-            log("warn", f"rclone 云盘状态检查失败: {task['release_title']} - {exc}")
+            log("warn", f"rclone 云盘状态检查失败: {task['release_title']} - {error_text}")
             missing += 1
             continue
         normalized_name = normalize_title_key(task["normalized_name"])
