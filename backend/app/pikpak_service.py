@@ -72,12 +72,13 @@ async def submit_offline_download(settings: dict[str, str], source: str, target_
         await api.login()
     folders = await api.path_to_id(target_dir, create=True)
     parent_id = folders[-1]["id"] if folders else None
-    await prepare_offline_captcha(api)
     kwargs = {"parent_id": parent_id} if parent_id else {}
     try:
         return await api.offline_download(source, **kwargs)
     except Exception as exc:
-        if "Verification code is invalid" not in str(exc):
+        error = str(exc)
+        captcha_error = "Verification code is invalid" in error or "captcha" in error.lower()
+        if not captcha_error:
             raise
         await prepare_offline_captcha(api)
         return await api.offline_download(source, **kwargs)

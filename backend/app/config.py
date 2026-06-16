@@ -21,7 +21,7 @@ DEFAULT_SETTINGS = {
     "resolution_priority": "1080p\n1080\n2160p\n720p",
     "language_priority": "简体\n繁体\n日语",
     "secondary_language_priority": "繁体\n日语\n英语",
-    "pikpak_rate_limit_cooldown_minutes": "15",
+    "pikpak_rate_limit_cooldown_minutes": "60",
     "pikpak_auth_mode": "password",
     "pikpak_username": "",
     "pikpak_password": "",

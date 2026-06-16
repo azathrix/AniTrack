@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import re
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urljoin
@@ -53,6 +54,16 @@ async def fetch_mikan_match(settings: dict[str, str], page_url: str, mikan_bangu
             bangumi_id, _ = parse_mikan_ids(bgm_resp.text)
             return bangumi_id, mikan_id
     return "", ""
+
+
+async def gather_limited(coros, limit: int = 4):
+    semaphore = asyncio.Semaphore(max(1, limit))
+
+    async def run(coro):
+        async with semaphore:
+            return await coro
+
+    return await asyncio.gather(*(run(coro) for coro in coros))
 
 
 def upsert_release(item: ParsedRelease, metadata: dict | None = None) -> tuple[int, int]:
@@ -268,9 +279,7 @@ async def process_mikan_match_tasks(settings: dict[str, str], limit: int = 20) -
             """,
             (limit,),
         ).fetchall()
-    completed = 0
-    failed = 0
-    for row in rows:
+    async def handle(row) -> tuple[int, int]:
         with connect() as conn:
             conn.execute(
                 "UPDATE mikan_match_tasks SET status='running', attempts=attempts+1, updated_at=? WHERE id=?",
@@ -295,9 +304,8 @@ async def process_mikan_match_tasks(settings: dict[str, str], limit: int = 20) -
                     "UPDATE rss_candidates SET status='failed', reason=?, updated_at=? WHERE id=?",
                     (error, now(), row["candidate_id"]),
                 )
-            failed += 1
             log("warn", f"Mikan 匹配失败: {row['title']} - {error}")
-            continue
+            return 0, 1
         with connect() as conn:
             ts = now()
             conn.execute(
@@ -317,7 +325,11 @@ async def process_mikan_match_tasks(settings: dict[str, str], limit: int = 20) -
                 (bangumi_id, ts, row["candidate_id"]),
             )
             enqueue_metadata_task(conn, row["candidate_id"], bangumi_id, ts)
-        completed += 1
+        return 1, 0
+
+    results = await gather_limited([handle(row) for row in rows], limit=4)
+    completed = sum(item[0] for item in results)
+    failed = sum(item[1] for item in results)
     return completed, failed
 
 
@@ -334,9 +346,7 @@ async def process_metadata_tasks(settings: dict[str, str], limit: int = 20) -> t
             """,
             (limit,),
         ).fetchall()
-    completed = 0
-    failed = 0
-    for row in rows:
+    async def handle(row) -> tuple[int, int]:
         with connect() as conn:
             conn.execute(
                 "UPDATE metadata_tasks SET status='running', attempts=attempts+1, updated_at=? WHERE id=?",
@@ -353,8 +363,7 @@ async def process_metadata_tasks(settings: dict[str, str], limit: int = 20) -> t
                     "UPDATE rss_candidates SET status='failed', reason=?, updated_at=? WHERE id=?",
                     (error, now(), row["candidate_id"]),
                 )
-            failed += 1
-            continue
+            return 0, 1
         try:
             metadata = await fetch_bangumi_metadata(row["bangumi_id"], settings.get("rss_proxy", ""))
             release = candidate_to_parsed_release(row)
@@ -371,8 +380,7 @@ async def process_metadata_tasks(settings: dict[str, str], limit: int = 20) -> t
                     (error, now(), row["candidate_id"]),
                 )
             log("error", f"元数据刷新失败: {row['title']} - {error}")
-            failed += 1
-            continue
+            return 0, 1
         with connect() as conn:
             conn.execute(
                 "UPDATE metadata_tasks SET status='completed', last_error='', updated_at=? WHERE id=?",
@@ -388,7 +396,11 @@ async def process_metadata_tasks(settings: dict[str, str], limit: int = 20) -> t
             log("warn", f"自动入库跳过: {metadata.get('title_cn') or row['series_title']} - {choice['reason']}")
         for selected_release_id in ids:
             queue_release(selected_release_id, settings)
-        completed += 1
+        return 1, 0
+
+    results = await gather_limited([handle(row) for row in rows], limit=4)
+    completed = sum(item[0] for item in results)
+    failed = sum(item[1] for item in results)
     return completed, failed
 
 
@@ -702,13 +714,30 @@ def is_rate_limited_error(exc: Exception) -> bool:
     return "too frequent" in text or "try again later" in text or "rate" in text and "limit" in text
 
 
-def retry_after_time(settings: dict[str, str]) -> str:
-    minutes = max(1, int(settings.get("pikpak_rate_limit_cooldown_minutes") or 15))
+def retry_after_time(settings: dict[str, str], default_minutes: int = 60) -> str:
+    minutes = max(1, int(settings.get("pikpak_rate_limit_cooldown_minutes") or default_minutes))
     return (datetime.now(timezone.utc) + timedelta(minutes=minutes)).isoformat()
 
 
-async def process_tasks(settings: dict[str, str], limit: int = 1, force: bool = False) -> None:
+def task_retry_after(settings: dict[str, str], attempts: int) -> str:
+    minutes = min(180, max(5, 5 * max(1, attempts)))
+    return retry_after_time(settings, minutes)
+
+
+def stale_running_cutoff(minutes: int = 10) -> str:
+    return (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
+
+
+async def process_tasks(settings: dict[str, str], limit: int = 6, force: bool = False) -> None:
     with connect() as conn:
+        conn.execute(
+            """
+            UPDATE download_tasks
+            SET status='pending', last_error='上次提交中断，已自动放回待处理', updated_at=?
+            WHERE status='running' AND updated_at < ?
+            """,
+            (now(), stale_running_cutoff()),
+        )
         if force:
             conn.execute(
                 """
@@ -724,7 +753,7 @@ async def process_tasks(settings: dict[str, str], limit: int = 1, force: bool = 
             FROM download_tasks dt
             JOIN releases r ON r.id = dt.release_id
             JOIN series s ON s.id = dt.series_id
-            WHERE dt.status IN ('pending', 'failed') AND dt.attempts < 3
+            WHERE dt.status IN ('pending', 'failed')
               AND s.bangumi_id != ''
               AND (dt.retry_after='' OR dt.retry_after <= ?)
             ORDER BY dt.id ASC
@@ -733,13 +762,20 @@ async def process_tasks(settings: dict[str, str], limit: int = 1, force: bool = 
             (now(), limit),
         ).fetchall()
 
+    submitted = 0
     for task in rows:
+        if submitted >= 1:
+            break
         source = task["magnet"] or task["torrent_url"]
         if not source:
             with connect() as conn:
                 conn.execute(
-                    "UPDATE download_tasks SET status='failed', last_error=?, updated_at=? WHERE id=?",
-                    ("发布缺少 magnet/torrent 链接", now(), task["id"]),
+                    """
+                    UPDATE download_tasks
+                    SET status='pending', retry_after=?, last_error=?, updated_at=?
+                    WHERE id=?
+                    """,
+                    (task_retry_after(settings, int(task["attempts"] or 0) + 1), "发布缺少 magnet/torrent 链接，等待后自动重试", now(), task["id"]),
                 )
             log("warn", f"下载任务跳过: {task['title']} - 发布缺少 magnet/torrent 链接")
             continue
@@ -771,13 +807,19 @@ async def process_tasks(settings: dict[str, str], limit: int = 1, force: bool = 
                         (retry_after, f"PikPak 限流，等待后自动重试: {str(exc)[:1800]}", now(), task["id"]),
                     )
                 log("warn", f"PikPak 限流，已延后重试: {task['title']} - {exc}")
-                break
+                continue
+            retry_after = task_retry_after(settings, int(task["attempts"] or 0) + 1)
             with connect() as conn:
                 conn.execute(
-                    "UPDATE download_tasks SET status='failed', last_error=?, updated_at=? WHERE id=?",
-                    (str(exc)[:2000], now(), task["id"]),
+                    """
+                    UPDATE download_tasks
+                    SET status='pending', retry_after=?, last_error=?, updated_at=?
+                    WHERE id=?
+                    """,
+                    (retry_after, f"提交失败，等待后自动重试: {str(exc)[:1800]}", now(), task["id"]),
                 )
             log("error", f"PikPak 提交失败: {task['title']} - {exc}")
+            continue
         else:
             with connect() as conn:
                 conn.execute(
@@ -789,6 +831,7 @@ async def process_tasks(settings: dict[str, str], limit: int = 1, force: bool = 
                     (task_id, file_id, now(), task["id"]),
                 )
             log("info", f"已提交 PikPak: {task['title']}")
+            submitted += 1
 
 
 async def poll_submitted_tasks(settings: dict[str, str]) -> None:

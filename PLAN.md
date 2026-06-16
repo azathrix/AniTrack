@@ -209,7 +209,7 @@ docker compose up -d --build
   - 去除常见发布标签、标点、空格、集数后缀和分辨率标签。
 - 相同 `bangumi_id` 的重复番剧会在数据库迁移和 Bangumi 元数据刷新后合并。
 - PikPak 离线提交已接入。
-- PikPak 提交前会初始化 captcha；如果返回 `Verification code is invalid`，会刷新 captcha 并重试一次。
+- PikPak 提交默认不预先初始化 captcha；只有返回验证码相关错误时才初始化 captcha 并重试一次，避免额外 API 调用触发限流。
 - 下载任务支持提交、轮询、失败重试。
 - 新扫描到且没有 `metadata_source` 的番剧会尝试刷新 Bangumi 元数据。
 - 当前代码仍保留扫描后生成一份旧 NFO；后续需要彻底移除，只保留“同步到本地后生成 NFO”。
