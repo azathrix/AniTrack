@@ -351,6 +351,35 @@ h1 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.diagnostics-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 14px;
+}
+
+.diagnostics-grid div {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.diagnostics-grid span,
+.diagnostics-grid strong {
+  display: block;
+}
+
+.diagnostics-grid span {
+  color: #64748b;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.diagnostics-grid strong {
+  overflow-wrap: anywhere;
+}
+
 .priority-card {
   background: #f8fafc;
   border: 1px solid #e2e8f0;

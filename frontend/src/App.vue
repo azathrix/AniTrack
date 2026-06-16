@@ -264,8 +264,17 @@
                 <el-form-item label="季目录模板"><el-input v-model="settings.season_dir_template" /></el-form-item>
                 <el-form-item label="单集名模板"><el-input v-model="settings.episode_name_template" /></el-form-item>
               </el-tab-pane>
+              <el-tab-pane label="系统">
+                <div class="diagnostics-grid">
+                  <div><span>数据库</span><strong>{{ diagnostics.db_path || '-' }}</strong></div>
+                  <div><span>数据目录可写</span><strong>{{ diagnostics.data_dir_writable ? '是' : '否' }}</strong></div>
+                  <div><span>数据库大小</span><strong>{{ diagnostics.db_size || 0 }} bytes</strong></div>
+                  <div><span>番剧 / 发布 / 云盘</span><strong>{{ diagnostics.tables?.series || 0 }} / {{ diagnostics.tables?.releases || 0 }} / {{ diagnostics.tables?.cloud_assets || 0 }}</strong></div>
+                </div>
+                <el-button :icon="Refresh" @click="reloadDiagnostics">刷新诊断</el-button>
+              </el-tab-pane>
             </el-tabs>
-            <div class="form-actions"><el-button type="primary" size="large" @click="saveAllSettings">保存设置</el-button></div>
+            <div class="form-actions"><el-button type="primary" size="large" :loading="savingSettings" @click="saveAllSettings">保存设置</el-button></div>
           </el-form>
         </el-card>
       </section>
@@ -358,10 +367,11 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import draggable from 'vuedraggable'
 import { ElMessage } from 'element-plus'
 import { Calendar, Collection, DataBoard, List, Refresh, Search, Setting, VideoPlay } from '@element-plus/icons-vue'
-import { deleteAction, getDashboard, getSeries, getSettings, postAction, saveSeries, saveSettings } from './api'
+import { deleteAction, getDashboard, getDiagnostics, getSeries, getSettings, postAction, saveSeries, saveSettings } from './api'
 
 const view = ref('dashboard')
 const loading = ref(false)
+const savingSettings = ref(false)
 const autoRefresh = ref(true)
 const refreshInterval = ref(5000)
 let refreshTimer = null
@@ -382,6 +392,7 @@ const dashboard = reactive({
   task_counts: {}
 })
 const settings = reactive({})
+const diagnostics = reactive({ tables: {} })
 
 const pageTitle = computed(() => ({
   dashboard: '控制台',
@@ -449,9 +460,14 @@ async function reload() {
   try {
     Object.assign(dashboard, await getDashboard())
     Object.assign(settings, await getSettings())
+    if (view.value === 'settings') await reloadDiagnostics()
   } finally {
     loading.value = false
   }
+}
+
+async function reloadDiagnostics() {
+  Object.assign(diagnostics, await getDiagnostics())
 }
 
 function stopAutoRefresh() {
@@ -471,19 +487,34 @@ function startAutoRefresh() {
 }
 
 async function runAction(path) {
-  const result = await postAction(path)
-  if (result.status === 'skipped') {
-    ElMessage.warning(result.message || '没有可执行任务')
-  } else {
-    ElMessage.success(result.message || '操作已提交')
+  try {
+    const result = await postAction(path)
+    if (result.status === 'skipped') {
+      ElMessage.warning(result.message || '没有可执行任务')
+    } else {
+      ElMessage.success(result.message || '操作已提交')
+    }
+    setTimeout(reload, 800)
+  } catch (error) {
+    ElMessage.error(apiErrorMessage(error))
   }
-  setTimeout(reload, 800)
 }
 
 async function saveAllSettings() {
-  await saveSettings(settings)
-  ElMessage.success('设置已保存')
-  await reload()
+  savingSettings.value = true
+  try {
+    await saveSettings(settings)
+    ElMessage.success('设置已保存')
+    await reload()
+  } catch (error) {
+    ElMessage.error(apiErrorMessage(error))
+  } finally {
+    savingSettings.value = false
+  }
+}
+
+function apiErrorMessage(error) {
+  return error?.response?.data?.detail || error?.response?.data?.message || error?.message || '请求失败'
 }
 
 async function openSeries(id) {
@@ -585,6 +616,9 @@ const PriorityList = {
 
 watch([autoRefresh, refreshInterval], startAutoRefresh)
 watch(seriesDrawer, startAutoRefresh)
+watch(view, value => {
+  if (value === 'settings') reloadDiagnostics().catch(error => ElMessage.error(apiErrorMessage(error)))
+})
 
 onMounted(async () => {
   await reload()

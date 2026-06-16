@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .config import APP_DIR
-from .db import connect, finish_operation, get_settings, init_db, log, merge_duplicate_series, now, restore_visible_series, save_settings, start_operation
+from .db import connect, diagnostics, finish_operation, get_settings, init_db, log, merge_duplicate_series, now, restore_visible_series, save_settings, start_operation
 from .library import bool_setting
 from .metadata import generate_nfo_for_series, refresh_series_metadata
 from .scanner import mark_selected_releases, poll_submitted_tasks, process_tasks, queue_release, resolve_series_choice, scan_and_queue
@@ -268,6 +268,11 @@ async def api_dashboard() -> dict[str, Any]:
 @app.get("/api/settings")
 async def api_settings() -> dict[str, Any]:
     return settings_response()
+
+
+@app.get("/api/system/diagnostics")
+async def api_system_diagnostics() -> dict[str, Any]:
+    return diagnostics()
 
 
 @app.put("/api/settings")

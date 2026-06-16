@@ -13,6 +13,10 @@ export async function getSettings() {
   return (await api.get('/settings')).data
 }
 
+export async function getDiagnostics() {
+  return (await api.get('/system/diagnostics')).data
+}
+
 export async function saveSettings(payload) {
   return (await api.put('/settings', payload)).data
 }
