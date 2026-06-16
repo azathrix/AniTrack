@@ -83,6 +83,7 @@ jellyfin
 - RSS 扫描只写 `rss_candidates` 和后续匹配任务，不直接写正式番剧库。
 - Mikan RSS 里的 `bangumiId` 是 Mikan 自己的番组 ID，不等于 Bangumi.tv subject ID，不能直接写入 `series.bangumi_id`。
 - Mikan 匹配由 `mikan_match_tasks` 独立维护：先读取 RSS 条目页里的 `/Home/Bangumi/{id}`，再读取番组页里的 `https://bgm.tv/subject/{id}`，拿到 subject ID 后才写入 `metadata_tasks`。
+- 后续应补一张 `mikan_bangumi_id -> bangumi_subject_id` 映射缓存表，避免同一番组每次扫描都重复抓取 Mikan 页面。
 - 元数据任务成功后才创建正式 `series/releases`，再进入 PikPak 入库队列。
 - 云盘入库、PikPak 状态同步、云盘资源登记、本地状态同步、本地同步、NFO 生成、全量审计等操作都必须独立建表，不能复用别的队列状态。
 - 到下一阶段的数据必须完整；例如 `metadata_tasks` 失败时不能写 `series/releases`，`mikan_match_tasks` 失败时不能写 `metadata_tasks`。

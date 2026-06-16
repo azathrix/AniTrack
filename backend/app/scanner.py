@@ -684,6 +684,17 @@ def queue_release(release_id: int, settings: dict[str, str]) -> None:
         if not series["bangumi_id"]:
             log("warn", f"云盘入库跳过: {series['title_cn']} - 缺少 Bangumi ID")
             return
+        existing_cloud = conn.execute(
+            """
+            SELECT id
+            FROM cloud_assets
+            WHERE release_id=? OR (series_id=? AND episode_number=?)
+            LIMIT 1
+            """,
+            (release_id, release["series_id"], release["episode_number"]),
+        ).fetchone()
+        if existing_cloud:
+            return
         series_dict = dict(series)
         target = target_dir(series_dict, settings)
         name = render_episode_name(series_dict, release["episode_number"], "", settings)

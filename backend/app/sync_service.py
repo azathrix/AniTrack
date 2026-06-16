@@ -76,7 +76,18 @@ def upsert_cloud_asset(task_id: int, settings: dict[str, str]) -> int | None:
                 "SELECT id FROM cloud_assets WHERE provider='pikpak' AND provider_file_id=?",
                 (task["pikpak_file_id"],),
             ).fetchone()
-        if existing_by_file:
+        existing_by_episode = conn.execute(
+            """
+            SELECT id
+            FROM cloud_assets
+            WHERE series_id=? AND episode_number=? AND provider='pikpak'
+            ORDER BY id ASC
+            LIMIT 1
+            """,
+            (task["series_id"], release["episode_number"]),
+        ).fetchone()
+        existing_asset = existing_by_file or existing_by_episode
+        if existing_asset:
             conn.execute(
                 """
                 UPDATE cloud_assets
@@ -92,7 +103,7 @@ def upsert_cloud_asset(task_id: int, settings: dict[str, str]) -> int | None:
                     cloud_path,
                     cloud_name,
                     ts,
-                    existing_by_file["id"],
+                    existing_asset["id"],
                 ),
             )
         else:
@@ -503,7 +514,18 @@ def upsert_cloud_asset_from_download_task(task_id: int, item: dict, settings: di
             "SELECT id FROM cloud_assets WHERE provider='pikpak' AND provider_file_id=?",
             (provider_file_id,),
         ).fetchone()
-        if existing:
+        existing_by_episode = conn.execute(
+            """
+            SELECT id
+            FROM cloud_assets
+            WHERE series_id=? AND episode_number=? AND provider='pikpak'
+            ORDER BY id ASC
+            LIMIT 1
+            """,
+            (task["series_id"], release["episode_number"]),
+        ).fetchone()
+        existing_asset = existing or existing_by_episode
+        if existing_asset:
             conn.execute(
                 """
                 UPDATE cloud_assets
@@ -519,7 +541,7 @@ def upsert_cloud_asset_from_download_task(task_id: int, item: dict, settings: di
                     path,
                     name,
                     ts,
-                    existing["id"],
+                    existing_asset["id"],
                 ),
             )
         else:

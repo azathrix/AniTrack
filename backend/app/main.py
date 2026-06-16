@@ -250,6 +250,10 @@ async def run_full_refresh(settings: dict[str, str], operation_id: int | None = 
         if operation_id:
             update_operation(operation_id, "8/8 正在同步到本地")
         await process_sync_tasks(settings)
+    global queue_debounce_task
+    if queue_debounce_task and not queue_debounce_task.done():
+        queue_debounce_task.cancel()
+        queue_debounce_task = None
     return f"{scan_message}；Mikan 匹配成功 {mikan_done} 个，失败 {mikan_failed} 个；元数据成功 {metadata_done} 个，失败 {metadata_failed} 个；rclone 发现已完成 {rclone_done} 个，未发现 {rclone_missing} 个；PikPak 完成 {poll_done} 个，轮询失败 {poll_failed} 个；云盘资源登记 {cloud_done} 个，失败 {cloud_failed} 个，补齐 {cloud_count} 个；调和同步 {reconciled} 部，排队 {queued} 个"
 
 
