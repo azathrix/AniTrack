@@ -467,17 +467,7 @@ async def scan_and_queue(settings: dict[str, str]) -> str:
 
     log("info", f"扫描完成: {len(items)} 条发布，更新 {len(touched_series)} 部番剧，队列 {queued} 条")
     await process_tasks(settings)
-    from .sync_service import scan_cloud_library
-
-    try:
-        imported, skipped = await scan_cloud_library(settings)
-        if imported:
-            log("info", f"云盘库扫描完成: 入库 {imported} 个，跳过 {skipped} 个")
-    except Exception as exc:
-        log("warn", f"云盘库扫描跳过: {exc}")
-        imported = 0
-        skipped = 0
     reconciled, sync_queued = reconcile_sync_intents(settings)
     if sync_queued:
         await process_sync_tasks(settings)
-    return f"RSS {len(items)} 条，更新 {len(touched_series)} 部，云盘队列 {queued} 条，云盘入库 {imported} 个，同步排队 {sync_queued} 个"
+    return f"RSS {len(items)} 条，更新 {len(touched_series)} 部，云盘队列 {queued} 条，同步排队 {sync_queued} 个"

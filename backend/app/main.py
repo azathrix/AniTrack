@@ -98,12 +98,6 @@ async def scheduled_scan() -> None:
     if bool_setting(settings.get("auto_scan", "false")):
         await scan_and_queue(settings)
     await poll_submitted_tasks(settings)
-    try:
-        imported, skipped = await scan_cloud_library(settings)
-        if imported:
-            log("info", f"云盘库扫描完成: 入库 {imported} 个，跳过 {skipped} 个")
-    except Exception as exc:
-        log("warn", f"云盘库扫描跳过: {exc}")
     reconciled, queued = reconcile_sync_intents(settings)
     if queued:
         log("info", f"周期任务已排本地同步: {reconciled} 部番剧，{queued} 个任务")
@@ -139,10 +133,6 @@ def run_operation(name: str, coro_factory, start_message: str = "") -> int:
 
 
 def dashboard_data() -> dict[str, Any]:
-    settings = get_settings()
-    backfilled = backfill_cloud_assets_from_completed_tasks(settings)
-    if backfilled:
-        log("info", f"已补齐云盘资源状态: {backfilled} 个")
     with connect() as conn:
         restored = restore_visible_series(conn)
         series = conn.execute(
