@@ -473,10 +473,10 @@ async def _process_mikan_match_tasks(settings: dict[str, str], limit: int = 20) 
             conn.execute(
                 """
                 UPDATE rss_candidates
-                SET status='pending_metadata', bangumi_id=?, reason='等待元数据刷新', updated_at=?
+                SET status='pending_metadata', bangumi_id=?, mikan_bangumi_id=?, reason='等待元数据刷新', updated_at=?
                 WHERE id=?
                 """,
-                (bangumi_id, ts, row["candidate_id"]),
+                (bangumi_id, mikan_id, ts, row["candidate_id"]),
             )
             enqueue_metadata_task(conn, row["candidate_id"], bangumi_id, ts)
         return 1, 0

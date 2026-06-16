@@ -156,6 +156,18 @@ async def _process_cloud_asset_tasks(settings: dict[str, str], limit: int = 20, 
         conn.execute(
             """
             UPDATE cloud_asset_tasks
+            SET status='completed', retry_after='', last_error='', updated_at=?
+            WHERE download_task_id IN (
+              SELECT cat.download_task_id
+              FROM cloud_asset_tasks cat
+              JOIN cloud_assets ca ON ca.task_id=cat.download_task_id
+            )
+            """,
+            (now(),),
+        )
+        conn.execute(
+            """
+            UPDATE cloud_asset_tasks
             SET status='pending', last_error='上次云盘资源登记中断，已自动放回待处理', updated_at=?
             WHERE status='running' AND updated_at < ?
             """,

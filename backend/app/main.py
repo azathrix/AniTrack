@@ -419,8 +419,11 @@ def queue_summary(settings: dict[str, str]) -> list[dict[str, Any]]:
             SELECT COUNT(*) AS count
             FROM download_tasks dt
             LEFT JOIN cloud_assets ca ON ca.task_id=dt.id
+            JOIN cloud_submissions cs ON cs.download_task_id=dt.id
             WHERE dt.status='completed'
               AND dt.pikpak_file_id != ''
+              AND cs.provider='pikpak'
+              AND cs.status='completed'
               AND ca.id IS NULL
             """
         ).fetchone()["count"]
