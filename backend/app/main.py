@@ -13,10 +13,10 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .config import APP_DIR
-from .db import clear_runtime_data, connect, diagnostics, finish_operation, get_settings, init_db, log, merge_duplicate_series, now, read_server_logs, save_settings, start_operation, update_operation
+from .db import clear_runtime_data, connect, diagnostics, finish_operation, get_runtime_generation, get_settings, init_db, log, merge_duplicate_series, now, read_server_logs, save_settings, start_operation, update_operation
 from .library import bool_setting
 from .metadata import generate_nfo_for_series, refresh_series_metadata
-from .scanner import mark_selected_releases, poll_submitted_tasks, process_metadata_tasks, process_mikan_match_tasks, process_tasks, queue_release, resolve_series_choice, scan_and_queue
+from .scanner import enqueue_backfill_task, enqueue_selection_task, mark_selected_releases, poll_submitted_tasks, process_backfill_tasks, process_metadata_tasks, process_mikan_match_tasks, process_selection_tasks, process_tasks, queue_release, resolve_series_choice, scan_and_queue
 from .sync_service import backfill_cloud_assets_from_completed_tasks, cancel_sync_for_series, process_cloud_asset_tasks, process_sync_tasks, queue_sync_for_series, reconcile_rclone_submitted_tasks, reconcile_sync_intents, scan_cloud_library
 
 
@@ -133,6 +133,10 @@ def reschedule() -> None:
     scheduler.add_job(lambda: asyncio.create_task(scheduled_queue_tick()), "interval", minutes=1, id="queue_tick")
 
 
+def runtime_generation_alive(expected: str) -> bool:
+    return get_runtime_generation() == expected
+
+
 async def scheduled_scan() -> None:
     settings = get_settings()
     if bool_setting(settings.get("auto_scan", "false")):
@@ -146,13 +150,34 @@ async def scheduled_queue_tick() -> None:
         return
     queue_tick_running = True
     settings = get_settings()
+    generation = get_runtime_generation()
     try:
+        if not runtime_generation_alive(generation):
+            return
         await process_mikan_match_tasks(settings)
+        if not runtime_generation_alive(generation):
+            return
         await process_metadata_tasks(settings)
+        if not runtime_generation_alive(generation):
+            return
+        await process_selection_tasks(settings)
+        if not runtime_generation_alive(generation):
+            return
+        await process_backfill_tasks(settings)
+        if not runtime_generation_alive(generation):
+            return
         await process_tasks(settings)
+        if not runtime_generation_alive(generation):
+            return
         await reconcile_rclone_submitted_tasks(settings)
+        if not runtime_generation_alive(generation):
+            return
         await poll_submitted_tasks(settings)
+        if not runtime_generation_alive(generation):
+            return
         await process_cloud_asset_tasks(settings)
+        if not runtime_generation_alive(generation):
+            return
         backfill_cloud_assets_from_completed_tasks(settings)
         reconciled, queued = reconcile_sync_intents(settings)
         if queued:
@@ -174,6 +199,14 @@ def has_ready_queue_work() -> bool:
             ),
             (
                 "metadata_tasks",
+                "status IN ('pending','failed') AND (retry_after='' OR retry_after <= ?)",
+            ),
+            (
+                "selection_tasks",
+                "status IN ('pending','failed') AND (retry_after='' OR retry_after <= ?)",
+            ),
+            (
+                "backfill_tasks",
                 "status IN ('pending','failed') AND (retry_after='' OR retry_after <= ?)",
             ),
             (
@@ -223,31 +256,50 @@ def trigger_queue_debounced(delay: float = 10.0) -> None:
 
 
 async def run_full_refresh(settings: dict[str, str], operation_id: int | None = None) -> str:
+    generation = get_runtime_generation()
     with connect() as conn:
-        for table in ["mikan_match_tasks", "metadata_tasks", "download_tasks", "cloud_poll_tasks", "cloud_asset_tasks", "sync_tasks"]:
+        for table in ["mikan_match_tasks", "metadata_tasks", "selection_tasks", "backfill_tasks", "download_tasks", "cloud_poll_tasks", "cloud_asset_tasks", "sync_tasks"]:
             conn.execute(f"UPDATE {table} SET retry_after='', updated_at=?", (now(),))
     if operation_id:
         update_operation(operation_id, "1/8 正在扫描 RSS")
     scan_message = await scan_and_queue(settings)
+    if not runtime_generation_alive(generation):
+        return "运行数据已重置，本次扫描已中止"
     if operation_id:
         update_operation(operation_id, "2/8 正在匹配 Mikan Bangumi")
     mikan_done, mikan_failed = await process_mikan_match_tasks(settings)
+    if not runtime_generation_alive(generation):
+        return "运行数据已重置，本次扫描已中止"
     if operation_id:
         update_operation(operation_id, "3/8 正在处理元数据队列")
     metadata_done, metadata_failed = await process_metadata_tasks(settings)
+    if not runtime_generation_alive(generation):
+        return "运行数据已重置，本次扫描已中止"
     if operation_id:
-        update_operation(operation_id, "4/8 正在处理 PikPak 入库队列")
+        update_operation(operation_id, "4/8 正在处理自动选集/补全")
+    selection_done, selection_failed = await process_selection_tasks(settings)
+    backfill_done, backfill_failed = await process_backfill_tasks(settings)
+    if not runtime_generation_alive(generation):
+        return "运行数据已重置，本次扫描已中止"
+    if operation_id:
+        update_operation(operation_id, "5/8 正在处理 PikPak 入库队列")
     await process_tasks(settings)
+    if not runtime_generation_alive(generation):
+        return "运行数据已重置，本次扫描已中止"
     if operation_id:
-        update_operation(operation_id, "5/8 正在刷新 PikPak 任务状态")
+        update_operation(operation_id, "6/8 正在刷新 PikPak 任务状态")
     rclone_done, rclone_missing = await reconcile_rclone_submitted_tasks(settings)
     poll_done, poll_failed = await poll_submitted_tasks(settings)
+    if not runtime_generation_alive(generation):
+        return "运行数据已重置，本次扫描已中止"
     if operation_id:
-        update_operation(operation_id, "6/8 正在登记云盘资源")
+        update_operation(operation_id, "7/8 正在登记云盘资源")
     cloud_done, cloud_failed = await process_cloud_asset_tasks(settings)
     cloud_count = backfill_cloud_assets_from_completed_tasks(settings)
+    if not runtime_generation_alive(generation):
+        return "运行数据已重置，本次扫描已中止"
     if operation_id:
-        update_operation(operation_id, "7/8 正在调和本地同步")
+        update_operation(operation_id, "8/8 正在调和本地同步")
     reconciled, queued = reconcile_sync_intents(settings)
     if queued:
         if operation_id:
@@ -257,7 +309,7 @@ async def run_full_refresh(settings: dict[str, str], operation_id: int | None = 
     if queue_debounce_task and not queue_debounce_task.done():
         queue_debounce_task.cancel()
         queue_debounce_task = None
-    return f"{scan_message}；Mikan 匹配成功 {mikan_done} 个，失败 {mikan_failed} 个；元数据成功 {metadata_done} 个，失败 {metadata_failed} 个；rclone 发现已完成 {rclone_done} 个，未发现 {rclone_missing} 个；PikPak 完成 {poll_done} 个，轮询失败 {poll_failed} 个；云盘资源登记 {cloud_done} 个，失败 {cloud_failed} 个，补齐 {cloud_count} 个；调和同步 {reconciled} 部，排队 {queued} 个"
+    return f"{scan_message}；Mikan 匹配成功 {mikan_done} 个，失败 {mikan_failed} 个；元数据成功 {metadata_done} 个，失败 {metadata_failed} 个；选集成功 {selection_done} 个，失败 {selection_failed} 个；补全成功 {backfill_done} 个，失败 {backfill_failed} 个；rclone 发现已完成 {rclone_done} 个，未发现 {rclone_missing} 个；PikPak 完成 {poll_done} 个，轮询失败 {poll_failed} 个；云盘资源登记 {cloud_done} 个，失败 {cloud_failed} 个，补齐 {cloud_count} 个；调和同步 {reconciled} 部，排队 {queued} 个"
 
 
 def queue_summary(settings: dict[str, str]) -> list[dict[str, Any]]:
@@ -266,6 +318,18 @@ def queue_summary(settings: dict[str, str]) -> list[dict[str, Any]]:
             row["status"]: row["count"]
             for row in conn.execute(
                 "SELECT status, COUNT(*) AS count FROM metadata_tasks GROUP BY status"
+            ).fetchall()
+        }
+        selection_rows = {
+            row["status"]: row["count"]
+            for row in conn.execute(
+                "SELECT status, COUNT(*) AS count FROM selection_tasks GROUP BY status"
+            ).fetchall()
+        }
+        backfill_rows = {
+            row["status"]: row["count"]
+            for row in conn.execute(
+                "SELECT status, COUNT(*) AS count FROM backfill_tasks GROUP BY status"
             ).fetchall()
         }
         mikan_rows = {
@@ -352,6 +416,22 @@ def queue_summary(settings: dict[str, str]) -> list[dict[str, Any]]:
             "running": metadata_rows.get("running", 0),
             "failed": metadata_rows.get("failed", 0),
             "description": "候选必须获取完整元数据后才进入正式库",
+        },
+        {
+            "key": "selection",
+            "name": "自动选集",
+            "pending": selection_rows.get("pending", 0),
+            "running": selection_rows.get("running", 0),
+            "failed": selection_rows.get("failed", 0),
+            "description": "根据字幕组、分辨率、主副字幕语言规则唯一选择发布",
+        },
+        {
+            "key": "backfill",
+            "name": "整季补全",
+            "pending": backfill_rows.get("pending", 0),
+            "running": backfill_rows.get("running", 0),
+            "failed": backfill_rows.get("failed", 0),
+            "description": "按补全策略补抓当季历史条目并进入候选链路",
         },
         {
             "key": "merge",
@@ -597,6 +677,7 @@ async def api_system_diagnostics() -> dict[str, Any]:
 
 @app.put("/api/settings")
 async def api_update_settings(payload: SettingsPayload) -> dict[str, Any]:
+    previous = get_settings()
     save_settings(
         {
             "rss_url": payload.rss_url.strip(),
@@ -629,6 +710,28 @@ async def api_update_settings(payload: SettingsPayload) -> dict[str, Any]:
             "episode_name_template": payload.episode_name_template.strip(),
         }
     )
+    current = get_settings()
+    if any(
+        previous.get(key, "") != current.get(key, "")
+        for key in [
+            "subtitle_priority",
+            "resolution_priority",
+            "language_priority",
+            "secondary_language_priority",
+            "default_backfill",
+            "series_dir_template",
+            "season_dir_template",
+            "episode_name_template",
+            "local_library_root",
+            "auto_sync_following",
+        ]
+    ):
+        with connect() as conn:
+            ts = now()
+            series_rows = conn.execute("SELECT id FROM series WHERE COALESCE(hidden, 0)=0 AND bangumi_id != ''").fetchall()
+            for row in series_rows:
+                enqueue_selection_task(conn, int(row["id"]), ts, "全局规则变更，重新计算自动选集")
+                enqueue_backfill_task(conn, int(row["id"]), current, ts)
     reschedule()
     trigger_queue_debounced()
     log("info", "全局设置已保存")
@@ -697,6 +800,9 @@ async def api_update_series(series_id: int, payload: SeriesPayload) -> dict[str,
                 series_id,
             ),
         )
+        ts = now()
+        enqueue_selection_task(conn, series_id, ts, "番剧规则变更，重新计算自动选集")
+        enqueue_backfill_task(conn, series_id, get_settings(), ts)
     log("info", f"番剧设置已保存: {payload.title_cn}")
     with connect() as conn:
         merge_duplicate_series(conn)

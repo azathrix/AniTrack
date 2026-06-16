@@ -77,6 +77,8 @@
               </div>
               <p>{{ queue.description }}</p>
               <p v-if="queue.waiting" class="queue-note">等待重试 {{ queue.waiting }} 个，下次约 {{ formatCountdown(queue.next_retry_seconds) }}</p>
+              <p v-if="queue.failed && queue.key === 'selection'" class="queue-note">通常表示字幕组、分辨率或语言仍无法唯一选择</p>
+              <p v-if="queue.failed && queue.key === 'backfill'" class="queue-note">通常表示 Mikan 番组页未解析到历史条目或缺少 Mikan ID</p>
               <div class="queue-counts">
                 <span>待处理 <b>{{ queue.pending }}</b></span>
                 <span>运行中 <b>{{ queue.running }}</b></span>
@@ -235,7 +237,7 @@
                   type="info"
                   show-icon
                   :closable="false"
-                  title="保存设置只会更新规则；要立即执行完整处理，请回到控制台点击“扫描全部”。"
+                  title="保存设置会自动重排选集、补全、同步等后续任务；要立即执行完整处理，请回到控制台点击“扫描全部”。"
                   class="settings-alert"
                 />
                 <el-form-item label="Mikan RSS"><el-input v-model="settings.rss_url" /></el-form-item>
@@ -293,6 +295,13 @@
                 <el-form-item label="PikPak 代理"><el-input v-model="settings.pikpak_proxy" placeholder="通常留空" /></el-form-item>
               </el-tab-pane>
               <el-tab-pane label="媒体库">
+                <el-alert
+                  type="info"
+                  show-icon
+                  :closable="false"
+                  title="建议外层目录只保留作品总名，季信息放在 Season 目录层，例如：作品名 (2026) [bangumi-123456] / Season 01。"
+                  class="settings-alert"
+                />
                 <div class="form-row">
                   <el-form-item label="云盘库根目录"><el-input v-model="settings.library_root" /></el-form-item>
                 <el-form-item label="本地同步目录"><el-input v-model="settings.local_library_root" placeholder="/media/pikpak-anime" /></el-form-item>
@@ -548,12 +557,14 @@ const filteredSeries = computed(() => {
 
 function taskTag(status) {
   if (status === 'failed') return 'danger'
+  if (status === 'superseded') return 'info'
   if (status === 'completed' || status === 'submitted' || status === 'synced') return 'success'
   if (status === 'running') return 'warning'
   return 'info'
 }
 
 function taskStatusText(row) {
+  if (row?.status === 'superseded') return '已替代'
   if (row?.waiting_retry) return '等待重试'
   return row?.status || ''
 }

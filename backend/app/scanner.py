@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import re
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urljoin
@@ -11,7 +12,7 @@ import feedparser
 from .db import connect, hide_orphan_series, log, merge_duplicate_series, now
 from .library import bool_setting, render_episode_name, target_dir
 from .metadata import fetch_bangumi_metadata
-from .parser import ParsedRelease, fingerprint, parse_entry, split_lines
+from .parser import ParsedRelease, fingerprint, parse_entry, parse_episode, parse_group, parse_language, parse_resolution, parse_series_title, parse_year, split_lines
 from .pikpak_service import list_offline_tasks, rename_cloud_file, submit_offline_download
 from .sync_service import enqueue_cloud_asset_task
 from . import rclone_service
@@ -19,6 +20,8 @@ from . import rclone_service
 download_tasks_lock = asyncio.Lock()
 mikan_match_lock = asyncio.Lock()
 metadata_tasks_lock = asyncio.Lock()
+selection_tasks_lock = asyncio.Lock()
+backfill_tasks_lock = asyncio.Lock()
 
 
 async def fetch_entries(settings: dict[str, str]) -> list[ParsedRelease]:
@@ -61,6 +64,82 @@ async def fetch_mikan_match(settings: dict[str, str], page_url: str, mikan_bangu
     return "", ""
 
 
+def parse_mikan_datetime(value: str) -> str:
+    text = (value or "").strip()
+    match = re.search(r"(\d{4}/\d{2}/\d{2}\s+\d{2}:\d{2})", text)
+    return match.group(1) if match else text
+
+
+def parse_mikan_group_sections(html_text: str) -> list[tuple[str, str]]:
+    sections: list[tuple[str, str]] = []
+    pattern = re.compile(
+        r'<div class="subgroup-text" id="(?P<group_id>\d+)">(?P<section>.*?)<div class="subgroup-scroll-top-\d+"></div>|<div class="subgroup-text" id="(?P<last_group_id>\d+)">(?P<last_section>.*)$',
+        re.S,
+    )
+    for match in pattern.finditer(html_text):
+        group_id = match.group("group_id") or match.group("last_group_id") or ""
+        section = match.group("section") or match.group("last_section") or ""
+        if group_id and section:
+            sections.append((group_id, section))
+    return sections
+
+
+def parse_mikan_page_releases(html_text: str, mikan_bangumi_id: str) -> list[ParsedRelease]:
+    releases: list[ParsedRelease] = []
+    seen_guids: set[str] = set()
+    for group_id, section in parse_mikan_group_sections(html_text):
+        group_match = re.search(r'<a href="/Home/PublishGroup/\d+"[^>]*>(.*?)</a>', section, re.S)
+        group_name = html.unescape(re.sub(r"<.*?>", "", group_match.group(1)).strip()) if group_match else ""
+        row_pattern = re.compile(
+            r'<tr>.*?class="js-episode-select"[^>]*data-magnet="(?P<magnet>[^"]*)".*?'
+            r'<a class="magnet-link-wrap"[^>]*href="(?P<page>[^"]+)">(?P<title>.*?)</a>.*?'
+            r'<td>(?P<size>.*?)</td>.*?<td>(?P<published>.*?)</td>.*?'
+            r'<a\s+href="(?P<torrent>[^"]+\.torrent)">',
+            re.S,
+        )
+        for row in row_pattern.finditer(section):
+            raw_title = html.unescape(re.sub(r"<.*?>", "", row.group("title")).strip())
+            magnet = html.unescape(row.group("magnet")).replace("&amp;", "&")
+            page_url = mikan_absolute_url(html.unescape(row.group("page")))
+            torrent_url = mikan_absolute_url(html.unescape(row.group("torrent")))
+            published_at = parse_mikan_datetime(html.unescape(re.sub(r"<.*?>", "", row.group("published")).strip()))
+            guid_match = re.search(r"/Home/Episode/([0-9a-fA-F]{20,40})", page_url)
+            guid = guid_match.group(1) if guid_match else page_url
+            if guid in seen_guids:
+                continue
+            seen_guids.add(guid)
+            parsed = ParsedRelease(
+                guid=guid,
+                title=raw_title,
+                series_title=parse_series_title(raw_title),
+                episode_number=parse_episode(raw_title),
+                subtitle_group=group_name or parse_group(raw_title),
+                resolution=parse_resolution(raw_title),
+                language=parse_language(raw_title),
+                bangumi_id="",
+                year=parse_year(raw_title, published_at),
+                torrent_url=torrent_url,
+                magnet=magnet,
+                page_url=page_url,
+                mikan_bangumi_id=mikan_bangumi_id,
+                published_at=published_at,
+            )
+            if parsed.episode_number > 0:
+                releases.append(parsed)
+    return releases
+
+
+async def fetch_mikan_page_releases(settings: dict[str, str], mikan_bangumi_id: str) -> list[ParsedRelease]:
+    if not mikan_bangumi_id:
+        return []
+    proxy = settings.get("rss_proxy") or None
+    url = mikan_absolute_url(f"/Home/Bangumi/{mikan_bangumi_id}")
+    async with httpx.AsyncClient(proxy=proxy, timeout=30, follow_redirects=True) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+    return parse_mikan_page_releases(resp.text, mikan_bangumi_id)
+
+
 async def gather_limited(coros, limit: int = 4):
     semaphore = asyncio.Semaphore(max(1, limit))
 
@@ -86,6 +165,7 @@ def upsert_release(item: ParsedRelease, metadata: dict | None = None) -> tuple[i
               title_raw=excluded.title_raw,
               title_cn=CASE WHEN excluded.title_cn!='' THEN excluded.title_cn ELSE series.title_cn END,
               bangumi_id=CASE WHEN series.bangumi_id='' THEN excluded.bangumi_id ELSE series.bangumi_id END,
+              mikan_bangumi_id=CASE WHEN excluded.mikan_bangumi_id!='' THEN excluded.mikan_bangumi_id ELSE series.mikan_bangumi_id END,
               year=CASE WHEN excluded.year!=0 THEN excluded.year ELSE series.year END,
               poster_url=CASE WHEN excluded.poster_url!='' THEN excluded.poster_url ELSE series.poster_url END,
               summary=CASE WHEN excluded.summary!='' THEN excluded.summary ELSE series.summary END,
@@ -97,6 +177,7 @@ def upsert_release(item: ParsedRelease, metadata: dict | None = None) -> tuple[i
                 item.series_title,
                 metadata.get("title_cn") or item.series_title,
                 item.bangumi_id,
+                item.mikan_bangumi_id,
                 metadata.get("year") or item.year,
                 metadata.get("poster_url") or "",
                 metadata.get("summary") or "",
@@ -271,6 +352,53 @@ def candidate_to_parsed_release(candidate) -> ParsedRelease:
     )
 
 
+def resolved_backfill_mode(series: dict, settings: dict[str, str]) -> str:
+    value = (series["backfill_mode"] or "inherit").strip() or "inherit"
+    if value == "inherit":
+        value = (settings.get("default_backfill") or "none").strip() or "none"
+    return value
+
+
+def enqueue_selection_task(conn, series_id: int, ts: str, reason: str = "") -> None:
+    conn.execute(
+        """
+        INSERT INTO selection_tasks
+          (series_id, status, reason, created_at, updated_at)
+        VALUES (?, 'pending', ?, ?, ?)
+        ON CONFLICT(series_id) DO UPDATE SET
+          status='pending',
+          reason=excluded.reason,
+          retry_after='',
+          last_error='',
+          updated_at=excluded.updated_at
+        """,
+        (series_id, reason[:500], ts, ts),
+    )
+
+
+def enqueue_backfill_task(conn, series_id: int, settings: dict[str, str], ts: str) -> None:
+    series = conn.execute("SELECT * FROM series WHERE id=?", (series_id,)).fetchone()
+    if not series:
+        return
+    backfill_mode = resolved_backfill_mode(series, settings)
+    if backfill_mode == "none":
+        return
+    conn.execute(
+        """
+        INSERT INTO backfill_tasks
+          (series_id, status, backfill_mode, created_at, updated_at)
+        VALUES (?, 'pending', ?, ?, ?)
+        ON CONFLICT(series_id) DO UPDATE SET
+          status='pending',
+          backfill_mode=excluded.backfill_mode,
+          retry_after='',
+          last_error='',
+          updated_at=excluded.updated_at
+        """,
+        (series_id, backfill_mode, ts, ts),
+    )
+
+
 async def process_mikan_match_tasks(settings: dict[str, str], limit: int = 20) -> tuple[int, int]:
     async with mikan_match_lock:
         return await _process_mikan_match_tasks(settings, limit)
@@ -428,20 +556,17 @@ async def _process_metadata_tasks(settings: dict[str, str], limit: int = 20) -> 
             log("error", f"元数据刷新失败: {row['title']} - {error}")
             return 0, 1
         with connect() as conn:
+            ts = now()
             conn.execute(
                 "UPDATE metadata_tasks SET status='completed', retry_after='', last_error='', updated_at=? WHERE id=?",
-                (now(), row["id"]),
+                (ts, row["id"]),
             )
             conn.execute(
                 "UPDATE rss_candidates SET status='completed', reason='', updated_at=? WHERE id=?",
-                (now(), row["candidate_id"]),
+                (ts, row["candidate_id"]),
             )
-        ids, choice = resolve_series_choice(series_id, settings)
-        mark_selected_releases(series_id, ids)
-        if choice["reason"]:
-            log("warn", f"自动入库跳过: {metadata.get('title_cn') or row['series_title']} - {choice['reason']}")
-        for selected_release_id in ids:
-            queue_release(selected_release_id, settings)
+            enqueue_selection_task(conn, series_id, ts, "元数据完成，等待自动选集")
+            enqueue_backfill_task(conn, series_id, settings, ts)
         return 1, 0
 
     results = await gather_limited([handle(row) for row in rows], limit=4)
@@ -687,6 +812,174 @@ def mark_selected_releases(series_id: int, release_ids: list[int]) -> None:
         conn.execute(f"UPDATE releases SET selected=1 WHERE id IN ({placeholders})", release_ids)
 
 
+async def process_selection_tasks(settings: dict[str, str], limit: int = 20) -> tuple[int, int]:
+    async with selection_tasks_lock:
+        return await _process_selection_tasks(settings, limit)
+
+
+async def _process_selection_tasks(settings: dict[str, str], limit: int = 20) -> tuple[int, int]:
+    with connect() as conn:
+        conn.execute(
+            """
+            UPDATE selection_tasks
+            SET status='pending', last_error='上次自动选集处理中断，已自动放回待处理', updated_at=?
+            WHERE status='running' AND updated_at < ?
+            """,
+            (now(), stale_running_cutoff()),
+        )
+        rows = conn.execute(
+            """
+            SELECT st.*, s.title_cn
+            FROM selection_tasks st
+            JOIN series s ON s.id=st.series_id
+            WHERE st.status IN ('pending', 'failed')
+              AND (st.retry_after='' OR st.retry_after <= ?)
+              AND COALESCE(s.hidden, 0)=0
+              AND s.bangumi_id != ''
+            ORDER BY st.id ASC
+            LIMIT ?
+            """,
+            (now(), limit),
+        ).fetchall()
+
+    completed = 0
+    failed = 0
+    for row in rows:
+        with connect() as conn:
+            conn.execute(
+                "UPDATE selection_tasks SET status='running', attempts=attempts+1, updated_at=? WHERE id=?",
+                (now(), row["id"]),
+            )
+        try:
+            ids, choice = resolve_series_choice(int(row["series_id"]), settings)
+            mark_selected_releases(int(row["series_id"]), ids)
+            with connect() as conn:
+                ts = now()
+                if choice["reason"]:
+                    conn.execute(
+                        """
+                        UPDATE selection_tasks
+                        SET status='failed', reason=?, retry_after='', last_error='', updated_at=?
+                        WHERE id=?
+                        """,
+                        (choice["reason"][:500], ts, row["id"]),
+                    )
+                    log("warn", f"自动选集等待人工处理: {row['title_cn']} - {choice['reason']}")
+                    failed += 1
+                    continue
+                conn.execute(
+                    """
+                    UPDATE selection_tasks
+                    SET status='completed', reason='', retry_after='', last_error='', updated_at=?
+                    WHERE id=?
+                    """,
+                    (ts, row["id"]),
+                )
+            for selected_release_id in ids:
+                queue_release(selected_release_id, settings)
+            completed += 1
+        except Exception as exc:
+            error = str(exc)[:2000]
+            with connect() as conn:
+                conn.execute(
+                    """
+                    UPDATE selection_tasks
+                    SET status='pending', retry_after=?, last_error=?, updated_at=?
+                    WHERE id=?
+                    """,
+                    (task_retry_after(settings, int(row["attempts"] or 0) + 1), error, now(), row["id"]),
+                )
+            log("error", f"自动选集失败: {row['title_cn']} - {error}")
+            failed += 1
+    return completed, failed
+
+
+async def process_backfill_tasks(settings: dict[str, str], limit: int = 8) -> tuple[int, int]:
+    async with backfill_tasks_lock:
+        return await _process_backfill_tasks(settings, limit)
+
+
+async def _process_backfill_tasks(settings: dict[str, str], limit: int = 8) -> tuple[int, int]:
+    with connect() as conn:
+        conn.execute(
+            """
+            UPDATE backfill_tasks
+            SET status='pending', last_error='上次补全处理中断，已自动放回待处理', updated_at=?
+            WHERE status='running' AND updated_at < ?
+            """,
+            (now(), stale_running_cutoff()),
+        )
+        rows = conn.execute(
+            """
+            SELECT bt.*, s.title_cn, s.mikan_bangumi_id
+            FROM backfill_tasks bt
+            JOIN series s ON s.id=bt.series_id
+            WHERE bt.status IN ('pending', 'failed')
+              AND (bt.retry_after='' OR bt.retry_after <= ?)
+              AND COALESCE(s.hidden, 0)=0
+              AND s.bangumi_id != ''
+            ORDER BY bt.id ASC
+            LIMIT ?
+            """,
+            (now(), limit),
+        ).fetchall()
+
+    completed = 0
+    failed = 0
+    for row in rows:
+        with connect() as conn:
+            conn.execute(
+                "UPDATE backfill_tasks SET status='running', attempts=attempts+1, updated_at=? WHERE id=?",
+                (now(), row["id"]),
+            )
+        try:
+            if not row["mikan_bangumi_id"]:
+                raise RuntimeError("缺少 Mikan Bangumi ID，暂不能补全整季")
+            releases = await fetch_mikan_page_releases(settings, str(row["mikan_bangumi_id"]))
+            if not releases:
+                raise RuntimeError("Mikan 番组页未解析到可补全条目")
+            with connect() as conn:
+                existing = {
+                    int(item["episode_number"])
+                    for item in conn.execute(
+                        "SELECT episode_number FROM releases WHERE series_id=?",
+                        (row["series_id"],),
+                    ).fetchall()
+                }
+                written = 0
+                ts = now()
+                for release in releases:
+                    if release.episode_number in existing:
+                        continue
+                    release.bangumi_id = str(
+                        conn.execute("SELECT bangumi_id FROM series WHERE id=?", (row["series_id"],)).fetchone()["bangumi_id"]
+                    )
+                    candidate_id = upsert_rss_candidate(release, "整季补全写入候选，等待后续识别/元数据处理")
+                    if candidate_id:
+                        written += 1
+            with connect() as conn:
+                conn.execute(
+                    "UPDATE backfill_tasks SET status='completed', retry_after='', last_error='', updated_at=? WHERE id=?",
+                    (now(), row["id"]),
+                )
+            log("info", f"整季补全完成: {row['title_cn']} - 新增候选 {written} 条")
+            completed += 1
+        except Exception as exc:
+            error = str(exc)[:2000]
+            with connect() as conn:
+                conn.execute(
+                    """
+                    UPDATE backfill_tasks
+                    SET status='failed', retry_after=?, last_error=?, updated_at=?
+                    WHERE id=?
+                    """,
+                    (task_retry_after(settings, int(row["attempts"] or 0) + 1), error, now(), row["id"]),
+                )
+            log("warn", f"整季补全暂未完成: {row['title_cn']} - {error}")
+            failed += 1
+    return completed, failed
+
+
 def queue_release(release_id: int, settings: dict[str, str]) -> None:
     with connect() as conn:
         release = conn.execute("SELECT * FROM releases WHERE id=?", (release_id,)).fetchone()
@@ -709,6 +1002,17 @@ def queue_release(release_id: int, settings: dict[str, str]) -> None:
         ).fetchone()
         if existing_cloud:
             return
+        existing_submission = conn.execute(
+            """
+            SELECT id, status
+            FROM cloud_submissions
+            WHERE series_id=? AND episode_number=? AND provider='pikpak'
+            LIMIT 1
+            """,
+            (release["series_id"], release["episode_number"]),
+        ).fetchone()
+        if existing_submission and existing_submission["status"] in {"pending", "submitted", "running", "completed"}:
+            return
         series_dict = dict(series)
         target = target_dir(series_dict, settings)
         name = render_episode_name(series_dict, release["episode_number"], "", settings)
@@ -729,6 +1033,128 @@ def queue_release(release_id: int, settings: dict[str, str]) -> None:
             """,
             (release_id, release["series_id"], target, name, ts, ts),
         )
+        task = conn.execute("SELECT * FROM download_tasks WHERE release_id=?", (release_id,)).fetchone()
+        if task:
+            conn.execute(
+                """
+                UPDATE download_tasks
+                SET status='superseded', retry_after='', last_error='已被新的自动选择替代', updated_at=?
+                WHERE id IN (
+                  SELECT dt.id
+                  FROM download_tasks dt
+                  JOIN releases r ON r.id=dt.release_id
+                  WHERE dt.id != ?
+                    AND dt.series_id=?
+                    AND r.episode_number=?
+                    AND dt.status IN ('pending','running','submitted','failed')
+                )
+                """,
+                (ts, task["id"], release["series_id"], release["episode_number"]),
+            )
+            conn.execute(
+                """
+                UPDATE cloud_submissions
+                SET status='superseded', retry_after='', last_error='已被新的自动选择替代', updated_at=?, last_seen_at=?
+                WHERE download_task_id IN (
+                  SELECT dt.id
+                  FROM download_tasks dt
+                  JOIN releases r ON r.id=dt.release_id
+                  WHERE dt.id != ?
+                    AND dt.series_id=?
+                    AND r.episode_number=?
+                )
+                  AND provider='pikpak'
+                  AND status IN ('pending','running','submitted','failed')
+                """,
+                (ts, ts, task["id"], release["series_id"], release["episode_number"]),
+            )
+            conn.execute(
+                """
+                INSERT INTO cloud_submissions
+                  (series_id, episode_number, release_id, provider, download_task_id, status,
+                   target_dir, normalized_name, created_at, updated_at, last_seen_at)
+                VALUES (?, ?, ?, 'pikpak', ?, 'pending', ?, ?, ?, ?, ?)
+                ON CONFLICT(series_id, episode_number, provider) DO UPDATE SET
+                  release_id=excluded.release_id,
+                  download_task_id=excluded.download_task_id,
+                  status=CASE
+                    WHEN cloud_submissions.status='completed' THEN cloud_submissions.status
+                    ELSE 'pending'
+                  END,
+                  target_dir=excluded.target_dir,
+                  normalized_name=excluded.normalized_name,
+                  retry_after='',
+                  last_error='',
+                  updated_at=excluded.updated_at,
+                  last_seen_at=excluded.last_seen_at
+                """,
+                (
+                    release["series_id"],
+                    release["episode_number"],
+                    release_id,
+                    task["id"],
+                    target,
+                    name,
+                    ts,
+                    ts,
+                    ts,
+                ),
+            )
+
+
+def sync_cloud_submission(
+    conn,
+    *,
+    series_id: int,
+    episode_number: int,
+    release_id: int,
+    download_task_id: int,
+    status: str,
+    target_dir: str = "",
+    normalized_name: str = "",
+    submission_id: str = "",
+    provider_file_id: str = "",
+    retry_after: str = "",
+    last_error: str = "",
+) -> None:
+    ts = now()
+    conn.execute(
+        """
+        INSERT INTO cloud_submissions
+          (series_id, episode_number, release_id, provider, download_task_id, status, attempts,
+           submission_id, provider_file_id, target_dir, normalized_name, retry_after, last_error,
+           created_at, updated_at, last_seen_at)
+        VALUES (?, ?, ?, 'pikpak', ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(series_id, episode_number, provider) DO UPDATE SET
+          release_id=excluded.release_id,
+          download_task_id=excluded.download_task_id,
+          status=excluded.status,
+          submission_id=CASE WHEN excluded.submission_id!='' THEN excluded.submission_id ELSE cloud_submissions.submission_id END,
+          provider_file_id=CASE WHEN excluded.provider_file_id!='' THEN excluded.provider_file_id ELSE cloud_submissions.provider_file_id END,
+          target_dir=CASE WHEN excluded.target_dir!='' THEN excluded.target_dir ELSE cloud_submissions.target_dir END,
+          normalized_name=CASE WHEN excluded.normalized_name!='' THEN excluded.normalized_name ELSE cloud_submissions.normalized_name END,
+          retry_after=excluded.retry_after,
+          last_error=excluded.last_error,
+          updated_at=excluded.updated_at,
+          last_seen_at=excluded.last_seen_at
+        """,
+        (
+            series_id,
+            episode_number,
+            release_id,
+            download_task_id,
+            status,
+            submission_id,
+            provider_file_id,
+            target_dir,
+            normalized_name,
+            retry_after,
+            last_error[:2000],
+            ts,
+            ts,
+            ts,
+        ),
+    )
 
 
 def enqueue_cloud_poll_task(conn, download_task_id: int, ts: str) -> None:
@@ -827,12 +1253,15 @@ async def _process_tasks(settings: dict[str, str], limit: int = 6, force: bool =
             )
         rows = conn.execute(
             """
-            SELECT dt.*, r.magnet, r.torrent_url, r.title
+            SELECT dt.*, r.magnet, r.torrent_url, r.title, r.episode_number
             FROM download_tasks dt
             JOIN releases r ON r.id = dt.release_id
             JOIN series s ON s.id = dt.series_id
+            JOIN cloud_submissions cs ON cs.download_task_id=dt.id
             WHERE dt.status IN ('pending', 'failed')
               AND s.bangumi_id != ''
+              AND cs.provider='pikpak'
+              AND cs.status IN ('pending', 'running', 'failed')
               AND (dt.retry_after='' OR dt.retry_after <= ?)
             ORDER BY dt.id ASC
             LIMIT ?
@@ -856,6 +1285,18 @@ async def _process_tasks(settings: dict[str, str], limit: int = 6, force: bool =
                     """,
                     (task_retry_after(settings, int(task["attempts"] or 0) + 1), "发布缺少 magnet/torrent 链接，等待后自动重试", now(), task["id"]),
                 )
+                sync_cloud_submission(
+                    conn,
+                    series_id=int(task["series_id"]),
+                    episode_number=int(task["episode_number"]),
+                    release_id=int(task["release_id"]),
+                    download_task_id=int(task["id"]),
+                    status="pending",
+                    target_dir=str(task["target_dir"] or ""),
+                    normalized_name=str(task["normalized_name"] or ""),
+                    retry_after=task_retry_after(settings, int(task["attempts"] or 0) + 1),
+                    last_error="发布缺少 magnet/torrent 链接，等待后自动重试",
+                )
             log("warn", f"下载任务跳过: {task['title']} - 发布缺少 magnet/torrent 链接")
             continue
         with connect() as conn:
@@ -868,6 +1309,16 @@ async def _process_tasks(settings: dict[str, str], limit: int = 6, force: bool =
                 WHERE id=?
                 """,
                 (1 if force else 0, now(), task["id"]),
+            )
+            sync_cloud_submission(
+                conn,
+                series_id=int(task["series_id"]),
+                episode_number=int(task["episode_number"]),
+                release_id=int(task["release_id"]),
+                download_task_id=int(task["id"]),
+                status="running",
+                target_dir=str(task["target_dir"] or ""),
+                normalized_name=str(task["normalized_name"] or ""),
             )
         try:
             result = await submit_offline_download(settings, source, task["target_dir"], task["normalized_name"])
@@ -884,6 +1335,18 @@ async def _process_tasks(settings: dict[str, str], limit: int = 6, force: bool =
                         WHERE id=?
                         """,
                         (retry_after, f"PikPak 限流，等待后自动重试: {str(exc)[:1800]}", now(), task["id"]),
+                    )
+                    sync_cloud_submission(
+                        conn,
+                        series_id=int(task["series_id"]),
+                        episode_number=int(task["episode_number"]),
+                        release_id=int(task["release_id"]),
+                        download_task_id=int(task["id"]),
+                        status="pending",
+                        target_dir=str(task["target_dir"] or ""),
+                        normalized_name=str(task["normalized_name"] or ""),
+                        retry_after=retry_after,
+                        last_error=f"PikPak 限流，等待后自动重试: {str(exc)[:1800]}",
                     )
                     conn.execute(
                         """
@@ -910,6 +1373,18 @@ async def _process_tasks(settings: dict[str, str], limit: int = 6, force: bool =
                     """,
                     (retry_after, f"提交失败，等待后自动重试: {str(exc)[:1800]}", now(), task["id"]),
                 )
+                sync_cloud_submission(
+                    conn,
+                    series_id=int(task["series_id"]),
+                    episode_number=int(task["episode_number"]),
+                    release_id=int(task["release_id"]),
+                    download_task_id=int(task["id"]),
+                    status="pending",
+                    target_dir=str(task["target_dir"] or ""),
+                    normalized_name=str(task["normalized_name"] or ""),
+                    retry_after=retry_after,
+                    last_error=f"提交失败，等待后自动重试: {str(exc)[:1800]}",
+                )
             log("error", f"PikPak 提交失败: {task['title']} - {exc}")
             continue
         else:
@@ -925,6 +1400,18 @@ async def _process_tasks(settings: dict[str, str], limit: int = 6, force: bool =
                     WHERE id=?
                     """,
                     (task_id, file_id, ts, task["id"]),
+                )
+                sync_cloud_submission(
+                    conn,
+                    series_id=int(task["series_id"]),
+                    episode_number=int(task["episode_number"]),
+                    release_id=int(task["release_id"]),
+                    download_task_id=int(task["id"]),
+                    status="completed" if status == "completed" else "submitted",
+                    target_dir=str(task["target_dir"] or ""),
+                    normalized_name=str(task["normalized_name"] or ""),
+                    submission_id=task_id,
+                    provider_file_id=file_id,
                 )
                 if status == "completed":
                     conn.execute(
@@ -966,11 +1453,14 @@ async def poll_submitted_tasks(settings: dict[str, str], limit: int = 20, force:
             JOIN download_tasks dt ON dt.id=cpt.download_task_id
             JOIN releases r ON r.id=dt.release_id
             JOIN series s ON s.id=dt.series_id
+            JOIN cloud_submissions cs ON cs.download_task_id=dt.id
             WHERE cpt.status IN ('pending', 'failed')
               AND (cpt.retry_after='' OR cpt.retry_after <= ?)
               AND dt.status IN ('submitted', 'running')
               AND (dt.pikpak_task_id != '' OR dt.pikpak_file_id != '')
               AND s.bangumi_id != ''
+              AND cs.provider='pikpak'
+              AND cs.status IN ('submitted', 'running')
             ORDER BY cpt.id ASC
             LIMIT ?
             """
@@ -1015,6 +1505,18 @@ async def poll_submitted_tasks(settings: dict[str, str], limit: int = 20, force:
                         "UPDATE download_tasks SET status='completed', retry_after='', last_error='', updated_at=? WHERE id=?",
                         (ts, task["id"]),
                     )
+                    sync_cloud_submission(
+                        conn,
+                        series_id=int(task["series_id"]),
+                        episode_number=int(task["episode_number"]),
+                        release_id=int(task["release_id"]),
+                        download_task_id=int(task["id"]),
+                        status="completed",
+                        target_dir=str(task["target_dir"] or ""),
+                        normalized_name=str(task["normalized_name"] or ""),
+                        submission_id=str(task["pikpak_task_id"] or ""),
+                        provider_file_id=str(task["pikpak_file_id"] or ""),
+                    )
                     conn.execute(
                         "UPDATE cloud_poll_tasks SET status='completed', retry_after='', last_error='', updated_at=? WHERE id=?",
                         (ts, task["poll_task_id"]),
@@ -1036,6 +1538,20 @@ async def poll_submitted_tasks(settings: dict[str, str], limit: int = 20, force:
                         task["poll_task_id"],
                     ),
                 )
+                sync_cloud_submission(
+                    conn,
+                    series_id=int(task["series_id"]),
+                    episode_number=int(task["episode_number"]),
+                    release_id=int(task["release_id"]),
+                    download_task_id=int(task["id"]),
+                    status="submitted",
+                    target_dir=str(task["target_dir"] or ""),
+                    normalized_name=str(task["normalized_name"] or ""),
+                    submission_id=str(task["pikpak_task_id"] or ""),
+                    provider_file_id=str(task["pikpak_file_id"] or ""),
+                    retry_after=task_retry_after(settings, int(task["poll_attempts"] or 0) + 1),
+                    last_error="PikPak 暂未返回该离线任务，等待后重试",
+                )
             continue
         phase = remote.get("phase", "")
         file_id = remote.get("file_id") or remote.get("reference_resource", {}).get("id", "") or task["pikpak_file_id"]
@@ -1054,6 +1570,20 @@ async def poll_submitted_tasks(settings: dict[str, str], limit: int = 20, force:
                 WHERE id=?
                 """,
                 (status, file_id, remote.get("message", "")[:2000], ts, task["id"]),
+            )
+            sync_cloud_submission(
+                conn,
+                series_id=int(task["series_id"]),
+                episode_number=int(task["episode_number"]),
+                release_id=int(task["release_id"]),
+                download_task_id=int(task["id"]),
+                status=status,
+                target_dir=str(task["target_dir"] or ""),
+                normalized_name=str(task["normalized_name"] or ""),
+                submission_id=str(task["pikpak_task_id"] or ""),
+                provider_file_id=str(file_id or ""),
+                retry_after="" if status == "completed" else task_retry_after(settings, int(task["poll_attempts"] or 0) + 1),
+                last_error=str(remote.get("message", "") or "")[:2000],
             )
             if status == "completed":
                 conn.execute(

@@ -38,6 +38,7 @@ def init_db() -> None:
                 title_cn TEXT NOT NULL,
                 title_romaji TEXT NOT NULL DEFAULT '',
                 bangumi_id TEXT NOT NULL DEFAULT '',
+                mikan_bangumi_id TEXT NOT NULL DEFAULT '',
                 tmdb_id TEXT NOT NULL DEFAULT '',
                 year INTEGER NOT NULL DEFAULT 0,
                 season_number INTEGER NOT NULL DEFAULT 1,
@@ -119,6 +120,51 @@ def init_db() -> None:
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 UNIQUE(release_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS selection_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                series_id INTEGER NOT NULL UNIQUE,
+                status TEXT NOT NULL DEFAULT 'pending',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                reason TEXT NOT NULL DEFAULT '',
+                retry_after TEXT NOT NULL DEFAULT '',
+                last_error TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS backfill_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                series_id INTEGER NOT NULL UNIQUE,
+                status TEXT NOT NULL DEFAULT 'pending',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                backfill_mode TEXT NOT NULL DEFAULT 'none',
+                retry_after TEXT NOT NULL DEFAULT '',
+                last_error TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS cloud_submissions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                series_id INTEGER NOT NULL,
+                episode_number INTEGER NOT NULL,
+                release_id INTEGER NOT NULL,
+                provider TEXT NOT NULL DEFAULT 'pikpak',
+                download_task_id INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'pending',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                submission_id TEXT NOT NULL DEFAULT '',
+                provider_file_id TEXT NOT NULL DEFAULT '',
+                target_dir TEXT NOT NULL DEFAULT '',
+                normalized_name TEXT NOT NULL DEFAULT '',
+                retry_after TEXT NOT NULL DEFAULT '',
+                last_error TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                last_seen_at TEXT NOT NULL DEFAULT '',
+                UNIQUE(series_id, episode_number, provider)
             );
 
             CREATE TABLE IF NOT EXISTS cloud_poll_tasks (
@@ -226,6 +272,18 @@ def init_db() -> None:
                 UNIQUE(cloud_asset_id, sync_direction)
             );
 
+            CREATE TABLE IF NOT EXISTS series_state_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                series_id INTEGER NOT NULL UNIQUE,
+                status TEXT NOT NULL DEFAULT 'pending',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                scope TEXT NOT NULL DEFAULT 'all',
+                retry_after TEXT NOT NULL DEFAULT '',
+                last_error TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 level TEXT NOT NULL,
@@ -282,6 +340,7 @@ def migrate(conn: sqlite3.Connection) -> None:
         "metadata_source": "TEXT NOT NULL DEFAULT ''",
         "nfo_status": "TEXT NOT NULL DEFAULT 'pending'",
         "hidden": "INTEGER NOT NULL DEFAULT 0",
+        "mikan_bangumi_id": "TEXT NOT NULL DEFAULT ''",
     }
     for column, ddl in series_additions.items():
         if column not in series_columns:
@@ -307,6 +366,60 @@ def migrate(conn: sqlite3.Connection) -> None:
     for column, ddl in download_task_additions.items():
         if column not in download_task_columns:
             conn.execute(f"ALTER TABLE download_tasks ADD COLUMN {column} {ddl}")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS selection_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            series_id INTEGER NOT NULL UNIQUE,
+            status TEXT NOT NULL DEFAULT 'pending',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            reason TEXT NOT NULL DEFAULT '',
+            retry_after TEXT NOT NULL DEFAULT '',
+            last_error TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS backfill_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            series_id INTEGER NOT NULL UNIQUE,
+            status TEXT NOT NULL DEFAULT 'pending',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            backfill_mode TEXT NOT NULL DEFAULT 'none',
+            retry_after TEXT NOT NULL DEFAULT '',
+            last_error TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS cloud_submissions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            series_id INTEGER NOT NULL,
+            episode_number INTEGER NOT NULL,
+            release_id INTEGER NOT NULL,
+            provider TEXT NOT NULL DEFAULT 'pikpak',
+            download_task_id INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'pending',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            submission_id TEXT NOT NULL DEFAULT '',
+            provider_file_id TEXT NOT NULL DEFAULT '',
+            target_dir TEXT NOT NULL DEFAULT '',
+            normalized_name TEXT NOT NULL DEFAULT '',
+            retry_after TEXT NOT NULL DEFAULT '',
+            last_error TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            last_seen_at TEXT NOT NULL DEFAULT '',
+            UNIQUE(series_id, episode_number, provider)
+        )
+        """
+    )
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS cloud_poll_tasks (
@@ -340,6 +453,21 @@ def migrate(conn: sqlite3.Connection) -> None:
         CREATE UNIQUE INDEX IF NOT EXISTS idx_cloud_assets_provider_file
         ON cloud_assets(provider, provider_file_id)
         WHERE provider_file_id != ''
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS series_state_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            series_id INTEGER NOT NULL UNIQUE,
+            status TEXT NOT NULL DEFAULT 'pending',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            scope TEXT NOT NULL DEFAULT 'all',
+            retry_after TEXT NOT NULL DEFAULT '',
+            last_error TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
         """
     )
     conn.execute(
@@ -571,6 +699,23 @@ def save_settings(values: dict[str, Any]) -> None:
                 )
 
 
+def get_runtime_generation() -> str:
+    with connect() as conn:
+        row = conn.execute("SELECT value FROM settings WHERE key='runtime_generation'").fetchone()
+        return row["value"] if row and row["value"] else "0"
+
+
+def bump_runtime_generation() -> str:
+    value = now()
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('runtime_generation', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (value,),
+        )
+    return value
+
+
 def log(level: str, message: str) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     line = f"{now()} [{level.upper()}] {message[:2000]}\n"
@@ -663,6 +808,9 @@ def diagnostics() -> dict[str, Any]:
             "rss_candidates",
             "mikan_match_tasks",
             "metadata_tasks",
+            "selection_tasks",
+            "backfill_tasks",
+            "cloud_submissions",
             "download_tasks",
             "cloud_poll_tasks",
             "cloud_asset_tasks",
@@ -670,6 +818,7 @@ def diagnostics() -> dict[str, Any]:
             "sync_rules",
             "local_assets",
             "sync_tasks",
+            "series_state_tasks",
             "logs",
             "operations",
         ]
@@ -691,15 +840,20 @@ def table_count_visible_series(conn: sqlite3.Connection) -> int:
 
 
 def clear_runtime_data() -> None:
+    next_generation = now()
     with connect() as conn:
         for table in [
+            "series_state_tasks",
             "sync_tasks",
             "local_assets",
             "sync_rules",
             "cloud_assets",
             "cloud_asset_tasks",
             "cloud_poll_tasks",
+            "cloud_submissions",
             "download_tasks",
+            "backfill_tasks",
+            "selection_tasks",
             "metadata_tasks",
             "mikan_match_tasks",
             "rss_candidates",
@@ -710,7 +864,12 @@ def clear_runtime_data() -> None:
             "logs",
         ]:
             conn.execute(f"DELETE FROM {table}")
-        conn.execute("DELETE FROM sqlite_sequence WHERE name IN ('sync_tasks','local_assets','sync_rules','cloud_assets','cloud_asset_tasks','cloud_poll_tasks','download_tasks','metadata_tasks','mikan_match_tasks','rss_candidates','releases','episodes','series','operations','logs')")
+        conn.execute("DELETE FROM sqlite_sequence WHERE name IN ('series_state_tasks','sync_tasks','local_assets','sync_rules','cloud_assets','cloud_asset_tasks','cloud_poll_tasks','cloud_submissions','download_tasks','backfill_tasks','selection_tasks','metadata_tasks','mikan_match_tasks','rss_candidates','releases','episodes','series','operations','logs')")
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('runtime_generation', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (next_generation,),
+        )
     try:
         LOG_PATH.unlink(missing_ok=True)
     except OSError:

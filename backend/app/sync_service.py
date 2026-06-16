@@ -17,6 +17,7 @@ from . import rclone_service
 
 cloud_asset_tasks_lock = asyncio.Lock()
 sync_tasks_lock = asyncio.Lock()
+state_tasks_lock = asyncio.Lock()
 
 
 def task_retry_after_minutes(minutes: int) -> str:
@@ -60,6 +61,7 @@ def cloud_asset_path(task: dict, release: dict, series: dict, settings: dict[str
 
 
 def upsert_cloud_asset(task_id: int, settings: dict[str, str]) -> int | None:
+    created = False
     with connect() as conn:
         task = conn.execute("SELECT * FROM download_tasks WHERE id=?", (task_id,)).fetchone()
         if not task:
@@ -110,6 +112,7 @@ def upsert_cloud_asset(task_id: int, settings: dict[str, str]) -> int | None:
                 ),
             )
         else:
+            created = True
             conn.execute(
                 """
                 INSERT INTO cloud_assets
@@ -137,7 +140,8 @@ def upsert_cloud_asset(task_id: int, settings: dict[str, str]) -> int | None:
             )
         asset = conn.execute("SELECT id FROM cloud_assets WHERE task_id=?", (task["id"],)).fetchone()
     if asset:
-        log("info", f"云盘资源已入库: {cloud_name}")
+        if created:
+            log("info", f"云盘资源已入库: {cloud_name}")
         return int(asset["id"])
     return None
 
@@ -173,11 +177,14 @@ async def _process_cloud_asset_tasks(settings: dict[str, str], limit: int = 20, 
             JOIN download_tasks dt ON dt.id=cat.download_task_id
             JOIN releases r ON r.id=dt.release_id
             JOIN series s ON s.id=dt.series_id
+            JOIN cloud_submissions cs ON cs.download_task_id=dt.id
             WHERE cat.status IN ('pending', 'failed')
               AND (cat.retry_after='' OR cat.retry_after <= ?)
               AND dt.status='completed'
               AND dt.pikpak_file_id != ''
               AND s.bangumi_id != ''
+              AND cs.provider='pikpak'
+              AND cs.status='completed'
             ORDER BY cat.id ASC
             LIMIT ?
             """,
@@ -254,6 +261,23 @@ def ensure_sync_rule(series_id: int, settings: dict[str, str], enabled: bool | N
         )
 
 
+def requeue_sync_tasks_for_series(series_id: int, settings: dict[str, str]) -> int:
+    with connect() as conn:
+        assets = conn.execute(
+            """
+            SELECT ca.id, ca.cloud_name
+            FROM cloud_assets ca
+            WHERE ca.series_id=? AND ca.status='available'
+            ORDER BY ca.episode_number ASC
+            """,
+            (series_id,),
+        ).fetchall()
+        if not assets:
+            return 0
+    queued, _ = queue_sync_for_series(series_id, settings)
+    return queued
+
+
 def local_episode_path(cloud_asset: dict, series: dict, settings: dict[str, str]) -> str:
     root = Path(settings.get("local_library_root") or "/media/pikpak-anime")
     series_dir = render_series_dir(series, settings)
@@ -268,6 +292,15 @@ def local_episode_path(cloud_asset: dict, series: dict, settings: dict[str, str]
     if suffix and not filename.endswith(suffix):
         filename = f"{filename}{suffix}"
     return str(root / series_dir / season_dir / filename)
+
+
+def normalize_local_target_path(target_path: str, source_name: str = "") -> str:
+    path = Path(target_path)
+    suffix = path.suffix or Path(source_name).suffix
+    stem = path.stem
+    stem = re.sub(r"\(\d+\)$", "", stem).rstrip()
+    normalized = path.with_name(f"{stem}{suffix}")
+    return str(normalized)
 
 
 def queue_sync_for_series(series_id: int, settings: dict[str, str]) -> tuple[int, str]:
@@ -289,7 +322,10 @@ def queue_sync_for_series(series_id: int, settings: dict[str, str]) -> tuple[int
         queued = 0
         for asset in assets:
             series = conn.execute("SELECT * FROM series WHERE id=?", (asset["series_id"],)).fetchone()
-            target = local_episode_path(dict(asset), dict(series), settings)
+            target = normalize_local_target_path(
+                local_episode_path(dict(asset), dict(series), settings),
+                str(asset["cloud_name"] or ""),
+            )
             conn.execute(
                 """
                 INSERT INTO sync_tasks
@@ -297,11 +333,20 @@ def queue_sync_for_series(series_id: int, settings: dict[str, str]) -> tuple[int
                    created_at, updated_at)
                 VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)
                 ON CONFLICT(cloud_asset_id, sync_direction) DO UPDATE SET
-                  status=CASE WHEN sync_tasks.status='synced' THEN sync_tasks.status ELSE 'pending' END,
+                  status=CASE
+                    WHEN sync_tasks.status='synced' AND sync_tasks.target_path=excluded.target_path THEN sync_tasks.status
+                    ELSE 'pending'
+                  END,
                   source_path=excluded.source_path,
                   target_path=excluded.target_path,
-                  retry_after='',
-                  last_error='',
+                  retry_after=CASE
+                    WHEN sync_tasks.status='synced' AND sync_tasks.target_path=excluded.target_path THEN sync_tasks.retry_after
+                    ELSE ''
+                  END,
+                  last_error=CASE
+                    WHEN sync_tasks.status='synced' AND sync_tasks.target_path=excluded.target_path THEN sync_tasks.last_error
+                    ELSE ''
+                  END,
                   updated_at=excluded.updated_at
                 """,
                 (
@@ -359,9 +404,12 @@ def backfill_cloud_assets_from_completed_tasks(settings: dict[str, str]) -> int:
             """
             SELECT dt.id
             FROM download_tasks dt
+            JOIN cloud_submissions cs ON cs.download_task_id=dt.id
             LEFT JOIN cloud_assets ca ON ca.task_id=dt.id
             WHERE dt.status='completed'
               AND dt.pikpak_file_id != ''
+              AND cs.provider='pikpak'
+              AND cs.status='completed'
               AND ca.id IS NULL
             ORDER BY dt.id ASC
             """
@@ -503,6 +551,7 @@ def upsert_scanned_cloud_asset(item: dict, series: dict, settings: dict[str, str
 
 
 def upsert_cloud_asset_from_download_task(task_id: int, item: dict, settings: dict[str, str]) -> int | None:
+    created = False
     file_id = cloud_file_id(item)
     name = str(item.get("name") or Path(str(item.get("cloud_path") or "")).name)
     path = str(item.get("cloud_path") or name)
@@ -553,6 +602,7 @@ def upsert_cloud_asset_from_download_task(task_id: int, item: dict, settings: di
                 ),
             )
         else:
+            created = True
             conn.execute(
                 """
                 INSERT INTO cloud_assets
@@ -580,7 +630,8 @@ def upsert_cloud_asset_from_download_task(task_id: int, item: dict, settings: di
             )
         asset = conn.execute("SELECT id FROM cloud_assets WHERE task_id=?", (task["id"],)).fetchone()
     if asset:
-        log("info", f"云盘资源已入库: {name}")
+        if created:
+            log("info", f"云盘资源已入库: {name}")
         return int(asset["id"])
     return None
 
@@ -595,8 +646,11 @@ async def reconcile_rclone_submitted_tasks(settings: dict[str, str], limit: int 
             FROM download_tasks dt
             JOIN releases r ON r.id=dt.release_id
             JOIN series s ON s.id=dt.series_id
+            JOIN cloud_submissions cs ON cs.download_task_id=dt.id
             WHERE dt.status='submitted'
               AND s.bangumi_id != ''
+              AND cs.provider='pikpak'
+              AND cs.status='submitted'
               AND (dt.retry_after='' OR dt.retry_after <= ?)
             ORDER BY dt.id ASC
             LIMIT ?
@@ -625,6 +679,20 @@ async def reconcile_rclone_submitted_tasks(settings: dict[str, str], limit: int 
                     """,
                     (task_retry_after(settings, int(task["attempts"] or 0) + 1), error_text[:2000], now(), task["id"]),
                 )
+                conn.execute(
+                    """
+                    UPDATE cloud_submissions
+                    SET status='submitted', retry_after=?, last_error=?, updated_at=?, last_seen_at=?
+                    WHERE download_task_id=?
+                    """,
+                    (
+                        task_retry_after(settings, int(task["attempts"] or 0) + 1),
+                        error_text[:2000],
+                        now(),
+                        now(),
+                        task["id"],
+                    ),
+                )
             log("warn", f"rclone 云盘状态检查失败: {task['release_title']} - {error_text}")
             missing += 1
             continue
@@ -652,6 +720,20 @@ async def reconcile_rclone_submitted_tasks(settings: dict[str, str], limit: int 
                     """,
                     (task_retry_after(settings, int(task["attempts"] or 0) + 1), now(), task["id"]),
                 )
+                conn.execute(
+                    """
+                    UPDATE cloud_submissions
+                    SET status='submitted', retry_after=?, last_error='rclone 已提交，目标目录暂未发现完成文件',
+                        updated_at=?, last_seen_at=?
+                    WHERE download_task_id=?
+                    """,
+                    (
+                        task_retry_after(settings, int(task["attempts"] or 0) + 1),
+                        now(),
+                        now(),
+                        task["id"],
+                    ),
+                )
             missing += 1
             continue
         asset_id = upsert_cloud_asset_from_download_task(int(task["id"]), matched, settings)
@@ -663,6 +745,20 @@ async def reconcile_rclone_submitted_tasks(settings: dict[str, str], limit: int 
             conn.execute(
                 "UPDATE download_tasks SET status='completed', retry_after='', last_error='', updated_at=? WHERE id=?",
                 (ts, task["id"]),
+            )
+            conn.execute(
+                """
+                UPDATE cloud_submissions
+                SET status='completed', provider_file_id=?, retry_after='', last_error='',
+                    updated_at=?, last_seen_at=?
+                WHERE download_task_id=?
+                """,
+                (
+                    str(matched.get("id") or matched.get("file_id") or matched.get("fileId") or ""),
+                    ts,
+                    ts,
+                    task["id"],
+                ),
             )
             enqueue_cloud_asset_task(conn, int(task["id"]), ts)
         completed += 1
@@ -802,10 +898,50 @@ async def _process_sync_tasks(settings: dict[str, str], limit: int = 5) -> None:
                         (percent, text[:500], now(), task["id"]),
                     )
 
+            normalized_target = normalize_local_target_path(
+                str(task["target_path"] or ""),
+                str(task["cloud_name"] or ""),
+            )
+            target_file = Path(normalized_target)
+            if target_file.exists() and target_file.stat().st_size > 0:
+                with connect() as conn:
+                    ts = now()
+                    conn.execute(
+                        """
+                        INSERT INTO local_assets
+                          (cloud_asset_id, release_id, series_id, episode_number, local_path,
+                           nfo_status, status, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, 'pending', 'synced', ?, ?)
+                        ON CONFLICT(cloud_asset_id) DO UPDATE SET
+                          local_path=excluded.local_path,
+                          status='synced',
+                          updated_at=excluded.updated_at
+                        """,
+                        (
+                            task["cloud_asset_id"],
+                            task["release_id"],
+                            task["series_id"],
+                            conn.execute("SELECT episode_number FROM cloud_assets WHERE id=?", (task["cloud_asset_id"],)).fetchone()["episode_number"],
+                            normalized_target,
+                            ts,
+                            ts,
+                        ),
+                    )
+                    conn.execute(
+                        """
+                        UPDATE sync_tasks
+                        SET status='synced', target_path=?, progress=100, progress_text='本地已存在，跳过重复同步',
+                            retry_after='', last_error='', updated_at=?
+                        WHERE id=?
+                        """,
+                        (normalized_target, ts, task["id"]),
+                    )
+                return True
+
             await download_cloud_file_to_local(
                 task["provider_file_id"],
                 task["source_path"],
-                task["target_path"],
+                normalized_target,
                 settings,
                 progress_cb=progress_cb,
             )
@@ -817,7 +953,7 @@ async def _process_sync_tasks(settings: dict[str, str], limit: int = 5) -> None:
                     SET status='pending', retry_after=?, last_error=?, updated_at=?
                     WHERE id=?
                     """,
-                    (task_retry_after(settings, int(task["attempts"] or 0) + 1), str(exc)[:2000], now(), task["id"]),
+                (task_retry_after(settings, int(task["attempts"] or 0) + 1), str(exc)[:2000], now(), task["id"]),
                 )
             log("error", f"本地同步失败: {task['cloud_name']} - {exc}")
             return False
@@ -837,16 +973,16 @@ async def _process_sync_tasks(settings: dict[str, str], limit: int = 5) -> None:
                   status='synced',
                   updated_at=excluded.updated_at
                 """,
-                (task["target_path"], ts, ts, task["cloud_asset_id"]),
+                (normalized_target, ts, ts, task["cloud_asset_id"]),
             )
             conn.execute(
                 """
                 UPDATE sync_tasks
-                SET status='synced', progress=100, progress_text='同步完成',
+                SET status='synced', target_path=?, progress=100, progress_text='同步完成',
                     retry_after='', last_error='', updated_at=?
                 WHERE id=?
                 """,
-                (ts, task["id"]),
+                (normalized_target, ts, task["id"]),
             )
         nfo_settings = dict(settings)
         nfo_settings["nfo_output_root"] = settings.get("local_library_root") or "/media/pikpak-anime"
