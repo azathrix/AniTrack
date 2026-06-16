@@ -1,6 +1,12 @@
 services:
   autoanime:
-    build: .
+    build:
+      context: .
+      args:
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        ALL_PROXY: ${ALL_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-}
     image: autoanime:local
     container_name: autoanime
     restart: unless-stopped

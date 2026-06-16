@@ -65,16 +65,35 @@ docker compose up -d --build
 
 这会先停止并删除当前 compose 管理的容器，再重新构建启动。挂载的 `./data` 和媒体目录不会被删除。
 
-首次部署后需要在容器内配置 rclone PikPak remote：
+镜像会在容器内安装 rclone。若 NAS 访问 rclone.org 或 GitHub 较慢，可以给构建阶段加代理：
 
 ```sh
-docker exec -it autoanime rclone config --config /data/rclone/rclone.conf
+cd /volume1/docker/autoanime
+export HTTP_PROXY=http://NAS_IP:20171
+export HTTPS_PROXY=http://NAS_IP:20171
+export ALL_PROXY=socks5://NAS_IP:20170
+docker compose down --remove-orphans
+docker compose up -d --build
 ```
 
-推荐 remote 名称：
+按你的代理实际端口修改；没有代理时不用设置这些变量。
+
+默认会使用 UI 中已有的 PikPak 用户名和密码自动生成 rclone 配置：
+
+```txt
+/data/rclone/rclone.conf
+```
+
+remote 名称默认：
 
 ```txt
 pikpak
+```
+
+只有自动初始化失败，或你想使用已有 rclone 配置时，才需要手动进入容器配置：
+
+```sh
+docker exec -it autoanime rclone config --config /data/rclone/rclone.conf
 ```
 
 UI 中默认配置为：

@@ -219,6 +219,8 @@ docker compose up -d --build
   - `rclone backend addurl` 提交 magnet/torrent 到 PikPak。
   - `rclone lsjson` 扫描云盘目录，发现已完成文件。
   - `rclone copyto` 同步云盘文件到 NAS 本地。
+  - 如果 `/data/rclone/rclone.conf` 中没有默认 remote，会用现有 PikPak 用户名和密码自动生成 `type=pikpak` 配置。
+  - Docker 镜像内置 rclone；构建支持 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY`、`NO_PROXY` build args。
   - Python PikPak API 保留为 fallback。
 - PikPak 提交默认不预先初始化 captcha；只有返回验证码相关错误时才初始化 captcha 并重试一次，避免额外 API 调用触发限流。
 - PikPak 提交、PikPak 状态轮询、云盘资源登记已拆成独立任务表。

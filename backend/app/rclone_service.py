@@ -33,7 +33,65 @@ def config_args(settings: dict[str, str]) -> list[str]:
     return ["--config", config_path]
 
 
+def remote_exists(settings: dict[str, str]) -> bool:
+    config_path = settings.get("rclone_config_path") or ""
+    if not config_path:
+        return True
+    path = Path(config_path)
+    if not path.exists():
+        return False
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return f"[{remote(settings)}]" in text
+
+
+async def ensure_config(settings: dict[str, str]) -> None:
+    if not enabled(settings) or remote_exists(settings):
+        return
+    username = (settings.get("pikpak_username") or "").strip()
+    password = settings.get("pikpak_password") or ""
+    config_path = settings.get("rclone_config_path") or ""
+    if not username or not password or not config_path:
+        raise RuntimeError("rclone PikPak 未配置，且缺少 PikPak 用户名或密码，无法自动初始化")
+    obscured = await obscure_password(settings, password)
+    path = Path(config_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    existing = ""
+    if path.exists():
+        existing = path.read_text(encoding="utf-8", errors="replace").rstrip()
+    block = "\n".join(
+        [
+            f"[{remote(settings)}]",
+            "type = pikpak",
+            f"user = {username}",
+            f"pass = {obscured}",
+            "",
+        ]
+    )
+    content = f"{existing}\n\n{block}" if existing else block
+    path.write_text(content, encoding="utf-8")
+
+
+async def obscure_password(settings: dict[str, str], password: str) -> str:
+    process = await asyncio.create_subprocess_exec(
+        command(settings),
+        "obscure",
+        password,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await process.communicate()
+    output = stdout.decode("utf-8", errors="replace").strip()
+    error = stderr.decode("utf-8", errors="replace").strip()
+    if process.returncode != 0 or not output:
+        raise RuntimeError((error or output or "rclone obscure 失败")[:2000])
+    return output
+
+
 async def run_rclone(settings: dict[str, str], args: list[str], timeout: float | None = 300) -> str:
+    await ensure_config(settings)
     process = await asyncio.create_subprocess_exec(
         command(settings),
         *config_args(settings),
