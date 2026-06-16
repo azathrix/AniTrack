@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -69,6 +70,27 @@ def rows_to_dicts(rows: list[Any]) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+def seconds_until(value: str) -> int:
+    if not value:
+        return 0
+    try:
+        target = datetime.fromisoformat(value)
+    except ValueError:
+        return 0
+    if target.tzinfo is None:
+        target = target.replace(tzinfo=timezone.utc)
+    return max(0, int((target - datetime.now(timezone.utc)).total_seconds()))
+
+
+def enrich_download_tasks(rows: list[Any]) -> list[dict[str, Any]]:
+    result = rows_to_dicts(rows)
+    for row in result:
+        retry_seconds = seconds_until(str(row.get("retry_after") or ""))
+        row["retry_seconds"] = retry_seconds
+        row["waiting_retry"] = row.get("status") == "pending" and retry_seconds > 0
+    return result
+
+
 def split_setting(value: str) -> list[str]:
     return [x.strip() for x in (value or "").splitlines() if x.strip()]
 
@@ -92,13 +114,19 @@ def reschedule() -> None:
     scheduler.remove_all_jobs()
     settings = get_settings()
     minutes = max(1, int(settings.get("scan_interval_minutes") or 60))
-    scheduler.add_job(lambda: asyncio.create_task(scheduled_scan()), "interval", minutes=minutes)
+    scheduler.add_job(lambda: asyncio.create_task(scheduled_scan()), "interval", minutes=minutes, id="rss_scan")
+    scheduler.add_job(lambda: asyncio.create_task(scheduled_queue_tick()), "interval", minutes=1, id="queue_tick")
 
 
 async def scheduled_scan() -> None:
     settings = get_settings()
     if bool_setting(settings.get("auto_scan", "false")):
         await scan_and_queue(settings)
+    await scheduled_queue_tick()
+
+
+async def scheduled_queue_tick() -> None:
+    settings = get_settings()
     await process_mikan_match_tasks(settings)
     await process_metadata_tasks(settings)
     await process_tasks(settings)
@@ -171,6 +199,14 @@ def queue_summary(settings: dict[str, str]) -> list[dict[str, Any]]:
                 "SELECT status, COUNT(*) AS count FROM download_tasks GROUP BY status"
             ).fetchall()
         }
+        cloud_retry = conn.execute(
+            """
+            SELECT COUNT(*) AS count, MIN(retry_after) AS next_retry_after
+            FROM download_tasks
+            WHERE status='pending' AND retry_after != '' AND retry_after > ?
+            """,
+            (now(),),
+        ).fetchone()
         sync_rows = {
             row["status"]: row["count"]
             for row in conn.execute(
@@ -226,6 +262,9 @@ def queue_summary(settings: dict[str, str]) -> list[dict[str, Any]]:
             "pending": cloud_rows.get("pending", 0),
             "running": cloud_rows.get("running", 0) + cloud_rows.get("submitted", 0),
             "failed": cloud_rows.get("failed", 0),
+            "waiting": cloud_retry["count"] if cloud_retry else 0,
+            "next_retry_after": cloud_retry["next_retry_after"] if cloud_retry else "",
+            "next_retry_seconds": seconds_until(cloud_retry["next_retry_after"] if cloud_retry else ""),
             "description": "提交离线任务并轮询 PikPak 状态",
         },
         {
@@ -414,7 +453,7 @@ def dashboard_data() -> dict[str, Any]:
     return {
         "series": rows_to_dicts(series),
         "rss_candidates": rows_to_dicts(rss_candidates),
-        "tasks": rows_to_dicts(tasks),
+        "tasks": enrich_download_tasks(tasks),
         "logs": rows_to_dicts(logs),
         "cloud_assets": rows_to_dicts(cloud_assets),
         "sync_rules": rows_to_dicts(sync_rules),
@@ -422,7 +461,7 @@ def dashboard_data() -> dict[str, Any]:
         "operations": rows_to_dicts(operations),
         "calendar": rows_to_dicts(calendar),
         "task_counts": {row["status"]: row["count"] for row in task_counts},
-        "active_tasks": rows_to_dicts(active_tasks),
+        "active_tasks": enrich_download_tasks(active_tasks),
         "queue_summary": queue_summary(settings),
         "server_logs": read_server_logs(160),
     }
@@ -506,7 +545,7 @@ async def api_series(series_id: int) -> dict[str, Any]:
     return {
         "series": row_to_dict(series),
         "releases": rows_to_dicts(releases),
-        "tasks": rows_to_dicts(tasks),
+        "tasks": enrich_download_tasks(tasks),
         "cloud_assets": rows_to_dicts(cloud_assets),
         "local_assets": rows_to_dicts(local_assets),
         "groups": groups,
@@ -579,13 +618,13 @@ async def api_scan() -> dict[str, str]:
 
 
 @app.post("/api/tasks/process")
-async def api_process_tasks() -> dict[str, str]:
+async def api_process_tasks(force: bool = Query(False)) -> dict[str, str]:
     operation_id = run_operation(
-        "云盘队列处理",
-        lambda: process_tasks(get_settings()),
-        "正在提交 PikPak 云盘任务",
+        "云盘队列立即处理" if force else "云盘队列处理",
+        lambda: process_tasks(get_settings(), force=force),
+        "正在立即提交 PikPak 云盘任务" if force else "正在提交 PikPak 云盘任务",
     )
-    return {"status": "started", "operation_id": str(operation_id), "message": "队列处理已启动"}
+    return {"status": "started", "operation_id": str(operation_id), "message": "云盘队列已立即触发" if force else "队列处理已启动"}
 
 
 @app.post("/api/tasks/poll")
@@ -633,7 +672,7 @@ async def api_retry_failed() -> dict[str, str]:
         cursor = conn.execute(
             """
             UPDATE download_tasks
-            SET status='pending', attempts=0, last_error='', updated_at=?
+            SET status='pending', attempts=0, retry_after='', last_error='', updated_at=?
             WHERE status='failed'
             """,
             (now(),),

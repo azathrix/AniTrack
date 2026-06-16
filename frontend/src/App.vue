@@ -76,6 +76,7 @@
                 </el-tag>
               </div>
               <p>{{ queue.description }}</p>
+              <p v-if="queue.waiting" class="queue-note">等待重试 {{ queue.waiting }} 个，下次约 {{ formatCountdown(queue.next_retry_seconds) }}</p>
               <div class="queue-counts">
                 <span>待处理 <b>{{ queue.pending }}</b></span>
                 <span>运行中 <b>{{ queue.running }}</b></span>
@@ -124,7 +125,7 @@
             <el-tab-pane label="云盘队列" name="cloud">
               <el-table :data="runningRows" height="420">
                 <el-table-column prop="status" label="状态" width="120">
-                  <template #default="{ row }"><el-tag :type="taskTag(row.status)">{{ row.status }}</el-tag></template>
+                  <template #default="{ row }"><el-tag :type="taskTag(row.status)">{{ taskStatusText(row) }}</el-tag></template>
                 </el-table-column>
                 <el-table-column prop="title_cn" label="番剧" min-width="180" />
                 <el-table-column prop="episode_number" label="集" width="70" />
@@ -133,6 +134,9 @@
                 <el-table-column prop="language" label="语言" width="90" />
                 <el-table-column prop="target_dir" label="目标目录" min-width="260" />
                 <el-table-column prop="last_error" label="错误" min-width="220" />
+                <el-table-column label="下次处理" width="130">
+                  <template #default="{ row }">{{ row.waiting_retry ? formatCountdown(row.retry_seconds) : '-' }}</template>
+                </el-table-column>
               </el-table>
             </el-tab-pane>
 
@@ -166,6 +170,7 @@
             <el-tab-pane label="维护" name="maintenance">
               <div class="maintenance-actions">
                 <el-button type="primary" :icon="Search" :disabled="scanRunning" @click="runAction('/scan')">扫描全部</el-button>
+                <el-button type="primary" plain @click="runAction('/tasks/process?force=true')">立即处理云盘队列</el-button>
                 <el-button :icon="Refresh" @click="runAction('/tasks/poll')">刷新 PikPak 状态</el-button>
                 <el-button @click="runAction('/cloud/scan')">扫描云盘库</el-button>
                 <el-button type="warning" @click="runAction('/tasks/retry-failed')">重试失败任务</el-button>
@@ -367,12 +372,15 @@
           <el-tab-pane label="云盘任务">
             <el-table :data="selectedSeries.tasks" height="320">
               <el-table-column prop="status" label="状态" width="110">
-                <template #default="{ row }"><el-tag :type="taskTag(row.status)">{{ row.status }}</el-tag></template>
+                <template #default="{ row }"><el-tag :type="taskTag(row.status)">{{ taskStatusText(row) }}</el-tag></template>
               </el-table-column>
               <el-table-column prop="target_dir" label="目标目录" min-width="220" show-overflow-tooltip />
               <el-table-column prop="pikpak_task_id" label="PikPak 任务" min-width="180" show-overflow-tooltip />
               <el-table-column prop="pikpak_file_id" label="文件 ID" min-width="180" show-overflow-tooltip />
               <el-table-column prop="last_error" label="错误" min-width="220" show-overflow-tooltip />
+              <el-table-column label="下次处理" width="130">
+                <template #default="{ row }">{{ row.waiting_retry ? formatCountdown(row.retry_seconds) : '-' }}</template>
+              </el-table-column>
             </el-table>
           </el-tab-pane>
           <el-tab-pane label="云盘资源">
@@ -521,9 +529,24 @@ function taskTag(status) {
   return 'info'
 }
 
+function taskStatusText(row) {
+  if (row?.waiting_retry) return '等待重试'
+  return row?.status || ''
+}
+
+function formatCountdown(seconds) {
+  const value = Math.max(0, Number(seconds || 0))
+  if (!value) return '即将执行'
+  const minutes = Math.floor(value / 60)
+  const rest = value % 60
+  if (minutes <= 0) return `${rest} 秒`
+  return `${minutes} 分 ${rest} 秒`
+}
+
 function queueState(queue) {
   if (Number(queue.failed || 0) > 0) return '失败'
   if (Number(queue.running || 0) > 0) return '运行中'
+  if (Number(queue.waiting || 0) > 0) return '等待重试'
   if (Number(queue.pending || 0) > 0) return '待处理'
   return '空闲'
 }

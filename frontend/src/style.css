@@ -22,7 +22,11 @@ body {
 .sidebar {
   background: #111827;
   color: #e5e7eb;
+  height: 100vh;
   padding: 22px 16px;
+  position: sticky;
+  top: 0;
+  align-self: start;
 }
 
 .brand {
@@ -252,6 +256,10 @@ h1 {
   color: #64748b;
   font-size: 13px;
   margin: 0;
+}
+
+.queue-note {
+  color: #b45309 !important;
 }
 
 .queue-counts {

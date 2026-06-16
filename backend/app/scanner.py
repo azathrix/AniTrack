@@ -707,8 +707,17 @@ def retry_after_time(settings: dict[str, str]) -> str:
     return (datetime.now(timezone.utc) + timedelta(minutes=minutes)).isoformat()
 
 
-async def process_tasks(settings: dict[str, str], limit: int = 1) -> None:
+async def process_tasks(settings: dict[str, str], limit: int = 1, force: bool = False) -> None:
     with connect() as conn:
+        if force:
+            conn.execute(
+                """
+                UPDATE download_tasks
+                SET retry_after='', updated_at=?
+                WHERE status='pending' AND retry_after != ''
+                """,
+                (now(),),
+            )
         rows = conn.execute(
             """
             SELECT dt.*, r.magnet, r.torrent_url, r.title
@@ -736,8 +745,14 @@ async def process_tasks(settings: dict[str, str], limit: int = 1) -> None:
             continue
         with connect() as conn:
             conn.execute(
-                "UPDATE download_tasks SET status='running', attempts=attempts+1, updated_at=? WHERE id=?",
-                (now(), task["id"]),
+                """
+                UPDATE download_tasks
+                SET status='running',
+                    attempts=CASE WHEN ?=1 THEN attempts ELSE attempts+1 END,
+                    updated_at=?
+                WHERE id=?
+                """,
+                (1 if force else 0, now(), task["id"]),
             )
         try:
             result = await submit_offline_download(settings, source, task["target_dir"])
@@ -772,7 +787,7 @@ async def process_tasks(settings: dict[str, str], limit: int = 1) -> None:
                     WHERE id=?
                     """,
                     (task_id, file_id, now(), task["id"]),
-            )
+                )
             log("info", f"已提交 PikPak: {task['title']}")
 
 
