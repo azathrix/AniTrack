@@ -263,50 +263,65 @@ async def run_full_refresh(settings: dict[str, str], operation_id: int | None = 
             conn.execute(f"UPDATE {table} SET retry_after='', updated_at=?", (now(),))
     if operation_id:
         update_operation(operation_id, "1/8 正在扫描 RSS")
+    log("info", "扫描全部: 1/8 开始扫描 RSS")
     scan_message = await scan_and_queue(settings)
     repaired_mikan = enqueue_missing_mikan_match_tasks(now())
+    log("info", f"扫描全部: RSS 完成，{scan_message}；补排 Mikan 匹配 {repaired_mikan} 个")
     if not runtime_generation_alive(generation):
         return "运行数据已重置，本次扫描已中止"
     if operation_id:
         update_operation(operation_id, "2/8 正在匹配 Mikan Bangumi")
+    log("info", "扫描全部: 2/8 开始匹配 Mikan Bangumi")
     mikan_done, mikan_failed = await process_mikan_match_tasks(settings)
     repaired_series_mikan = repair_series_mikan_ids(now())
+    log("info", f"扫描全部: Mikan 匹配完成，成功 {mikan_done} 个，失败 {mikan_failed} 个；回填番剧 Mikan ID {repaired_series_mikan} 个")
     if not runtime_generation_alive(generation):
         return "运行数据已重置，本次扫描已中止"
     if operation_id:
         update_operation(operation_id, "3/8 正在处理元数据队列")
+    log("info", "扫描全部: 3/8 开始处理元数据队列")
     metadata_done, metadata_failed = await process_metadata_tasks(settings)
+    log("info", f"扫描全部: 元数据完成，成功 {metadata_done} 个，失败 {metadata_failed} 个")
     if not runtime_generation_alive(generation):
         return "运行数据已重置，本次扫描已中止"
     if operation_id:
         update_operation(operation_id, "4/8 正在处理自动选集/补全")
+    log("info", "扫描全部: 4/8 开始处理自动选集和整季补全")
     selection_done, selection_failed = await process_selection_tasks(settings)
     backfill_done, backfill_failed = await process_backfill_tasks(settings)
+    log("info", f"扫描全部: 选集完成，成功 {selection_done} 个，失败 {selection_failed} 个；补全完成，成功 {backfill_done} 个，失败 {backfill_failed} 个")
     if not runtime_generation_alive(generation):
         return "运行数据已重置，本次扫描已中止"
     if operation_id:
         update_operation(operation_id, "5/8 正在处理 PikPak 入库队列")
+    log("info", "扫描全部: 5/8 开始处理 PikPak 入库队列")
     await process_tasks(settings)
     if not runtime_generation_alive(generation):
         return "运行数据已重置，本次扫描已中止"
     if operation_id:
         update_operation(operation_id, "6/8 正在刷新 PikPak 任务状态")
+    log("info", "扫描全部: 6/8 开始刷新 PikPak 任务状态")
     rclone_done, rclone_missing = await reconcile_rclone_submitted_tasks(settings)
     poll_done, poll_failed = await poll_submitted_tasks(settings)
+    log("info", f"扫描全部: 云盘状态刷新完成，rclone 已完成 {rclone_done} 个，未发现 {rclone_missing} 个；PikPak 完成 {poll_done} 个，失败 {poll_failed} 个")
     if not runtime_generation_alive(generation):
         return "运行数据已重置，本次扫描已中止"
     if operation_id:
         update_operation(operation_id, "7/8 正在登记云盘资源")
+    log("info", "扫描全部: 7/8 开始登记云盘资源")
     cloud_done, cloud_failed = await process_cloud_asset_tasks(settings)
     cloud_count = backfill_cloud_assets_from_completed_tasks(settings)
+    log("info", f"扫描全部: 云盘资源登记完成，登记 {cloud_done} 个，失败 {cloud_failed} 个，补齐 {cloud_count} 个")
     if not runtime_generation_alive(generation):
         return "运行数据已重置，本次扫描已中止"
     if operation_id:
         update_operation(operation_id, "8/8 正在调和本地同步")
+    log("info", "扫描全部: 8/8 开始调和本地同步")
     reconciled, queued = reconcile_sync_intents(settings)
     if queued:
         if operation_id:
             update_operation(operation_id, "8/8 正在同步到本地")
+        log("info", f"扫描全部: 本地同步排队 {queued} 个，开始执行同步")
         await process_sync_tasks(settings)
     global queue_debounce_task
     if queue_debounce_task and not queue_debounce_task.done():
@@ -544,6 +559,7 @@ app = FastAPI(title="AutoAnime", lifespan=lifespan)
 
 def run_operation(name: str, coro_factory, start_message: str = "") -> int:
     operation_id = start_operation(name, start_message)
+    log("info", f"{name} 已启动: {start_message or '处理中'}")
 
     async def runner() -> None:
         try:
@@ -553,6 +569,7 @@ def run_operation(name: str, coro_factory, start_message: str = "") -> int:
             log("error", f"{name} 失败: {exc}")
             return
         finish_operation(operation_id, "completed", str(message or "完成"))
+        log("info", f"{name} 完成: {message or '完成'}")
 
     asyncio.create_task(runner())
     return operation_id
@@ -560,6 +577,7 @@ def run_operation(name: str, coro_factory, start_message: str = "") -> int:
 
 def run_progress_operation(name: str, coro_factory, start_message: str = "") -> int:
     operation_id = start_operation(name, start_message)
+    log("info", f"{name} 已启动: {start_message or '处理中'}")
 
     async def runner() -> None:
         try:
@@ -569,6 +587,7 @@ def run_progress_operation(name: str, coro_factory, start_message: str = "") -> 
             log("error", f"{name} 失败: {exc}")
             return
         finish_operation(operation_id, "completed", str(message or "完成"))
+        log("info", f"{name} 完成: {message or '完成'}")
 
     asyncio.create_task(runner())
     return operation_id
