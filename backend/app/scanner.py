@@ -371,6 +371,28 @@ def enqueue_missing_mikan_match_tasks(ts: str) -> int:
     return len(rows)
 
 
+def repair_series_mikan_ids(ts: str) -> int:
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT s.id, rc.mikan_bangumi_id
+            FROM series s
+            JOIN rss_candidates rc ON rc.bangumi_id=s.bangumi_id
+            WHERE s.bangumi_id != ''
+              AND s.mikan_bangumi_id = ''
+              AND rc.mikan_bangumi_id != ''
+            GROUP BY s.id
+            ORDER BY rc.id DESC
+            """
+        ).fetchall()
+        for row in rows:
+            conn.execute(
+                "UPDATE series SET mikan_bangumi_id=?, updated_at=? WHERE id=?",
+                (row["mikan_bangumi_id"], ts, row["id"]),
+            )
+    return len(rows)
+
+
 def candidate_to_parsed_release(candidate) -> ParsedRelease:
     return ParsedRelease(
         guid=candidate["guid"],
