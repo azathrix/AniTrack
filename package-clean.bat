@@ -4,6 +4,26 @@ setlocal
 set "ROOT=%~dp0"
 set "ROOT=%ROOT:~0,-1%"
 set "BUILD_DIR=%ROOT%\build"
+set "FRONTEND_DIR=%ROOT%\frontend"
+set "VERSION_FILE=%FRONTEND_DIR%\src\version.js"
+
+for /f "usebackq delims=" %%i in (`powershell -NoProfile -Command "(Get-Content '%FRONTEND_DIR%\package.json' -Raw | ConvertFrom-Json).version"`) do set "APP_VERSION=%%i"
+for /f "usebackq delims=" %%i in (`powershell -NoProfile -Command "Get-Date -Format 'yyyyMMdd-HHmmss'"`) do set "APP_BUILD=%%i"
+
+powershell -NoProfile -Command "$content = @('export const APP_VERSION = ''%APP_VERSION%''', 'export const APP_BUILD = ''%APP_BUILD%'''); Set-Content -LiteralPath '%VERSION_FILE%' -Value $content -Encoding UTF8"
+if errorlevel 1 (
+  echo Failed to write version file.
+  exit /b 1
+)
+
+pushd "%FRONTEND_DIR%"
+call npm run build
+if errorlevel 1 (
+  popd
+  echo Frontend build failed.
+  exit /b 1
+)
+popd
 
 if not exist "%BUILD_DIR%" mkdir "%BUILD_DIR%"
 

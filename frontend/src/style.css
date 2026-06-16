@@ -320,6 +320,18 @@ h1 {
   grid-template-columns: minmax(280px, 380px) 1fr;
 }
 
+.log-console {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.log-toolbar {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
 .server-log {
   background: #0f172a;
   border-radius: 8px;

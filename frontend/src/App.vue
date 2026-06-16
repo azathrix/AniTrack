@@ -203,7 +203,13 @@
                   </div>
                   <el-button v-if="dashboard.operations.length" plain @click="runAction('/operations/clear')">清空已结束操作</el-button>
                 </div>
-                <pre class="server-log">{{ serverLogText }}</pre>
+                <div class="log-console">
+                  <div class="log-toolbar">
+                    <el-input v-model="logKeyword" clearable placeholder="搜索日志" />
+                    <el-button plain @click="runAction('/logs/clear')">清空日志</el-button>
+                  </div>
+                  <pre class="server-log">{{ filteredServerLogText }}</pre>
+                </div>
               </div>
             </el-tab-pane>
 
@@ -475,6 +481,7 @@ const view = ref('dashboard')
 const appVersion = APP_VERSION
 const appBuild = APP_BUILD
 const consoleTab = ref('issues')
+const logKeyword = ref('')
 const loading = ref(false)
 const savingSettings = ref(false)
 const autoRefresh = ref(true)
@@ -555,7 +562,13 @@ const scanProgress = computed(() => {
   if (!match) return scanRunning.value ? 12 : 0
   return Math.min(95, Math.round(Number(match[1]) / Number(match[2]) * 100))
 })
-const serverLogText = computed(() => (dashboard.server_logs || []).join('\n'))
+const filteredServerLogs = computed(() => {
+  const keyword = logKeyword.value.trim().toLowerCase()
+  const rows = dashboard.server_logs || []
+  if (!keyword) return rows
+  return rows.filter(line => String(line || '').toLowerCase().includes(keyword))
+})
+const filteredServerLogText = computed(() => filteredServerLogs.value.join('\n'))
 const selectedSeriesStats = computed(() => {
   const id = selectedSeries.value?.series?.id
   return dashboard.series.find(item => item.id === id) || {}

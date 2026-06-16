@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .config import APP_DIR
-from .db import cleanup_operations, clear_runtime_data, connect, diagnostics, finish_operation, get_runtime_generation, get_settings, init_db, log, merge_duplicate_series, now, read_server_logs, save_settings, start_operation, update_operation
+from .db import LOG_PATH, cleanup_operations, clear_runtime_data, connect, diagnostics, finish_operation, get_runtime_generation, get_settings, init_db, log, merge_duplicate_series, now, read_server_logs, save_settings, start_operation, update_operation
 from .library import bool_setting
 from .metadata import generate_nfo_for_series, refresh_series_metadata
 from .scanner import enqueue_backfill_task, enqueue_missing_mikan_match_tasks, enqueue_selection_task, mark_selected_releases, poll_submitted_tasks, process_backfill_tasks, process_metadata_tasks, process_mikan_match_tasks, process_selection_tasks, process_tasks, queue_release, repair_series_mikan_ids, resolve_series_choice, scan_and_queue
@@ -1059,6 +1059,17 @@ async def api_clear_operations() -> dict[str, str]:
             "DELETE FROM operations WHERE status IN ('completed', 'failed')"
         )
     return {"status": "completed", "count": str(cursor.rowcount), "message": "已清空已结束操作"}
+
+
+@app.post("/api/logs/clear")
+async def api_clear_logs() -> dict[str, str]:
+    with connect() as conn:
+        cursor = conn.execute("DELETE FROM logs")
+    try:
+        LOG_PATH.unlink(missing_ok=True)
+    except OSError:
+        pass
+    return {"status": "completed", "count": str(cursor.rowcount), "message": "已清空日志"}
 
 
 @app.post("/api/system/clear-data")
