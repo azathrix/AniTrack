@@ -257,9 +257,9 @@ def upsert_rss_candidate(item: ParsedRelease, reason: str = "") -> int:
             """
             INSERT INTO rss_candidates
               (guid, title, series_title, episode_number, subtitle_group, resolution,
-               language, bangumi_id, torrent_url, magnet, page_url, published_at, status,
+               language, bangumi_id, mikan_bangumi_id, torrent_url, magnet, page_url, published_at, status,
                reason, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(guid) DO UPDATE SET
               title=excluded.title,
               series_title=excluded.series_title,
@@ -268,6 +268,7 @@ def upsert_rss_candidate(item: ParsedRelease, reason: str = "") -> int:
               resolution=excluded.resolution,
               language=excluded.language,
               bangumi_id=excluded.bangumi_id,
+              mikan_bangumi_id=CASE WHEN excluded.mikan_bangumi_id!='' THEN excluded.mikan_bangumi_id ELSE rss_candidates.mikan_bangumi_id END,
               torrent_url=excluded.torrent_url,
               magnet=excluded.magnet,
               page_url=excluded.page_url,
@@ -285,6 +286,7 @@ def upsert_rss_candidate(item: ParsedRelease, reason: str = "") -> int:
                 item.resolution,
                 item.language,
                 item.bangumi_id,
+                item.mikan_bangumi_id,
                 item.torrent_url,
                 item.magnet,
                 item.page_url,
@@ -347,7 +349,7 @@ def candidate_to_parsed_release(candidate) -> ParsedRelease:
         torrent_url=candidate["torrent_url"],
         magnet=candidate["magnet"],
         page_url=candidate["page_url"],
-        mikan_bangumi_id="",
+        mikan_bangumi_id=candidate["mikan_bangumi_id"],
         published_at=candidate["published_at"],
     )
 

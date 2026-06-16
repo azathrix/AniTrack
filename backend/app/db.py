@@ -95,6 +95,7 @@ def init_db() -> None:
                 resolution TEXT NOT NULL DEFAULT '',
                 language TEXT NOT NULL DEFAULT '',
                 bangumi_id TEXT NOT NULL DEFAULT '',
+                mikan_bangumi_id TEXT NOT NULL DEFAULT '',
                 torrent_url TEXT NOT NULL DEFAULT '',
                 magnet TEXT NOT NULL DEFAULT '',
                 page_url TEXT NOT NULL DEFAULT '',
@@ -511,6 +512,7 @@ def migrate(conn: sqlite3.Connection) -> None:
     }
     rss_candidate_additions = {
         "page_url": "TEXT NOT NULL DEFAULT ''",
+        "mikan_bangumi_id": "TEXT NOT NULL DEFAULT ''",
     }
     for column, ddl in rss_candidate_additions.items():
         if column not in rss_candidate_columns:
