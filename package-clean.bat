@@ -14,7 +14,7 @@ if exist "%ZIP%" del /f /q "%ZIP%" >nul 2>nul
 git archive --format=zip --output="%ZIP%" HEAD
 if errorlevel 1 (
   for /f "delims=" %%H in ('git rev-parse --short HEAD') do set "SHORT=%%H"
-  set "ZIP=%BUILD_DIR%\AutoAnime-clean-%SHORT%.zip"
+  set "ZIP=%BUILD_DIR%\AutoAnime-clean-!SHORT!.zip"
   git archive --format=zip --output="!ZIP!" HEAD
   if errorlevel 1 (
     popd
