@@ -301,7 +301,7 @@ def upsert_rss_candidate(item: ParsedRelease, reason: str = "") -> int:
         candidate_id = int(row["id"])
         if item.bangumi_id:
             enqueue_metadata_task(conn, candidate_id, item.bangumi_id, ts)
-        else:
+        if not item.bangumi_id or not item.mikan_bangumi_id:
             conn.execute(
                 """
                 INSERT INTO mikan_match_tasks
@@ -478,6 +478,16 @@ async def _process_mikan_match_tasks(settings: dict[str, str], limit: int = 20) 
                 """,
                 (bangumi_id, mikan_id, ts, row["candidate_id"]),
             )
+            if mikan_id:
+                conn.execute(
+                    """
+                    UPDATE series
+                    SET mikan_bangumi_id=?, updated_at=?
+                    WHERE bangumi_id=?
+                      AND mikan_bangumi_id=''
+                    """,
+                    (mikan_id, ts, bangumi_id),
+                )
             enqueue_metadata_task(conn, row["candidate_id"], bangumi_id, ts)
         return 1, 0
 
