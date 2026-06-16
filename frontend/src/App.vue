@@ -111,6 +111,22 @@
                 <el-table-column prop="reason" label="原因" min-width="180" show-overflow-tooltip />
                 <el-table-column prop="title" label="RSS 标题" min-width="260" show-overflow-tooltip />
               </el-table>
+              <el-table v-if="dashboard.selection_tasks?.length" :data="dashboard.selection_tasks" height="220" class="candidate-table">
+                <el-table-column prop="status" label="选集状态" width="110">
+                  <template #default="{ row }"><el-tag :type="taskTag(row.status)">{{ taskStatusText(row) }}</el-tag></template>
+                </el-table-column>
+                <el-table-column prop="title_cn" label="番剧" min-width="200" show-overflow-tooltip />
+                <el-table-column prop="reason" label="原因" min-width="240" show-overflow-tooltip />
+                <el-table-column prop="last_error" label="错误" min-width="240" show-overflow-tooltip />
+              </el-table>
+              <el-table v-if="dashboard.backfill_tasks?.length" :data="dashboard.backfill_tasks" height="220" class="candidate-table">
+                <el-table-column prop="status" label="补全状态" width="110">
+                  <template #default="{ row }"><el-tag :type="taskTag(row.status)">{{ taskStatusText(row) }}</el-tag></template>
+                </el-table-column>
+                <el-table-column prop="title_cn" label="番剧" min-width="200" show-overflow-tooltip />
+                <el-table-column prop="backfill_mode" label="模式" width="100" />
+                <el-table-column prop="last_error" label="错误" min-width="240" show-overflow-tooltip />
+              </el-table>
               <el-empty v-if="!issues.length" description="当前没有需要人工处理的问题" />
               <el-table v-else :data="issues" height="420">
                 <el-table-column prop="type" label="类型" width="130">
@@ -460,6 +476,8 @@ const dashboard = reactive({
   series: [],
   rss_candidates: [],
   tasks: [],
+  selection_tasks: [],
+  backfill_tasks: [],
   sync_tasks: [],
   sync_rules: [],
   cloud_assets: [],

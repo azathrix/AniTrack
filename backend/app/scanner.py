@@ -72,14 +72,14 @@ def parse_mikan_datetime(value: str) -> str:
 
 def parse_mikan_group_sections(html_text: str) -> list[tuple[str, str]]:
     sections: list[tuple[str, str]] = []
-    pattern = re.compile(
-        r'<div class="subgroup-text" id="(?P<group_id>\d+)">(?P<section>.*?)<div class="subgroup-scroll-top-\d+"></div>|<div class="subgroup-text" id="(?P<last_group_id>\d+)">(?P<last_section>.*)$',
-        re.S,
-    )
-    for match in pattern.finditer(html_text):
-        group_id = match.group("group_id") or match.group("last_group_id") or ""
-        section = match.group("section") or match.group("last_section") or ""
-        if group_id and section:
+    marker = re.compile(r'<div class="subgroup-text" id="(?P<group_id>\d+)">', re.S)
+    matches = list(marker.finditer(html_text))
+    for index, match in enumerate(matches):
+        start = match.start()
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(html_text)
+        group_id = match.group("group_id") or ""
+        section = html_text[start:end]
+        if group_id:
             sections.append((group_id, section))
     return sections
 
@@ -158,7 +158,7 @@ def upsert_release(item: ParsedRelease, metadata: dict | None = None) -> tuple[i
         conn.execute(
             """
             INSERT INTO series
-              (fingerprint, title_raw, title_cn, bangumi_id, year, poster_url, summary,
+              (fingerprint, title_raw, title_cn, bangumi_id, mikan_bangumi_id, year, poster_url, summary,
                metadata_source, hidden, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, 'bangumi', 0, ?, ?)
             ON CONFLICT(fingerprint) DO UPDATE SET

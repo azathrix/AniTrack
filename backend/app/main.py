@@ -575,6 +575,26 @@ def dashboard_data() -> dict[str, Any]:
             LIMIT 80
             """
         ).fetchall()
+        selection_tasks = conn.execute(
+            """
+            SELECT st.*, s.title_cn
+            FROM selection_tasks st
+            JOIN series s ON s.id=st.series_id
+            WHERE COALESCE(s.hidden, 0)=0
+            ORDER BY st.updated_at DESC
+            LIMIT 80
+            """
+        ).fetchall()
+        backfill_tasks = conn.execute(
+            """
+            SELECT bt.*, s.title_cn
+            FROM backfill_tasks bt
+            JOIN series s ON s.id=bt.series_id
+            WHERE COALESCE(s.hidden, 0)=0
+            ORDER BY bt.updated_at DESC
+            LIMIT 80
+            """
+        ).fetchall()
         logs = conn.execute("SELECT * FROM logs ORDER BY id DESC LIMIT 80").fetchall()
         cloud_assets = conn.execute(
             """
@@ -647,6 +667,8 @@ def dashboard_data() -> dict[str, Any]:
         "series": rows_to_dicts(series),
         "rss_candidates": rows_to_dicts(rss_candidates),
         "tasks": enrich_download_tasks(tasks),
+        "selection_tasks": enrich_retry_rows(selection_tasks),
+        "backfill_tasks": enrich_retry_rows(backfill_tasks),
         "logs": rows_to_dicts(logs),
         "cloud_assets": rows_to_dicts(cloud_assets),
         "sync_rules": rows_to_dicts(sync_rules),
