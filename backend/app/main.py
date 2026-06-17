@@ -850,10 +850,10 @@ async def handle_cleanup_queue() -> None:
                 conn.execute(
                     """
                     UPDATE cleanup_tasks
-                    SET status='completed', retry_after='', last_error=?, updated_at=?
+                    SET status='pending', retry_after=?, last_error=?, updated_at=?
                     WHERE task_scope='runtime'
                     """,
-                    (f"已清理 operations {stats['deleted_operations']} 条，已裁剪完成任务 {stats['trimmed_task_rows']} 条", now()),
+                    ((datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(), f"已清理 operations {stats['deleted_operations']} 条，已裁剪完成任务 {stats['trimmed_task_rows']} 条", now()),
                 )
             if not runtime_generation_alive(generation):
                 return
@@ -863,10 +863,10 @@ async def handle_cleanup_queue() -> None:
                 conn.execute(
                     """
                     UPDATE cleanup_tasks
-                    SET status='failed', retry_after='', last_error=?, updated_at=?
+                    SET status='failed', retry_after=?, last_error=?, updated_at=?
                     WHERE task_scope='runtime'
                     """,
-                    (str(exc)[:2000], now()),
+                    ((datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(), str(exc)[:2000], now()),
                 )
             log("error", f"清理任务失败: {exc}")
             break

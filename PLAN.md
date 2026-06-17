@@ -1307,6 +1307,10 @@ access_token + refresh_token
 - 下载提交与 PikPak 轮询链已继续去 `series` 过滤：
   - `queue_release()`、`process_tasks()`、`poll_submitted_tasks()` 已改为优先使用 `entries.bangumi_id`
   - `series` 相关逻辑目前主要收缩在历史兼容、Mikan 修补和少数旧关联路径
+- `cleanup_tasks.runtime` 已改为持续维护任务：
+  - 执行完成后不再停在 `completed`
+  - 现在会自动回到 `pending + retry_after`
+  - 语义更接近后台维护，而不是一次性清理动作
 
 ### P4: 修复自动入云盘语义
 
