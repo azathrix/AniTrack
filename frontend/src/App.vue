@@ -143,6 +143,13 @@
                   <el-table-column prop="status" label="状态" width="110">
                     <template #default="{ row }"><el-tag :type="taskTag(row.status)">{{ taskStatusText(row) }}</el-tag></template>
                   </el-table-column>
+                  <el-table-column label="域" width="90">
+                    <template #default="{ row }">
+                      <el-tag size="small" :type="row.domain_kind === 'library' ? 'warning' : 'success'">
+                        {{ row.domain_kind === 'library' ? '番剧库' : '新番' }}
+                      </el-tag>
+                    </template>
+                  </el-table-column>
                   <el-table-column prop="title_cn" label="番剧" min-width="200" show-overflow-tooltip />
                   <el-table-column prop="series_title" label="候选标题" min-width="200" show-overflow-tooltip />
                   <el-table-column prop="episode_number" label="集" width="70" />
@@ -150,6 +157,11 @@
                   <el-table-column prop="last_error" label="错误" min-width="240" show-overflow-tooltip />
                   <el-table-column label="等待" width="120">
                     <template #default="{ row }">{{ row.waiting_retry ? formatCountdown(row.retry_seconds) : '-' }}</template>
+                  </el-table-column>
+                  <el-table-column label="操作" width="96">
+                    <template #default="{ row }">
+                      <el-button v-if="row.entry_id" size="small" plain @click="openQueueEntry(row)">打开</el-button>
+                    </template>
                   </el-table-column>
                 </el-table>
               </template>
@@ -951,6 +963,13 @@ async function openSeries(id, domain = 'seasonal') {
   selectedSeriesDomain.value = domain
   selectedSeries.value = domain === 'library' ? await getLibraryEntry(id) : await getSeries(id)
   seriesDrawer.value = true
+}
+
+async function openQueueEntry(row) {
+  const entryId = Number(row?.entry_id || 0)
+  if (!entryId) return
+  const domain = row?.domain_kind === 'library' ? 'library' : 'seasonal'
+  await openSeries(entryId, domain)
 }
 
 async function saveCurrentSeries() {

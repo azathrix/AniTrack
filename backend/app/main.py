@@ -1086,7 +1086,7 @@ def queue_detail_map() -> dict[str, dict[str, Any]]:
             "items": enrich_retry_rows(
                 conn.execute(
                     """
-                    SELECT st.*, e.display_title AS title_cn, e.selected_group, e.selected_resolution
+                    SELECT st.*, e.display_title AS title_cn, e.selected_group, e.selected_resolution, e.domain_kind
                     FROM selection_tasks st
                     JOIN entries e ON e.id=st.entry_id
                     WHERE COALESCE(e.hidden, 0)=0
@@ -1100,7 +1100,7 @@ def queue_detail_map() -> dict[str, dict[str, Any]]:
             "items": enrich_retry_rows(
                 conn.execute(
                     """
-                    SELECT bt.*, e.display_title AS title_cn, e.bangumi_id, e.mikan_bangumi_id
+                    SELECT bt.*, e.display_title AS title_cn, e.bangumi_id, e.mikan_bangumi_id, e.domain_kind
                     FROM backfill_tasks bt
                     JOIN entries e ON e.id=bt.entry_id
                     WHERE COALESCE(e.hidden, 0)=0
@@ -1113,7 +1113,7 @@ def queue_detail_map() -> dict[str, dict[str, Any]]:
         details["cloud"] = {"items": enrich_download_tasks(
             conn.execute(
                 """
-                SELECT dt.*, e.display_title AS title_cn, r.episode_number, r.subtitle_group, r.resolution, r.language, r.title AS release_title
+                SELECT dt.*, e.display_title AS title_cn, e.domain_kind, r.episode_number, r.subtitle_group, r.resolution, r.language, r.title AS release_title
                 FROM download_tasks dt
                 JOIN entries e ON e.id=dt.entry_id
                 JOIN releases r ON r.id=dt.release_id
@@ -1127,7 +1127,7 @@ def queue_detail_map() -> dict[str, dict[str, Any]]:
             conn.execute(
                 """
                 SELECT cpt.*, dt.series_id, dt.entry_id, dt.release_id, dt.pikpak_task_id, dt.pikpak_file_id,
-                       e.display_title AS title_cn, r.episode_number, r.title AS release_title
+                       e.display_title AS title_cn, e.domain_kind, r.episode_number, r.title AS release_title
                 FROM cloud_poll_tasks cpt
                 JOIN download_tasks dt ON dt.id=cpt.download_task_id
                 JOIN entries e ON e.id=dt.entry_id
@@ -1140,7 +1140,7 @@ def queue_detail_map() -> dict[str, dict[str, Any]]:
         details["cloud_assets"] = {"items": enrich_retry_rows(
             conn.execute(
                 """
-                SELECT cat.*, dt.series_id, dt.entry_id, dt.release_id, dt.pikpak_file_id, e.display_title AS title_cn, r.episode_number, r.title AS release_title
+                SELECT cat.*, dt.series_id, dt.entry_id, dt.release_id, dt.pikpak_file_id, e.display_title AS title_cn, e.domain_kind, r.episode_number, r.title AS release_title
                 FROM cloud_asset_tasks cat
                 JOIN download_tasks dt ON dt.id=cat.download_task_id
                 JOIN entries e ON e.id=dt.entry_id
@@ -1153,7 +1153,7 @@ def queue_detail_map() -> dict[str, dict[str, Any]]:
         details["sync"] = {"items": enrich_retry_rows(
             conn.execute(
                 """
-                SELECT st.*, e.display_title AS title_cn, ca.cloud_name, ca.provider_file_id
+                SELECT st.*, e.display_title AS title_cn, e.domain_kind, ca.cloud_name, ca.provider_file_id
                 FROM sync_tasks st
                 JOIN entries e ON e.id=st.entry_id
                 JOIN cloud_assets ca ON ca.id=st.cloud_asset_id
