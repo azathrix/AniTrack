@@ -209,7 +209,7 @@ library（番剧库域）
 - `sync_plan` 已开始从虚拟阶段改为正式任务表：
   - 新增 `sync_plan_tasks`
   - 同步计划不再只靠 `ready_count + reconcile_sync_intents()` 的虚拟估算
-  - 后续会继续把相关兼容调用完全收口到正式 worker
+  - 同步相关入口正在继续收口到 `sync_plan_tasks -> process_sync_plan_tasks() -> sync_tasks`
 - 旧架构残留已开始剔除：
   - `series_state_tasks` 已不再参与当前运行链路
   - 现阶段保留旧表本身只为兼容已有数据库文件，不再作为主架构的一部分

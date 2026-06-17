@@ -19,7 +19,7 @@ from .queue_bridge import register_queue_trigger
 from .library import bool_setting
 from .metadata import generate_nfo_for_entry, refresh_entry_metadata
 from .scanner import enqueue_backfill_task, enqueue_missing_mikan_match_tasks, enqueue_selection_task, mark_selected_releases, poll_submitted_tasks, process_backfill_tasks, process_cloud_presence_tasks, process_download_enqueue_tasks, process_metadata_tasks, process_mikan_match_tasks, process_selection_tasks, process_tasks, queue_release, reclaim_mikan_match_tasks, repair_series_mikan_ids, resolve_entry_choice, scan_and_queue
-from .sync_service import backfill_cloud_assets_from_completed_tasks, cancel_sync_for_series, process_cloud_asset_tasks, process_local_presence_tasks, process_nfo_tasks, process_sync_plan_tasks, process_sync_tasks, queue_sync_for_series, reconcile_rclone_submitted_tasks, reconcile_sync_intents, scan_cloud_library
+from .sync_service import backfill_cloud_assets_from_completed_tasks, cancel_sync_for_series, enqueue_sync_plan_tasks, process_cloud_asset_tasks, process_local_presence_tasks, process_nfo_tasks, process_sync_plan_tasks, process_sync_tasks, queue_sync_for_series, reconcile_rclone_submitted_tasks, scan_cloud_library
 
 
 scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
@@ -2214,10 +2214,9 @@ async def api_poll_tasks() -> dict[str, str]:
         poll_done, poll_failed = await poll_submitted_tasks(settings, force=True)
         cloud_done, cloud_failed = await process_cloud_asset_tasks(settings, force=True)
         count = backfill_cloud_assets_from_completed_tasks(settings)
-        reconciled, queued = reconcile_sync_intents(settings)
-        if queued:
-            await process_sync_tasks(settings)
-        return f"rclone 发现已完成 {rclone_done} 个，未发现 {rclone_missing} 个；PikPak 完成 {poll_done} 个，轮询失败 {poll_failed} 个；云盘登记 {cloud_done} 个，失败 {cloud_failed} 个；补齐云盘 {count} 个，调和 {reconciled} 部，同步排队 {queued} 个"
+        await process_sync_plan_tasks(settings)
+        await process_sync_tasks(settings)
+        return f"rclone 发现已完成 {rclone_done} 个，未发现 {rclone_missing} 个；PikPak 完成 {poll_done} 个，轮询失败 {poll_failed} 个；云盘登记 {cloud_done} 个，失败 {cloud_failed} 个；补齐云盘 {count} 个；同步计划与本地同步已继续执行"
 
     operation_id = run_operation("刷新云盘状态", run, "正在刷新 PikPak 任务和同步状态")
     return {"status": "started", "operation_id": str(operation_id), "message": "状态刷新已启动"}
@@ -2283,9 +2282,28 @@ async def api_backfill_library_entry(entry_id: int) -> dict[str, str]:
 async def api_process_sync_tasks() -> dict[str, str]:
     settings = get_settings()
     async def run() -> str:
-        reconciled, queued = reconcile_sync_intents(settings)
+        auto_sync = bool_setting(settings.get("auto_sync_following", "true"))
+        with connect() as conn:
+            entry_ids = [
+                int(row["entry_id"])
+                for row in conn.execute(
+                    """
+                    SELECT DISTINCT ca.entry_id
+                    FROM cloud_assets ca
+                    JOIN entries e ON e.id=ca.entry_id
+                    LEFT JOIN sync_rules sr ON sr.entry_id=ca.entry_id
+                    WHERE ca.status='available'
+                      AND COALESCE(e.hidden, 0)=0
+                      AND e.bangumi_id != ''
+                      AND (COALESCE(sr.sync_enabled, 0)=1 OR ?=1)
+                    """,
+                    (1 if auto_sync else 0,),
+                ).fetchall()
+            ]
+        planned = enqueue_sync_plan_tasks(entry_ids, now())
+        await process_sync_plan_tasks(settings)
         await process_sync_tasks(settings)
-        return f"调和 {reconciled} 部，同步排队 {queued} 个"
+        return f"同步计划入队 {planned} 个，本地同步已继续执行"
 
     operation_id = run_operation("本地同步", run, "正在把云盘资源同步到本地")
     trigger_queue("sync", delay=0)

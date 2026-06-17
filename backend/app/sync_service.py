@@ -115,6 +115,16 @@ def enqueue_sync_plan_task(conn, entry_id: int, ts: str) -> None:
     request_queue_trigger("sync_plan")
 
 
+def enqueue_sync_plan_tasks(entry_ids: list[int], ts: str) -> int:
+    unique_ids = sorted({int(entry_id) for entry_id in entry_ids if int(entry_id) > 0})
+    if not unique_ids:
+        return 0
+    with connect() as conn:
+        for entry_id in unique_ids:
+            enqueue_sync_plan_task(conn, entry_id, ts)
+    return len(unique_ids)
+
+
 def cloud_asset_path(task: dict, release: dict, entry: dict, settings: dict[str, str]) -> tuple[str, str]:
     name = task.get("normalized_name") or render_episode_name(entry, release["episode_number"], "", settings)
     directory = task.get("target_dir") or target_dir(entry, settings)
@@ -1042,7 +1052,23 @@ async def reconcile_rclone_submitted_tasks(settings: dict[str, str], limit: int 
             enqueue_cloud_asset_task(conn, int(task["id"]), ts)
         completed += 1
     if completed:
-        reconcile_sync_intents(settings)
+        with connect() as conn:
+            entry_ids = [
+                int(row["entry_id"])
+                for row in conn.execute(
+                    """
+                    SELECT DISTINCT entry_id
+                    FROM cloud_assets
+                    WHERE task_id IN (
+                      SELECT id
+                      FROM download_tasks
+                      WHERE status='completed'
+                    )
+                      AND entry_id != 0
+                    """
+                ).fetchall()
+            ]
+        enqueue_sync_plan_tasks(entry_ids, now())
     return completed, missing
 
 
@@ -1082,25 +1108,10 @@ async def scan_cloud_library(settings: dict[str, str]) -> tuple[int, int]:
             ).fetchone()
         if rule and rule["sync_enabled"]:
             synced_entries.add(int(rule["entry_id"]))
-    for entry_id in synced_entries:
-        queue_sync_for_series(entry_id, settings)
-    if not synced_entries:
-        reconcile_sync_intents(settings)
-    if synced_entries:
+    planned = enqueue_sync_plan_tasks(list(synced_entries), now())
+    if planned:
+        await process_sync_plan_tasks(settings)
         await process_sync_tasks(settings)
-    else:
-        with connect() as conn:
-            pending = conn.execute(
-                """
-                SELECT COUNT(*) AS count
-                FROM sync_tasks
-                WHERE status IN ('pending','failed')
-                  AND (retry_after='' OR retry_after <= ?)
-                """,
-                (now(),),
-            ).fetchone()["count"]
-        if pending:
-            await process_sync_tasks(settings)
     return imported, skipped
 
 
