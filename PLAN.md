@@ -1260,6 +1260,10 @@ access_token + refresh_token
   - 后端补出统一字段：`work_display_title / entry_scope_label / entry_badge_text / entry_display_title / entry_secondary_title`
   - 首页新番列表、番剧库列表、最近同步日历不再各自拼作品名/季名/篇章名
   - 条目详情接口已同步返回 `entry` 主字段，前端逐步摆脱 `series` 误导命名
+- 条目详情子系统已继续整体切到 `entry` 语义：
+  - 前端 API 已补 `getSeasonalItem / saveSeasonalItem / getLibraryItem / saveLibraryItem`
+  - 详情抽屉状态已改为 `entryDrawerOpen / selectedEntryDetail / selectedEntryDomain`
+  - 保存、同步、删除、详情表格、自动刷新暂停条件均不再依赖 `selectedSeries.series`
 
 这样后续做分域队列、分域失败重试和分域维护动作时，不需要再靠用户手动判断来源。
 
