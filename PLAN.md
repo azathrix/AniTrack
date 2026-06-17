@@ -1314,6 +1314,9 @@ access_token + refresh_token
 - 控制台队列状态已补齐 `cleanup` 的等待时间表达：
   - 维护队列现在也会显示下次恢复/执行时间
   - 避免控制台把周期维护任务误显示成普通空闲队列
+- `重试失败任务` 的恢复链已改为覆盖正式任务表：
+  - 不再只唤醒 `mikan_match / download / sync`
+  - 现在会按已重置的任务表对应唤醒 `metadata / selection / backfill / cloud_poll / cloud_asset` 等正式队列
 
 ### P4: 修复自动入云盘语义
 

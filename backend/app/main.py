@@ -2254,7 +2254,7 @@ async def api_process_sync_tasks() -> dict[str, str]:
 async def api_retry_failed() -> dict[str, str]:
     with connect() as conn:
         total = 0
-        for table in [
+        reset_tables = [
             "download_tasks",
             "cloud_poll_tasks",
             "cloud_asset_tasks",
@@ -2263,6 +2263,9 @@ async def api_retry_failed() -> dict[str, str]:
             "backfill_tasks",
             "metadata_tasks",
             "mikan_match_tasks",
+        ]
+        for table in [
+            *reset_tables,
         ]:
             cursor = conn.execute(
                 f"""
@@ -2282,7 +2285,19 @@ async def api_retry_failed() -> dict[str, str]:
             (now(),),
         )
     log("info", f"已重置失败任务: {total} 个")
-    trigger_queues(["mikan_match", "download", "sync"], delay=0)
+    trigger_queues(
+        [
+            "mikan_match",
+            "metadata",
+            "selection",
+            "backfill",
+            "download",
+            "cloud_poll",
+            "cloud_asset",
+            "sync",
+        ],
+        delay=0,
+    )
     return {"status": "started", "count": str(total), "message": f"失败任务已重新入队: {total} 个"}
 
 
