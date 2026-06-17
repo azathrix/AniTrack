@@ -1480,7 +1480,7 @@ async def api_series(series_id: int) -> dict[str, Any]:
     resolutions = sorted({r["resolution"] for r in releases if r["resolution"]})
     languages = sorted({r["language"] for r in releases if r["language"]})
     return {
-        "series": {**row_to_dict(entry), "legacy_series_id": series["id"] if series else 0},
+        "series": {**row_to_dict(entry), "legacy_series_id": series["id"] if series else 0, "domain_kind": entry["domain_kind"]},
         "releases": rows_to_dicts(releases),
         "tasks": enrich_download_tasks(tasks),
         "cloud_assets": rows_to_dicts(cloud_assets),

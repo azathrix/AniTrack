@@ -254,7 +254,7 @@
           <el-segmented v-model="seriesFilter" :options="['全部', '待配置', '已入云盘', '已同步', '失败']" />
         </div>
         <div class="anime-grid">
-          <article v-for="item in filteredSeries" :key="item.id" class="anime-card" @click="openSeries(item.id)">
+          <article v-for="item in filteredSeries" :key="item.id" class="anime-card" @click="openSeries(item.id, view === 'library' ? 'library' : 'seasonal')">
             <div class="cover">
               <img v-if="item.poster_url" :src="item.poster_url" />
               <span v-else>{{ item.display_title?.slice(0, 2) || item.title_cn?.slice(0, 2) || 'AN' }}</span>
@@ -377,13 +377,13 @@
       </section>
     </main>
 
-    <el-drawer v-model="seriesDrawer" size="720px" :title="selectedSeries?.series?.title_cn || '番剧设置'">
+    <el-drawer v-model="seriesDrawer" size="720px" :title="selectedSeries?.series?.title_cn || (selectedSeriesDomain === 'library' ? '番剧库条目' : '番剧设置')">
       <template v-if="selectedSeries?.series">
         <el-alert
           type="info"
           show-icon
           :closable="false"
-          title="这里只处理规则和冲突；云盘入库与本地同步由后台任务自动推进。"
+          :title="selectedSeriesDomain === 'library' ? '这里处理番剧库条目本身；后续会补独立的补番/导入能力。' : '这里只处理规则和冲突；云盘入库与本地同步由后台任务自动推进。'"
           class="settings-alert"
         />
         <el-form :model="selectedSeries.series" label-position="top">
@@ -394,37 +394,39 @@
           <div class="form-row">
             <el-form-item label="Bangumi ID"><el-input v-model="selectedSeries.series.bangumi_id" /></el-form-item>
           </div>
-          <div class="form-row">
-            <el-form-item label="字幕组">
-              <el-select v-model="selectedSeries.series.selected_group" clearable>
-                <el-option v-for="g in selectedSeries.groups" :key="g" :label="g" :value="g" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="分辨率">
-              <el-select v-model="selectedSeries.series.selected_resolution" clearable>
-                <el-option v-for="r in selectedSeries.resolutions" :key="r" :label="r" :value="r" />
-              </el-select>
-            </el-form-item>
-          </div>
-          <div class="form-row">
-            <el-form-item label="自动入云盘">
-              <el-select v-model="selectedSeries.series.auto_download">
-                <el-option label="跟随全局" value="inherit" />
-                <el-option label="开启" value="on" />
-                <el-option label="关闭" value="off" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="补全">
-              <el-select v-model="selectedSeries.series.backfill_mode">
-                <el-option label="跟随全局" value="inherit" />
-                <el-option label="不补全" value="none" />
-                <el-option label="补全本季" value="season" />
-                <el-option label="补全全部" value="all" />
-              </el-select>
-            </el-form-item>
-          </div>
+          <template v-if="selectedSeriesDomain === 'seasonal'">
+            <div class="form-row">
+              <el-form-item label="字幕组">
+                <el-select v-model="selectedSeries.series.selected_group" clearable>
+                  <el-option v-for="g in selectedSeries.groups" :key="g" :label="g" :value="g" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="分辨率">
+                <el-select v-model="selectedSeries.series.selected_resolution" clearable>
+                  <el-option v-for="r in selectedSeries.resolutions" :key="r" :label="r" :value="r" />
+                </el-select>
+              </el-form-item>
+            </div>
+            <div class="form-row">
+              <el-form-item label="自动入云盘">
+                <el-select v-model="selectedSeries.series.auto_download">
+                  <el-option label="跟随全局" value="inherit" />
+                  <el-option label="开启" value="on" />
+                  <el-option label="关闭" value="off" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="补全">
+                <el-select v-model="selectedSeries.series.backfill_mode">
+                  <el-option label="跟随全局" value="inherit" />
+                  <el-option label="不补全" value="none" />
+                  <el-option label="补全本季" value="season" />
+                  <el-option label="补全全部" value="all" />
+                </el-select>
+              </el-form-item>
+            </div>
+          </template>
         </el-form>
-        <div class="sync-panel">
+        <div class="sync-panel" v-if="selectedSeriesDomain === 'seasonal'">
           <div>
             <strong>本地同步</strong>
             <span>{{ syncSummary }}</span>
@@ -509,6 +511,7 @@ const keyword = ref('')
 const seriesFilter = ref('全部')
 const seriesDrawer = ref(false)
 const selectedSeries = ref(null)
+const selectedSeriesDomain = ref('seasonal')
 const dashboard = reactive({
   seasonal_items: [],
   library_items: [],
@@ -882,7 +885,8 @@ function apiErrorMessage(error) {
   return error?.response?.data?.detail || error?.response?.data?.message || error?.message || '请求失败'
 }
 
-async function openSeries(id) {
+async function openSeries(id, domain = 'seasonal') {
+  selectedSeriesDomain.value = domain
   selectedSeries.value = await getSeries(id)
   seriesDrawer.value = true
 }
@@ -915,6 +919,7 @@ async function deleteCurrentSeries() {
   }
   seriesDrawer.value = false
   selectedSeries.value = null
+  selectedSeriesDomain.value = 'seasonal'
   await reload()
 }
 
