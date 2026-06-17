@@ -542,9 +542,11 @@ const pageTitle = computed(() => ({
   settings: '设置中心'
 }[view.value]))
 
-const activeSeriesRows = computed(() => dashboard.seasonal_items || [])
-const cloudAssetTotal = computed(() => activeSeriesRows.value.reduce((sum, item) => sum + Number(item.cloud_asset_count || 0), 0))
-const localAssetTotal = computed(() => activeSeriesRows.value.reduce((sum, item) => sum + Number(item.local_asset_count || 0), 0))
+const seasonalRows = computed(() => dashboard.seasonal_items || [])
+const libraryRows = computed(() => dashboard.library_items || [])
+const activeSeriesRows = computed(() => seasonalRows.value)
+const cloudAssetTotal = computed(() => seasonalRows.value.reduce((sum, item) => sum + Number(item.cloud_asset_count || 0), 0))
+const localAssetTotal = computed(() => seasonalRows.value.reduce((sum, item) => sum + Number(item.local_asset_count || 0), 0))
 const cloudQueueCount = computed(() => dashboard.tasks.filter(t => ['pending', 'running', 'submitted'].includes(t.status)).length)
 const syncQueueCount = computed(() => dashboard.sync_tasks.filter(t => ['pending', 'running', 'failed'].includes(t.status)).length)
 const metadataIssueCount = computed(() => dashboard.rss_candidates.length)
@@ -555,7 +557,7 @@ const issues = computed(() => {
       rows.push({ type: 'RSS 候选', level: 'warning', title: item.series_title || item.title, message: item.reason || '候选处理失败', series_id: null })
     }
   }
-  for (const item of activeSeriesRows.value) {
+  for (const item of seasonalRows.value) {
     if (!item.bangumi_id) {
       rows.push({ type: '元数据', level: 'warning', title: item.title_cn, message: '缺少 Bangumi 绑定，不能可靠入库', series_id: item.id })
     }
@@ -647,9 +649,11 @@ const syncSummary = computed(() => {
 
 const filteredSeries = computed(() => {
   const text = keyword.value.toLowerCase()
-  return activeSeriesRows.value.filter(item => {
+  const source = view.value === 'library' ? libraryRows.value : seasonalRows.value
+  return source.filter(item => {
     const matched = !text || `${item.display_title || item.title_cn} ${item.work_title || item.title_root || ''} ${item.bangumi_id}`.toLowerCase().includes(text)
     if (!matched) return false
+    if (view.value === 'library') return true
     if (seriesFilter.value === '待配置') return !item.bangumi_id || !item.group_count || !item.resolution_count
     if (seriesFilter.value === '已入云盘') return Number(item.cloud_asset_count || 0) > 0
     if (seriesFilter.value === '已同步') return Number(item.local_asset_count || 0) > 0

@@ -1172,32 +1172,13 @@ def dashboard_data() -> dict[str, Any]:
             ORDER BY e.updated_at DESC
             """
         ).fetchall()
+        # Legacy compatibility payload; primary UI no longer depends on series-wide aggregation.
         series = conn.execute(
             """
-            SELECT s.*,
-              COUNT(DISTINCT e.id) AS episode_count,
-              COUNT(DISTINCT r.id) AS release_count,
-              COUNT(DISTINCT r.subtitle_group) AS group_count,
-              COUNT(DISTINCT r.resolution) AS resolution_count,
-              COUNT(DISTINCT r.language) AS language_count,
-              GROUP_CONCAT(DISTINCT NULLIF(r.subtitle_group, '')) AS subtitle_groups,
-              GROUP_CONCAT(DISTINCT NULLIF(r.resolution, '')) AS resolutions,
-              GROUP_CONCAT(DISTINCT NULLIF(r.language, '')) AS languages,
-              COUNT(DISTINCT CASE WHEN dt.status IN ('submitted','completed') THEN dt.id END) AS downloaded_count,
-              COUNT(DISTINCT ca.id) AS cloud_asset_count,
-              COUNT(DISTINCT la.id) AS local_asset_count,
-              COALESCE(MAX(sr.sync_enabled), 0) AS sync_enabled,
-              COALESCE(MAX(sr.auto_sync_following), 0) AS auto_sync_following
+            SELECT s.*
             FROM series s
-            LEFT JOIN episodes e ON e.series_id=s.id
-            LEFT JOIN releases r ON r.series_id=s.id
-            LEFT JOIN download_tasks dt ON dt.series_id=s.id
-            LEFT JOIN cloud_assets ca ON ca.series_id=s.id
-            LEFT JOIN local_assets la ON la.series_id=s.id AND la.status='synced'
-            LEFT JOIN sync_rules sr ON sr.series_id=s.id OR sr.entry_id IN (SELECT r2.entry_id FROM releases r2 WHERE r2.series_id=s.id)
             WHERE COALESCE(s.hidden, 0)=0
               AND s.bangumi_id != ''
-            GROUP BY s.id
             ORDER BY s.updated_at DESC
             """
         ).fetchall()
