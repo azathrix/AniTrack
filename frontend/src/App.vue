@@ -146,6 +146,12 @@
                   <div><span>运行中</span><strong>{{ selectedQueue.running || 0 }}</strong></div>
                   <div><span>失败</span><strong>{{ selectedQueue.failed || 0 }}</strong></div>
                 </div>
+                <div class="detail-summary-grid queue-monitor-grid">
+                  <div><span>聚合中</span><strong>{{ selectedQueue.queue_state === 'debouncing' ? '是' : '否' }}</strong></div>
+                  <div><span>等待重试</span><strong>{{ selectedQueue.waiting || 0 }}</strong></div>
+                  <div><span>状态细节</span><strong>{{ selectedQueue.state_detail || '-' }}</strong></div>
+                  <div><span>可执行入口</span><strong>{{ selectedQueueAction ? '支持' : '无' }}</strong></div>
+                </div>
                 <el-table :data="selectedQueueItems" height="520" class="candidate-table" empty-text="当前队列没有任务明细">
                   <el-table-column prop="status" label="状态" width="110">
                     <template #default="{ row }"><el-tag :type="taskTag(row.status)">{{ taskStatusText(row) }}</el-tag></template>

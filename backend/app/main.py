@@ -640,8 +640,6 @@ async def handle_mikan_match_queue() -> None:
             break
         if ready_count_mikan_match() <= 0:
             break
-    if ready_count_metadata() > 0:
-        trigger_queue("metadata")
     if ready_count_mikan_match() > 0:
         trigger_queue("mikan_match")
 
@@ -656,10 +654,6 @@ async def handle_metadata_queue() -> None:
             break
         if ready_count_metadata() <= 0:
             break
-    if ready_count_selection() > 0:
-        trigger_queue("selection")
-    if ready_count_backfill() > 0:
-        trigger_queue("backfill")
     if ready_count_metadata() > 0:
         trigger_queue("metadata")
 
@@ -674,8 +668,6 @@ async def handle_selection_queue() -> None:
             break
         if ready_count_selection() <= 0:
             break
-    if ready_count_cloud_presence() > 0:
-        trigger_queue("cloud_presence")
     if ready_count_selection() > 0:
         trigger_queue("selection")
 
@@ -690,8 +682,6 @@ async def handle_backfill_queue() -> None:
             break
         if ready_count_backfill() <= 0:
             break
-    if ready_count_mikan_match() > 0:
-        trigger_queue("mikan_match")
     if ready_count_backfill() > 0:
         trigger_queue("backfill")
 
@@ -706,8 +696,6 @@ async def handle_cloud_presence_queue() -> None:
             break
         if ready_count_cloud_presence() <= 0:
             break
-    if ready_count_download_enqueue() > 0:
-        trigger_queue("download_enqueue")
     if ready_count_cloud_presence() > 0:
         trigger_queue("cloud_presence")
 
@@ -722,8 +710,6 @@ async def handle_download_enqueue_queue() -> None:
             break
         if ready_count_download_enqueue() <= 0:
             break
-    if ready_count_download() > 0:
-        trigger_queue("download")
     if ready_count_download_enqueue() > 0:
         trigger_queue("download_enqueue")
 
@@ -740,12 +726,6 @@ async def handle_download_queue() -> None:
             break
         if after <= 0:
             break
-    if ready_count_cloud_poll() > 0:
-        trigger_queue("cloud_poll")
-    if ready_count_cloud_asset() > 0:
-        trigger_queue("cloud_asset")
-    if ready_count_sync_plan() > 0:
-        trigger_queue("sync_plan")
     if ready_count_download() > 0:
         trigger_queue("download")
 
@@ -764,10 +744,6 @@ async def handle_cloud_poll_queue() -> None:
             break
         if after <= 0:
             break
-    if ready_count_cloud_asset() > 0:
-        trigger_queue("cloud_asset")
-    if ready_count_sync_plan() > 0:
-        trigger_queue("sync_plan")
     if ready_count_cloud_poll() > 0:
         trigger_queue("cloud_poll")
 
@@ -786,9 +762,6 @@ async def handle_cloud_asset_queue() -> None:
             break
         if after <= 0:
             break
-    trigger_queue("sync_plan")
-    if ready_count_sync() > 0:
-        trigger_queue("sync")
     if ready_count_cloud_asset() > 0:
         trigger_queue("cloud_asset")
 
@@ -798,8 +771,6 @@ async def handle_sync_plan_queue() -> None:
     reconciled, queued = reconcile_sync_intents(settings)
     if queued or reconciled:
         log("info", f"同步计划已更新: 调和 {reconciled} 部番剧，新增同步任务 {queued} 个")
-    if ready_count_sync() > 0:
-        trigger_queue("sync")
     if ready_count_sync_plan() > 0:
         trigger_queue("sync_plan")
 

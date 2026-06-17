@@ -324,6 +324,15 @@ h1 {
   margin-top: 6px;
 }
 
+.queue-monitor-grid {
+  margin-top: 10px;
+}
+
+.queue-monitor-grid strong {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .scan-progress {
   background: #f8fafc;
   border: 1px solid #dbe4ef;
