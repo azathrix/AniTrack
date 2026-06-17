@@ -195,6 +195,10 @@ library（番剧库域）
   - 队列详情增加统一的 `display_title` / `display_reason`
   - 同步等任务显示 `progress/progress_text`
   - 区分 `待处理 / 聚合中 / 待重跑 / 等待重试 / 处理中 / 已完成`
+- 已新增统一队列触发入口：
+  - `/api/queues/{queue_name}/trigger`
+  - 控制台“立即执行该队列”不再借道其他业务 API，而是直接触发对应队列
+  - `rss` 作为特殊入口，仍映射到完整扫描
 
 反对继续使用的旧模式：
 

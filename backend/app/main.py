@@ -2090,7 +2090,6 @@ async def api_update_settings(payload: SettingsPayload) -> dict[str, Any]:
                 enqueue_selection_task(conn, int(row["series_id"] or 0), int(row["id"]), ts, "全局规则变更，重新计算自动选集")
                 enqueue_backfill_task(conn, int(row["series_id"] or 0), int(row["id"]), current, ts)
     reschedule()
-    trigger_queues(["selection", "backfill"])
     log("info", "全局设置已保存")
     return settings_response()
 
@@ -2173,6 +2172,17 @@ async def api_scan() -> dict[str, str]:
     return {"status": "started", "operation_id": str(operation_id), "message": "扫描全部已启动"}
 
 
+@app.post("/api/queues/{queue_name}/trigger")
+async def api_trigger_queue(queue_name: str) -> dict[str, str]:
+    name = (queue_name or "").strip()
+    if name == "rss":
+        return await api_scan()
+    if name not in queue_handlers:
+        return {"status": "invalid", "message": "不支持的队列"}
+    trigger_queue(name, delay=0)
+    return {"status": "started", "message": f"队列 {name} 已立即触发"}
+
+
 @app.post("/api/tasks/process")
 async def api_process_tasks(force: bool = Query(False)) -> dict[str, str]:
     async def run() -> str:
@@ -2200,9 +2210,6 @@ async def api_poll_tasks() -> dict[str, str]:
         reconciled, queued = reconcile_sync_intents(settings)
         if queued:
             await process_sync_tasks(settings)
-        trigger_queue("cloud_asset", delay=0)
-        trigger_queue("sync_plan", delay=0)
-        trigger_queue("sync", delay=0)
         return f"rclone 发现已完成 {rclone_done} 个，未发现 {rclone_missing} 个；PikPak 完成 {poll_done} 个，轮询失败 {poll_failed} 个；云盘登记 {cloud_done} 个，失败 {cloud_failed} 个；补齐云盘 {count} 个，调和 {reconciled} 部，同步排队 {queued} 个"
 
     operation_id = run_operation("刷新云盘状态", run, "正在刷新 PikPak 任务和同步状态")
@@ -2271,12 +2278,10 @@ async def api_process_sync_tasks() -> dict[str, str]:
     async def run() -> str:
         reconciled, queued = reconcile_sync_intents(settings)
         await process_sync_tasks(settings)
-        trigger_queue("sync_plan", delay=0)
-        trigger_queue("sync", delay=0)
         return f"调和 {reconciled} 部，同步排队 {queued} 个"
 
     operation_id = run_operation("本地同步", run, "正在把云盘资源同步到本地")
-    trigger_queues(["sync_plan", "sync"], delay=0)
+    trigger_queue("sync", delay=0)
     return {"status": "started", "operation_id": str(operation_id), "message": "本地同步处理已启动"}
 
 
@@ -2312,7 +2317,7 @@ async def api_retry_failed() -> dict[str, str]:
             (now(),),
         )
     log("info", f"已重置失败任务: {total} 个")
-    trigger_queues(["mikan_match", "metadata", "selection", "backfill", "download", "cloud_poll", "cloud_asset", "sync_plan", "sync"], delay=0)
+    trigger_queues(["mikan_match", "download", "sync"], delay=0)
     return {"status": "started", "count": str(total), "message": f"失败任务已重新入队: {total} 个"}
 
 

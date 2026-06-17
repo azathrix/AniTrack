@@ -137,7 +137,7 @@
                       :options="selectedQueueDomainOptions"
                       size="small"
                     />
-                    <el-button v-if="selectedQueueAction" size="small" plain @click="runAction(selectedQueueAction)">立即执行</el-button>
+                    <el-button v-if="selectedQueueAction" size="small" plain @click="runAction(selectedQueueAction)">立即执行该队列</el-button>
                   </div>
                 </div>
                 <div class="detail-summary-grid">
@@ -146,7 +146,7 @@
                   <div><span>运行中</span><strong>{{ selectedQueue.running || 0 }}</strong></div>
                   <div><span>失败</span><strong>{{ selectedQueue.failed || 0 }}</strong></div>
                 </div>
-                <el-table :data="selectedQueueItems" height="520" class="candidate-table">
+                <el-table :data="selectedQueueItems" height="520" class="candidate-table" empty-text="当前队列没有任务明细">
                   <el-table-column prop="status" label="状态" width="110">
                     <template #default="{ row }"><el-tag :type="taskTag(row.status)">{{ taskStatusText(row) }}</el-tag></template>
                   </el-table-column>
@@ -675,13 +675,7 @@ const selectedQueueDomainOptions = computed(() => {
 const selectedQueueAction = computed(() => {
   const queue = selectedQueue.value
   if (!queue) return ''
-  const actions = {
-    rss: '/scan',
-    cloud: '/tasks/process?force=true',
-    cloud_poll: '/tasks/poll',
-    sync: '/sync/tasks/process'
-  }
-  return actions[queue.key] || ''
+  return `/queues/${queue.key}/trigger`
 })
 const selectedScheduledJob = computed(() => {
   const section = selectedSectionMeta.value
