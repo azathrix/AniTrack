@@ -281,6 +281,23 @@ def ensure_pipeline_runtime(conn: sqlite3.Connection) -> None:
                     """,
                     (pipeline_id, step_key, next_step, ts, ts),
                 )
+        special_transitions = [
+            ("cloud_presence", "skipped", "sync_plan"),
+        ]
+        for from_step, result_status, to_step in special_transitions:
+            step_keys = {step_key for step_key, _ in steps}
+            if from_step not in step_keys or to_step not in step_keys:
+                continue
+            conn.execute(
+                """
+                INSERT INTO pipeline_transitions
+                  (pipeline_id, from_step_key, result_status, to_step_key, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(pipeline_id, from_step_key, result_status, to_step_key) DO UPDATE SET
+                  updated_at=excluded.updated_at
+                """,
+                (pipeline_id, from_step, result_status, to_step, ts, ts),
+            )
     task_tables = [
         "mikan_match_tasks",
         "metadata_tasks",

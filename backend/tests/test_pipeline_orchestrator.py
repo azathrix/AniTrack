@@ -35,9 +35,36 @@ class PipelineOrchestratorTest(unittest.IsolatedAsyncioTestCase):
 
         clear_processors()
         with connect() as conn:
-            conn.execute("DELETE FROM processor_events")
-            conn.execute("DELETE FROM processor_tasks")
-            conn.execute("DELETE FROM pipeline_runs")
+            for table in [
+                "processor_events",
+                "processor_tasks",
+                "pipeline_runs",
+                "local_presence_tasks",
+                "nfo_tasks",
+                "sync_tasks",
+                "sync_plan_tasks",
+                "local_assets",
+                "cloud_asset_tasks",
+                "cloud_poll_tasks",
+                "cloud_assets",
+                "cloud_submissions",
+                "download_tasks",
+                "download_enqueue_tasks",
+                "cloud_presence_tasks",
+                "backfill_tasks",
+                "selection_tasks",
+                "metadata_tasks",
+                "mikan_match_tasks",
+                "rss_candidates",
+                "releases",
+                "episodes",
+                "seasonal_entries",
+                "library_entries",
+                "entries",
+                "works",
+                "series",
+            ]:
+                conn.execute(f"DELETE FROM {table}")
 
     async def test_success_result_enqueues_next_step_and_completes_run(self) -> None:
         from app.database import connect
@@ -250,6 +277,80 @@ class PipelineOrchestratorTest(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(all(row["status"] == "pending" for row in download_tasks))
             self.assertTrue(all(row["target_dir"] for row in download_tasks))
             self.assertTrue(all(row["normalized_name"] for row in download_tasks))
+
+    async def test_existing_cloud_asset_skips_download_enqueue(self) -> None:
+        from app.database import connect
+        from app.pipeline_orchestrator import run_ready_tasks, start_pipeline
+        from app.processors import register_builtin_processors
+
+        register_builtin_processors()
+        with connect() as conn:
+            ts = "2026-06-18T00:00:00+00:00"
+            work_id = conn.execute(
+                """
+                INSERT INTO works (root_key, title_root, created_at, updated_at)
+                VALUES ('existing-cloud', 'Existing Cloud', ?, ?)
+                """,
+                (ts, ts),
+            ).lastrowid
+            entry_id = conn.execute(
+                """
+                INSERT INTO entries
+                  (work_id, fingerprint, domain_kind, display_title, title_root, title_raw, title_cn, bangumi_id, created_at, updated_at)
+                VALUES (?, 'bangumi:999', 'seasonal', 'Existing Cloud', 'Existing Cloud', 'Existing Cloud', 'Existing Cloud', '999', ?, ?)
+                """,
+                (work_id, ts, ts),
+            ).lastrowid
+            release_id = conn.execute(
+                """
+                INSERT INTO releases
+                  (series_id, entry_id, episode_number, guid, title, magnet, created_at, updated_at)
+                VALUES (0, ?, 1, 'existing-release', 'Existing Cloud - 01', 'magnet:?xt=urn:btih:existing', ?, ?)
+                """,
+                (entry_id, ts, ts),
+            ).lastrowid
+            conn.execute(
+                """
+                INSERT INTO cloud_assets
+                  (task_id, release_id, series_id, entry_id, episode_number, provider, provider_file_id, cloud_path, cloud_name, status, created_at, updated_at)
+                VALUES (9001, ?, 0, ?, 1, 'pikpak', 'file-existing', '/Anime/Existing Cloud/01.mkv', '01.mkv', 'available', ?, ?)
+                """,
+                (release_id, entry_id, ts, ts),
+            )
+            conn.execute(
+                """
+                INSERT INTO cloud_presence_tasks
+                  (release_id, series_id, entry_id, episode_number, status, retry_after, last_error, created_at, updated_at)
+                VALUES (?, 0, ?, 1, 'pending', '', '', ?, ?)
+                """,
+                (release_id, entry_id, ts, ts),
+            )
+
+        run_id = start_pipeline(
+            "seasonal_mikan_tracking",
+            trigger_source="test",
+            first_step_key="cloud_presence",
+            subject_type="release",
+            subject_id=release_id,
+            payload={"release_id": release_id, "entry_id": entry_id},
+        )
+        processed = await run_ready_tasks(limit=1)
+        self.assertEqual(processed, 1)
+        with connect() as conn:
+            tasks = conn.execute(
+                "SELECT processor_key, subject_type, subject_id, status FROM processor_tasks WHERE run_id=? ORDER BY id ASC",
+                (run_id,),
+            ).fetchall()
+            self.assertEqual(tasks[0]["processor_key"], "cloud_presence")
+            self.assertEqual(tasks[0]["status"], "completed")
+            self.assertEqual(tasks[1]["processor_key"], "sync_plan")
+            self.assertEqual(tasks[1]["subject_type"], "entry")
+            self.assertEqual(tasks[1]["subject_id"], entry_id)
+            download_enqueue_count = conn.execute(
+                "SELECT COUNT(*) AS count FROM download_enqueue_tasks WHERE release_id=?",
+                (release_id,),
+            ).fetchone()["count"]
+            self.assertEqual(download_enqueue_count, 0)
 
 
 if __name__ == "__main__":

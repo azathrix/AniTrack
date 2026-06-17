@@ -48,8 +48,14 @@ class ProcessorResult:
         return cls("success", message, data or {}, next_payload or {}, next_tasks or [])
 
     @classmethod
-    def skipped(cls, message: str = "", *, data: dict[str, Any] | None = None) -> "ProcessorResult":
-        return cls(status="skipped", message=message, data=data or {})
+    def skipped(
+        cls,
+        message: str = "",
+        *,
+        data: dict[str, Any] | None = None,
+        next_payload: dict[str, Any] | None = None,
+    ) -> "ProcessorResult":
+        return cls(status="skipped", message=message, data=data or {}, next_payload=next_payload or {})
 
     @classmethod
     def retryable(cls, message: str, retry_after: str = "", *, data: dict[str, Any] | None = None) -> "ProcessorResult":

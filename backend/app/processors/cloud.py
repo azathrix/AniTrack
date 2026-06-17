@@ -63,7 +63,7 @@ async def process_cloud_presence(context: ProcessorContext, payload: dict) -> Pr
                 """,
                 (int(existing_cloud["id"]), ts, release_id),
             )
-            return ProcessorResult.success(
+            return ProcessorResult.skipped(
                 "云盘资源已存在",
                 data={"release_id": release_id, "entry_id": entry_id, "cloud_asset_id": int(existing_cloud["id"])},
                 next_payload={
