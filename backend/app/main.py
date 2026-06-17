@@ -1192,41 +1192,27 @@ async def handle_processor_queue() -> None:
 
 
 async def run_scan_source(settings: dict[str, str], operation_id: int | None = None) -> str:
-    generation = get_runtime_generation()
-    run_id = start_pipeline_run("seasonal_mikan_tracking", "manual", "正在回收上次中断的 Mikan 匹配任务")
+    if not settings.get("rss_url"):
+        log("warn", "未配置 Mikan RSS")
+        return "未配置 Mikan RSS"
     if operation_id:
-        update_operation(operation_id, "正在回收上次中断的 Mikan 匹配任务")
-    reclaimed_mikan = reclaim_mikan_match_tasks(now())
-    update_pipeline_run(run_id, progress=5, message="正在扫描 RSS 源并写入候选")
-    if operation_id:
-        update_operation(operation_id, "正在扫描 RSS 源并写入候选")
-    log("info", "扫描全部: 开始扫描 RSS 源")
-    def update_scan_progress(message: str) -> None:
-        update_pipeline_run(run_id, message=message)
-        if operation_id:
-            update_operation(operation_id, message)
-        log("info", f"扫描全部: {message}")
-
-    try:
-        scan_message = await scan_and_queue(settings, update_scan_progress)
-        update_pipeline_run(run_id, progress=80, message="RSS 写入完成，正在补排 Mikan 匹配任务")
-        if operation_id:
-            update_operation(operation_id, "RSS 写入完成，正在补排 Mikan 匹配任务")
-        repaired_mikan = enqueue_missing_mikan_match_tasks(now())
-        if not runtime_generation_alive(generation):
-            message = "运行数据已重置，本次扫描已中止"
-            finish_pipeline_run(run_id, "failed", message, {"reclaimed_mikan": reclaimed_mikan, "repaired_mikan": repaired_mikan})
-            return message
-        if operation_id:
-            update_operation(operation_id, "RSS 已写入，后续由任务链自动推进")
-        trigger_queue("cleanup", delay=0)
-        message = f"{scan_message}；回收 Mikan 运行中任务 {reclaimed_mikan} 个；补排 Mikan 匹配 {repaired_mikan} 个；后续由任务链自动推进"
-        finish_pipeline_run(run_id, "completed", message, {"reclaimed_mikan": reclaimed_mikan, "repaired_mikan": repaired_mikan})
-        log("info", f"扫描全部: RSS 完成，{message}")
-        return message
-    except Exception as exc:
-        finish_pipeline_run(run_id, "failed", str(exc), {"reclaimed_mikan": reclaimed_mikan})
-        raise
+        update_operation(operation_id, "正在启动 Mikan 新番追更流水线")
+    run_id = start_pipeline(
+        "seasonal_mikan_tracking",
+        trigger_source="manual",
+        first_step_key="rss_fetch",
+        subject_type="rss_source",
+        subject_id=1,
+        payload={"rss_url": settings.get("rss_url", ""), "domain_kind": "seasonal"},
+        message="手动扫描启动",
+    )
+    if run_id <= 0:
+        raise RuntimeError("Mikan 新番追更流水线启动失败")
+    trigger_queue("processor", delay=0)
+    trigger_queue("cleanup", delay=0)
+    message = f"已启动 Mikan 新番追更流水线 run_id={run_id}；后续由 processor 队列自动推进"
+    log("info", f"扫描全部: {message}")
+    return message
 
 
 def ensure_queue_handlers() -> None:
