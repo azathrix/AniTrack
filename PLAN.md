@@ -967,7 +967,7 @@ access_token + refresh_token
 - 同一队列失败项不阻塞其他项。
 - 补全后新增的任务自动触发下游队列，而不是等待下一次扫描。
 
-状态：未开始。当前系统已有部分防抖和独立任务表，但主调度仍是串行模型。
+状态：部分完成。当前主链已改成“入队即触发 + 队列防抖聚合 + 正式任务表自动推进”；`queue_dispatch` 已降级为恢复/补漏调度，不再承担主编排职责。剩余工作主要是继续清理少量兼容入口和提升状态解释。
 
 ### P1: 任务表继续细拆
 
@@ -990,7 +990,7 @@ access_token + refresh_token
   - `updated_at`
   - `batch_id`
 
-状态：未开始。现有 `mikan_match_tasks`、`metadata_tasks`、`cloud_poll_tasks` 已形成基础，但还不够细。
+状态：部分完成。`cloud_presence_tasks / download_enqueue_tasks / sync_plan_tasks / local_presence_tasks / nfo_tasks / cleanup_tasks` 已落地并接入主链；剩余工作主要是继续统一字段语义、补 `batch_id` 这类批次观察能力，以及进一步收缩兼容 helper。
 
 本阶段新增完成：
 
@@ -1293,7 +1293,7 @@ access_token + refresh_token
 - 同步链旧 helper 已继续收口：
   - 无引用的 `requeue_sync_tasks_for_series()` 已删除
   - `sync_service` 当前仍保留 `backfill_cloud_assets_from_completed_tasks()` 作为兼容补洞逻辑
-  - 后续可继续考虑把这类补洞动作降级到恢复/维护语义，而不是放在主链 handler 内
+  - 当前已在控制台语义上标记为“云盘资源登记 + 兼容补洞”；后续可继续考虑把这类补洞动作彻底下沉为恢复/维护语义
 - 控制台首页与 `dashboard_data()` 已继续去兼容聚合：
   - 首页“失败/问题”感知已改为优先读取正式队列详情
   - `dashboard_data()` 顶层已移除一批首页不再使用的旧兼容字段与重复查询

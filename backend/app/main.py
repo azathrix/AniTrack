@@ -1318,7 +1318,7 @@ def queue_summary(settings: dict[str, str]) -> list[dict[str, Any]]:
             "waiting": cloud_asset_retry["count"] if cloud_asset_retry else 0,
             "next_retry_after": cloud_asset_retry["next_retry_after"] if cloud_asset_retry else "",
             "next_retry_seconds": seconds_until(cloud_asset_retry["next_retry_after"] if cloud_asset_retry else ""),
-            "description": "把完成的 PikPak 任务登记成云盘资源",
+            "description": "把完成的 PikPak 任务登记成云盘资源，并兼容补齐极少数漏登记项",
         },
         {
             "key": "sync_plan",
