@@ -1191,6 +1191,14 @@ def queue_summary(settings: dict[str, str]) -> list[dict[str, Any]]:
                 "SELECT status, COUNT(*) AS count FROM cleanup_tasks GROUP BY status"
             ).fetchall()
         }
+        cleanup_retry = conn.execute(
+            """
+            SELECT COUNT(*) AS count, MIN(retry_after) AS next_retry_after
+            FROM cleanup_tasks
+            WHERE status IN ('pending', 'failed') AND retry_after != '' AND retry_after > ?
+            """,
+            (now(),),
+        ).fetchone()
         cloud_assets_pending = conn.execute(
             """
             SELECT COUNT(*) AS count
@@ -1362,9 +1370,9 @@ def queue_summary(settings: dict[str, str]) -> list[dict[str, Any]]:
             "pending": cleanup_rows.get("pending", 0),
             "running": cleanup_rows.get("running", 0),
             "failed": cleanup_rows.get("failed", 0),
-            "waiting": 0,
-            "next_retry_after": "",
-            "next_retry_seconds": 0,
+            "waiting": cleanup_retry["count"] if cleanup_retry else 0,
+            "next_retry_after": cleanup_retry["next_retry_after"] if cleanup_retry else "",
+            "next_retry_seconds": seconds_until(cleanup_retry["next_retry_after"] if cleanup_retry else ""),
             "description": "独立清理已完成操作、历史队列项和运行期残留状态",
         },
     ]
