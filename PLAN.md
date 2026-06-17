@@ -206,6 +206,10 @@ library（番剧库域）
   - 展示 key 允许保留业务语义，如 `cloud`
   - 运行时统一映射到真实队列名，如 `download`
   - 触发接口、状态判断、防抖状态统一走 canonical queue key
+- `sync_plan` 已开始从虚拟阶段改为正式任务表：
+  - 新增 `sync_plan_tasks`
+  - 同步计划不再只靠 `ready_count + reconcile_sync_intents()` 的虚拟估算
+  - 后续会继续把相关兼容调用完全收口到正式 worker
 
 反对继续使用的旧模式：
 

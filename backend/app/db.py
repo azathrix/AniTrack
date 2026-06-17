@@ -380,6 +380,17 @@ def init_db() -> None:
                 UNIQUE(cloud_asset_id, sync_direction)
             );
 
+            CREATE TABLE IF NOT EXISTS sync_plan_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entry_id INTEGER NOT NULL UNIQUE,
+                status TEXT NOT NULL DEFAULT 'pending',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                retry_after TEXT NOT NULL DEFAULT '',
+                last_error TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS nfo_tasks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 local_asset_id INTEGER NOT NULL UNIQUE,
@@ -909,6 +920,20 @@ def migrate(conn: sqlite3.Connection) -> None:
     )
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS sync_plan_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            entry_id INTEGER NOT NULL UNIQUE,
+            status TEXT NOT NULL DEFAULT 'pending',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            retry_after TEXT NOT NULL DEFAULT '',
+            last_error TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS local_presence_tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             local_asset_id INTEGER NOT NULL UNIQUE,
@@ -1263,6 +1288,7 @@ def run_cleanup_tasks(max_failed_operations: int = 20, completed_task_limit: int
             "download_tasks",
             "cloud_poll_tasks",
             "cloud_asset_tasks",
+            "sync_plan_tasks",
             "sync_tasks",
             "nfo_tasks",
             "local_presence_tasks",

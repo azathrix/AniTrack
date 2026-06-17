@@ -19,7 +19,7 @@ from .queue_bridge import register_queue_trigger
 from .library import bool_setting
 from .metadata import generate_nfo_for_entry, refresh_entry_metadata
 from .scanner import enqueue_backfill_task, enqueue_missing_mikan_match_tasks, enqueue_selection_task, mark_selected_releases, poll_submitted_tasks, process_backfill_tasks, process_cloud_presence_tasks, process_download_enqueue_tasks, process_metadata_tasks, process_mikan_match_tasks, process_selection_tasks, process_tasks, queue_release, reclaim_mikan_match_tasks, repair_series_mikan_ids, resolve_entry_choice, scan_and_queue
-from .sync_service import backfill_cloud_assets_from_completed_tasks, cancel_sync_for_series, process_cloud_asset_tasks, process_local_presence_tasks, process_nfo_tasks, process_sync_tasks, queue_sync_for_series, reconcile_rclone_submitted_tasks, reconcile_sync_intents, scan_cloud_library
+from .sync_service import backfill_cloud_assets_from_completed_tasks, cancel_sync_for_series, process_cloud_asset_tasks, process_local_presence_tasks, process_nfo_tasks, process_sync_plan_tasks, process_sync_tasks, queue_sync_for_series, reconcile_rclone_submitted_tasks, reconcile_sync_intents, scan_cloud_library
 
 
 scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
@@ -550,22 +550,15 @@ def ready_count_cloud_asset() -> int:
 
 
 def ready_count_sync_plan() -> int:
-    auto_sync = bool_setting(get_settings().get("auto_sync_following", "true"))
-    with connect() as conn:
-        row = conn.execute(
-            """
-            SELECT COUNT(DISTINCT ca.entry_id) AS count
-            FROM cloud_assets ca
-            JOIN entries e ON e.id=ca.entry_id
-            LEFT JOIN sync_rules sr ON sr.entry_id=ca.entry_id
-            WHERE ca.status='available'
-              AND COALESCE(e.hidden, 0)=0
-              AND e.bangumi_id != ''
-              AND (COALESCE(sr.sync_enabled, 0)=1 OR ?=1)
-            """,
-            (1 if auto_sync else 0,),
-        ).fetchone()
-    return int(row["count"] or 0) if row else 0
+    return count_ready(
+        """
+        SELECT COUNT(*) AS count
+        FROM sync_plan_tasks
+        WHERE status IN ('pending', 'failed')
+          AND (retry_after='' OR retry_after <= ?)
+        """,
+        (now(),),
+    )
 
 
 def ready_count_sync() -> int:
@@ -776,9 +769,9 @@ async def handle_cloud_asset_queue() -> None:
 
 async def handle_sync_plan_queue() -> None:
     settings = get_settings()
-    reconciled, queued = reconcile_sync_intents(settings)
-    if queued or reconciled:
-        log("info", f"同步计划已更新: 调和 {reconciled} 部番剧，新增同步任务 {queued} 个")
+    completed, failed = await process_sync_plan_tasks(settings)
+    if completed or failed:
+        log("info", f"同步计划已更新: 完成 {completed} 个，失败 {failed} 个")
     if ready_count_sync_plan() > 0:
         trigger_queue("sync_plan")
 
@@ -1168,6 +1161,12 @@ def queue_summary(settings: dict[str, str]) -> list[dict[str, Any]]:
                 "SELECT status, COUNT(*) AS count FROM sync_tasks GROUP BY status"
             ).fetchall()
         }
+        sync_plan_rows = {
+            row["status"]: row["count"]
+            for row in conn.execute(
+                "SELECT status, COUNT(*) AS count FROM sync_plan_tasks GROUP BY status"
+            ).fetchall()
+        }
         nfo_rows = {
             row["status"]: row["count"]
             for row in conn.execute(
@@ -1306,6 +1305,17 @@ def queue_summary(settings: dict[str, str]) -> list[dict[str, Any]]:
             "next_retry_after": cloud_asset_retry["next_retry_after"] if cloud_asset_retry else "",
             "next_retry_seconds": seconds_until(cloud_asset_retry["next_retry_after"] if cloud_asset_retry else ""),
             "description": "把完成的 PikPak 任务登记成云盘资源",
+        },
+        {
+            "key": "sync_plan",
+            "name": "同步计划",
+            "pending": sync_plan_rows.get("pending", 0),
+            "running": sync_plan_rows.get("running", 0),
+            "failed": sync_plan_rows.get("failed", 0),
+            "waiting": 0,
+            "next_retry_after": "",
+            "next_retry_seconds": 0,
+            "description": "根据同步意图和云盘资源状态生成本地同步任务",
         },
         {
             "key": "sync",
@@ -1551,6 +1561,17 @@ def queue_detail_map() -> dict[str, dict[str, Any]]:
                 """
             ).fetchall()
         )}
+        details["sync_plan"] = {"items": enrich_retry_rows(
+            conn.execute(
+                """
+                SELECT spt.*, e.display_title AS title_cn, e.domain_kind
+                FROM sync_plan_tasks spt
+                JOIN entries e ON e.id=spt.entry_id
+                ORDER BY spt.updated_at DESC
+                LIMIT 120
+                """
+            ).fetchall()
+        )}
         details["sync"] = {"items": enrich_retry_rows(
             conn.execute(
                 """
@@ -1624,6 +1645,7 @@ def console_sections() -> list[dict[str, Any]]:
         {"key": "queue:cloud", "name": "PikPak 入库", "kind": "queue", "queue_key": "cloud"},
         {"key": "queue:cloud_poll", "name": "PikPak 状态", "kind": "queue", "queue_key": "cloud_poll"},
         {"key": "queue:cloud_assets", "name": "云盘资源登记", "kind": "queue", "queue_key": "cloud_assets"},
+        {"key": "queue:sync_plan", "name": "同步计划", "kind": "queue", "queue_key": "sync_plan"},
         {"key": "queue:sync", "name": "本地同步", "kind": "queue", "queue_key": "sync"},
         {"key": "queue:nfo", "name": "NFO", "kind": "queue", "queue_key": "nfo"},
         {"key": "queue:local_presence", "name": "本地存在性检查", "kind": "queue", "queue_key": "local_presence"},

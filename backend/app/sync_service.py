@@ -21,6 +21,7 @@ sync_tasks_lock = asyncio.Lock()
 state_tasks_lock = asyncio.Lock()
 nfo_tasks_lock = asyncio.Lock()
 local_presence_tasks_lock = asyncio.Lock()
+sync_plan_tasks_lock = asyncio.Lock()
 
 
 def task_retry_after_minutes(minutes: int) -> str:
@@ -96,6 +97,23 @@ def enqueue_cloud_asset_task(conn, download_task_id: int, ts: str) -> None:
         (download_task_id, ts, ts),
     )
     request_queue_trigger("cloud_asset")
+
+
+def enqueue_sync_plan_task(conn, entry_id: int, ts: str) -> None:
+    conn.execute(
+        """
+        INSERT INTO sync_plan_tasks
+          (entry_id, status, retry_after, last_error, created_at, updated_at)
+        VALUES (?, 'pending', '', '', ?, ?)
+        ON CONFLICT(entry_id) DO UPDATE SET
+          status='pending',
+          retry_after='',
+          last_error='',
+          updated_at=excluded.updated_at
+        """,
+        (entry_id, ts, ts),
+    )
+    request_queue_trigger("sync_plan")
 
 
 def cloud_asset_path(task: dict, release: dict, entry: dict, settings: dict[str, str]) -> tuple[str, str]:
@@ -292,8 +310,15 @@ async def _process_cloud_asset_tasks(settings: dict[str, str], limit: int = 20, 
         completed += 1
 
     if completed:
-        reconcile_sync_intents(settings)
-        request_queue_triggers(["sync_plan", "sync"])
+        with connect() as conn:
+            ts = now()
+            for series_id in touched_series:
+                entry_row = conn.execute(
+                    "SELECT entry_id FROM releases WHERE series_id=? AND entry_id != 0 ORDER BY id ASC LIMIT 1",
+                    (series_id,),
+                ).fetchone()
+                if entry_row:
+                    enqueue_sync_plan_task(conn, int(entry_row["entry_id"]), ts)
     return completed, failed
 
 
@@ -485,6 +510,69 @@ def reconcile_sync_intents(settings: dict[str, str]) -> tuple[int, int]:
         queued, _ = queue_sync_for_series(entry_id, settings)
         queued_total += queued
     return len(entry_ids), queued_total
+
+
+async def process_sync_plan_tasks(settings: dict[str, str], limit: int = 20) -> tuple[int, int]:
+    async with sync_plan_tasks_lock:
+        return await _process_sync_plan_tasks(settings, limit)
+
+
+async def _process_sync_plan_tasks(settings: dict[str, str], limit: int = 20) -> tuple[int, int]:
+    with connect() as conn:
+        conn.execute(
+            """
+            UPDATE sync_plan_tasks
+            SET status='pending', last_error='上次同步计划处理中断，已自动放回待处理', updated_at=?
+            WHERE status='running' AND updated_at < ?
+            """,
+            (now(), stale_running_cutoff()),
+        )
+        rows = conn.execute(
+            """
+            SELECT spt.*, e.display_title AS title_cn, e.domain_kind
+            FROM sync_plan_tasks spt
+            JOIN entries e ON e.id=spt.entry_id
+            WHERE spt.status IN ('pending', 'failed')
+              AND (spt.retry_after='' OR spt.retry_after <= ?)
+            ORDER BY spt.id ASC
+            LIMIT ?
+            """,
+            (now(), limit),
+        ).fetchall()
+
+    completed = 0
+    failed = 0
+    for row in rows:
+        with connect() as conn:
+            conn.execute(
+                "UPDATE sync_plan_tasks SET status='running', attempts=attempts+1, updated_at=? WHERE id=?",
+                (now(), row["id"]),
+            )
+        try:
+            queued, _ = queue_sync_for_series(int(row["entry_id"]), settings)
+            with connect() as conn:
+                conn.execute(
+                    """
+                    UPDATE sync_plan_tasks
+                    SET status='completed', retry_after='', last_error=?, updated_at=?
+                    WHERE id=?
+                    """,
+                    (f"同步计划已调和，新增同步任务 {queued} 个", now(), row["id"]),
+                )
+            completed += 1
+        except Exception as exc:
+            failed += 1
+            with connect() as conn:
+                conn.execute(
+                    """
+                    UPDATE sync_plan_tasks
+                    SET status='failed', retry_after=?, last_error=?, updated_at=?
+                    WHERE id=?
+                    """,
+                    (task_retry_after(settings, int(row["attempts"] or 0) + 1), str(exc)[:2000], now(), row["id"]),
+                )
+            log("error", f"同步计划失败: {row['title_cn']} - {exc}")
+    return completed, failed
 
 
 def backfill_cloud_assets_from_completed_tasks(settings: dict[str, str]) -> int:
