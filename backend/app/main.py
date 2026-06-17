@@ -205,10 +205,6 @@ def build_entry_response(entry_id: int) -> dict[str, Any]:
         entry = conn.execute("SELECT * FROM entries WHERE id=?", (entry_id,)).fetchone()
         if not entry:
             return empty_entry_response()
-        series = conn.execute(
-            "SELECT * FROM series WHERE bangumi_id=? ORDER BY id ASC LIMIT 1",
-            (entry["bangumi_id"],),
-        ).fetchone()
         releases = conn.execute(
             "SELECT * FROM releases WHERE entry_id=? ORDER BY episode_number ASC, id DESC",
             (entry_id,),
@@ -235,7 +231,7 @@ def build_entry_response(entry_id: int) -> dict[str, Any]:
     resolutions = sorted({r["resolution"] for r in releases if r["resolution"]})
     languages = sorted({r["language"] for r in releases if r["language"]})
     return {
-        "series": {**row_to_dict(entry), "legacy_series_id": series["id"] if series else 0, "domain_kind": entry["domain_kind"]},
+        "series": {**row_to_dict(entry), "domain_kind": entry["domain_kind"]},
         "releases": rows_to_dicts(releases),
         "tasks": enrich_download_tasks(tasks),
         "cloud_assets": rows_to_dicts(cloud_assets),

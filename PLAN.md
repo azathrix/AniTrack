@@ -1298,6 +1298,9 @@ access_token + refresh_token
   - 首页“失败/问题”感知已改为优先读取正式队列详情
   - `dashboard_data()` 顶层已移除一批首页不再使用的旧兼容字段与重复查询
   - 当前仍保留条目抽屉详情和旧 `/api/series/*` 兼容接口，后续再谨慎处理
+- 条目详情接口已继续去掉无用兼容返回：
+  - `build_entry_response()` 不再返回未被使用的 `legacy_series_id`
+  - 旧 `/api/series/*` 路由本身暂时保留，只作为兼容壳层
 
 ### P4: 修复自动入云盘语义
 
