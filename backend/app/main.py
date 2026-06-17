@@ -1703,13 +1703,15 @@ async def api_update_settings(payload: SettingsPayload) -> dict[str, Any]:
     return settings_response()
 
 
-@app.get("/api/series/{series_id}")
+@app.get("/api/series/{series_id}", deprecated=True)
 async def api_series(series_id: int) -> dict[str, Any]:
+    # Legacy compatibility alias for old clients; primary frontend now uses /api/seasonal/*.
     return build_entry_response(series_id)
 
 
-@app.put("/api/series/{series_id}")
+@app.put("/api/series/{series_id}", deprecated=True)
 async def api_update_series(series_id: int, payload: SeriesPayload) -> dict[str, Any]:
+    # Legacy compatibility alias for old clients; primary frontend now uses /api/seasonal/*.
     return save_entry_payload(series_id, payload)
 
 
@@ -1733,8 +1735,9 @@ async def api_update_library_entry(entry_id: int, payload: SeriesPayload) -> dic
     return save_entry_payload(entry_id, payload, expected_domain="library")
 
 
-@app.delete("/api/series/{series_id}")
+@app.delete("/api/series/{series_id}", deprecated=True)
 async def api_delete_series(series_id: int) -> dict[str, str]:
+    # Legacy compatibility alias for old clients; primary frontend now uses /api/seasonal/*.
     return hide_entry(
         series_id,
         success_message="已隐藏误识别番剧，关联记录已保留",
@@ -1954,8 +1957,9 @@ async def api_clear_data() -> dict[str, str]:
     return {"status": "completed", "message": "已清除所有运行数据"}
 
 
-@app.post("/api/series/{series_id}/download")
+@app.post("/api/series/{series_id}/download", deprecated=True)
 async def api_download_series(series_id: int) -> dict[str, str]:
+    # Legacy compatibility alias for old clients; primary frontend now uses /api/seasonal/*.
     return queue_entry_download(series_id)
 
 
@@ -1966,23 +1970,27 @@ async def api_download_release(release_id: int) -> dict[str, str]:
     return {"status": "queued"}
 
 
-@app.post("/api/series/{series_id}/metadata")
+@app.post("/api/series/{series_id}/metadata", deprecated=True)
 async def api_refresh_metadata(series_id: int) -> dict[str, str]:
+    # Legacy compatibility alias for old clients; primary frontend now uses /api/seasonal/*.
     return start_entry_metadata_refresh(series_id)
 
 
-@app.post("/api/series/{series_id}/nfo")
+@app.post("/api/series/{series_id}/nfo", deprecated=True)
 async def api_generate_nfo(series_id: int) -> dict[str, str]:
+    # Legacy compatibility alias for old clients; primary frontend now uses /api/seasonal/*.
     return generate_entry_nfo(series_id)
 
 
-@app.post("/api/series/{series_id}/sync")
+@app.post("/api/series/{series_id}/sync", deprecated=True)
 async def api_sync_series(series_id: int) -> dict[str, str]:
+    # Legacy compatibility alias for old clients; primary frontend now uses /api/seasonal/*.
     return queue_entry_sync(series_id)
 
 
-@app.post("/api/series/{series_id}/sync/cancel")
+@app.post("/api/series/{series_id}/sync/cancel", deprecated=True)
 async def api_cancel_sync_series(series_id: int) -> dict[str, str]:
+    # Legacy compatibility alias for old clients; primary frontend now uses /api/seasonal/*.
     return cancel_entry_sync(series_id)
 
 
