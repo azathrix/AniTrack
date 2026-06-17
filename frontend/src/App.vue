@@ -59,7 +59,7 @@
         </div>
 
         <el-card class="span-4 console-card">
-          <template #header>队列状态</template>
+          <template #header>系统概览</template>
           <div v-if="scanOperation" class="scan-progress">
             <div>
               <strong>{{ scanOperation.name }}</strong>
@@ -71,15 +71,12 @@
             <div v-for="queue in dashboard.queue_summary" :key="queue.key" class="queue-card">
               <div class="queue-title">
                 <strong>{{ queue.name }}</strong>
-                <el-tag size="small" :type="queue.failed ? 'danger' : queue.running ? 'warning' : queue.pending ? 'info' : 'success'">
+                <el-tag size="small" :type="queueTag(queue)">
                   {{ queueState(queue) }}
                 </el-tag>
               </div>
               <p>{{ queue.description }}</p>
-              <p v-if="queue.waiting" class="queue-note">等待重试 {{ queue.waiting }} 个，下次约 {{ formatCountdown(queue.next_retry_seconds) }}</p>
-              <p v-else-if="queue.pending && !queue.running" class="queue-note">{{ queuePendingHint(queue) }}</p>
-              <p v-if="queue.failed && queue.key === 'selection'" class="queue-note">通常表示字幕组、分辨率或语言仍无法唯一选择</p>
-              <p v-if="queue.failed && queue.key === 'backfill'" class="queue-note">通常表示 Mikan 番组页未解析到历史条目或缺少 Mikan ID</p>
+              <p class="queue-note">{{ queue.state_reason || queuePendingHint(queue) }}</p>
               <div class="queue-counts">
                 <span>待处理 <b>{{ queue.pending }}</b></span>
                 <span>运行中 <b>{{ queue.running }}</b></span>
@@ -89,119 +86,122 @@
           </div>
         </el-card>
 
-        <el-card class="span-4 console-card console-tabs-card">
-          <el-tabs v-model="consoleTab">
-            <el-tab-pane label="待处理" name="issues">
-              <el-alert
-                v-if="dashboard.rss_candidates.length"
-                type="info"
-                show-icon
-                :closable="false"
-                title="RSS 发布会先进入暂存区；只有完成 Mikan 匹配和元数据刷新后，才会出现在番剧库并继续入云盘。"
-                class="settings-alert"
-              />
-              <el-table v-if="dashboard.rss_candidates.length" :data="dashboard.rss_candidates" height="500" class="candidate-table">
-                <el-table-column prop="status" label="状态" width="100">
-                  <template #default="{ row }"><el-tag type="warning">{{ row.status }}</el-tag></template>
-                </el-table-column>
-                <el-table-column prop="series_title" label="解析标题" min-width="220" show-overflow-tooltip />
-                <el-table-column prop="episode_number" label="集" width="70" />
-                <el-table-column prop="subtitle_group" label="字幕组" width="130" show-overflow-tooltip />
-                <el-table-column prop="resolution" label="分辨率" width="100" />
-                <el-table-column prop="language" label="语言" width="90" />
-                <el-table-column prop="reason" label="原因" min-width="180" show-overflow-tooltip />
-                <el-table-column prop="title" label="RSS 标题" min-width="260" show-overflow-tooltip />
-              </el-table>
-              <el-table v-if="dashboard.selection_tasks?.length" :data="dashboard.selection_tasks" height="200" class="candidate-table">
-                <el-table-column prop="status" label="选集状态" width="110">
-                  <template #default="{ row }"><el-tag :type="taskTag(row.status)">{{ taskStatusText(row) }}</el-tag></template>
-                </el-table-column>
-                <el-table-column prop="title_cn" label="番剧" min-width="200" show-overflow-tooltip />
-                <el-table-column prop="reason" label="原因" min-width="240" show-overflow-tooltip />
-                <el-table-column prop="last_error" label="错误" min-width="240" show-overflow-tooltip />
-              </el-table>
-              <el-table v-if="dashboard.backfill_tasks?.length" :data="dashboard.backfill_tasks" height="200" class="candidate-table">
-                <el-table-column prop="status" label="补全状态" width="110">
-                  <template #default="{ row }"><el-tag :type="taskTag(row.status)">{{ taskStatusText(row) }}</el-tag></template>
-                </el-table-column>
-                <el-table-column prop="title_cn" label="番剧" min-width="200" show-overflow-tooltip />
-                <el-table-column prop="backfill_mode" label="模式" width="100" />
-                <el-table-column prop="last_error" label="错误" min-width="240" show-overflow-tooltip />
-              </el-table>
-              <el-empty v-if="!issues.length" description="当前没有需要人工处理的问题" />
-              <el-table v-else :data="issues" height="500">
-                <el-table-column prop="type" label="类型" width="130">
-                  <template #default="{ row }"><el-tag :type="row.level">{{ row.type }}</el-tag></template>
-                </el-table-column>
-                <el-table-column prop="title" label="番剧" min-width="180" />
-                <el-table-column prop="message" label="原因" min-width="260" />
-                <el-table-column label="操作" width="120">
-                  <template #default="{ row }"><el-button size="small" @click="row.series_id && openSeries(row.series_id)">处理</el-button></template>
-                </el-table-column>
-              </el-table>
-            </el-tab-pane>
+        <el-card class="span-4 console-card console-workbench-card">
+          <div class="console-workbench">
+            <aside class="console-nav">
+              <div v-for="section in dashboard.console_sections || []" :key="section.key">
+                <div v-if="section.kind === 'group'" class="console-nav-group">{{ section.name }}</div>
+                <button
+                  v-else
+                  class="console-nav-item"
+                  :class="{ active: selectedConsoleSection === section.key }"
+                  @click="selectedConsoleSection = section.key"
+                >
+                  <span>{{ section.name }}</span>
+                  <el-tag
+                    v-if="section.kind === 'queue' && queueMap[section.queue_key]"
+                    size="small"
+                    :type="queueTag(queueMap[section.queue_key])"
+                  >
+                    {{ queueBadge(queueMap[section.queue_key]) }}
+                  </el-tag>
+                </button>
+              </div>
+            </aside>
 
-            <el-tab-pane label="云盘队列" name="cloud">
-              <el-table :data="runningRows" height="500">
-                <el-table-column prop="status" label="状态" width="120">
-                  <template #default="{ row }"><el-tag :type="taskTag(row.status)">{{ taskStatusText(row) }}</el-tag></template>
-                </el-table-column>
-                <el-table-column prop="title_cn" label="番剧" min-width="180" />
-                <el-table-column prop="episode_number" label="集" width="70" />
-                <el-table-column prop="subtitle_group" label="字幕组" width="140" />
-                <el-table-column prop="resolution" label="分辨率" width="110" />
-                <el-table-column prop="language" label="语言" width="90" />
-                <el-table-column prop="target_dir" label="目标目录" min-width="260" />
-                <el-table-column prop="last_error" label="错误" min-width="220" />
-                <el-table-column label="下次处理" width="130">
-                  <template #default="{ row }">{{ row.waiting_retry ? formatCountdown(row.retry_seconds) : '-' }}</template>
-                </el-table-column>
-              </el-table>
-            </el-tab-pane>
+            <section class="console-detail">
+              <template v-if="selectedQueue">
+                <div class="detail-header">
+                  <div>
+                    <h3>{{ selectedQueue.name }}</h3>
+                    <p>{{ selectedQueue.description }}</p>
+                  </div>
+                  <div class="detail-tags">
+                    <el-tag :type="queueTag(selectedQueue)">{{ queueState(selectedQueue) }}</el-tag>
+                    <el-tag v-if="selectedQueue.waiting" type="warning">重试 {{ selectedQueue.waiting }}</el-tag>
+                    <el-button v-if="selectedQueueAction" size="small" plain @click="runAction(selectedQueueAction)">立即执行</el-button>
+                  </div>
+                </div>
+                <div class="detail-summary-grid">
+                  <div><span>当前状态</span><strong>{{ selectedQueue.state_reason || '-' }}</strong></div>
+                  <div><span>待处理</span><strong>{{ selectedQueue.pending || 0 }}</strong></div>
+                  <div><span>运行中</span><strong>{{ selectedQueue.running || 0 }}</strong></div>
+                  <div><span>失败</span><strong>{{ selectedQueue.failed || 0 }}</strong></div>
+                </div>
+                <el-table :data="selectedQueueItems" height="520" class="candidate-table">
+                  <el-table-column prop="status" label="状态" width="110">
+                    <template #default="{ row }"><el-tag :type="taskTag(row.status)">{{ taskStatusText(row) }}</el-tag></template>
+                  </el-table-column>
+                  <el-table-column prop="title_cn" label="番剧" min-width="200" show-overflow-tooltip />
+                  <el-table-column prop="series_title" label="候选标题" min-width="200" show-overflow-tooltip />
+                  <el-table-column prop="episode_number" label="集" width="70" />
+                  <el-table-column prop="reason" label="原因" min-width="200" show-overflow-tooltip />
+                  <el-table-column prop="last_error" label="错误" min-width="240" show-overflow-tooltip />
+                  <el-table-column label="等待" width="120">
+                    <template #default="{ row }">{{ row.waiting_retry ? formatCountdown(row.retry_seconds) : '-' }}</template>
+                  </el-table-column>
+                </el-table>
+              </template>
 
-            <el-tab-pane label="本地同步" name="sync">
-              <el-table :data="syncActiveRows" height="500">
-                <el-table-column prop="status" label="状态" width="120">
-                  <template #default="{ row }"><el-tag :type="taskTag(row.status)">{{ row.status }}</el-tag></template>
-                </el-table-column>
-                <el-table-column prop="title_cn" label="番剧" min-width="180" />
-                <el-table-column prop="source_path" label="云盘路径" min-width="260" />
-                <el-table-column prop="target_path" label="本地路径" min-width="260" />
-                <el-table-column label="进度" width="180">
-                  <template #default="{ row }">
-                    <el-progress
-                      v-if="row.status === 'running' || Number(row.progress || 0) > 0"
-                      :percentage="Number(row.progress || 0)"
-                      :show-text="false"
-                    />
-                    <span class="muted">{{ row.progress_text || '-' }}</span>
-                  </template>
-                </el-table-column>
-                <el-table-column prop="last_error" label="错误" min-width="220" />
-                <el-table-column label="下次处理" width="130">
-                  <template #default="{ row }">{{ row.waiting_retry ? formatCountdown(row.retry_seconds) : '-' }}</template>
-                </el-table-column>
-              </el-table>
-            </el-tab-pane>
+              <template v-else-if="selectedScheduledJob">
+                <div class="detail-header">
+                  <div>
+                    <h3>{{ selectedScheduledJob.job_key }}</h3>
+                    <p>定时任务与调度状态</p>
+                  </div>
+                  <div class="detail-tags">
+                    <el-tag :type="taskTag(selectedScheduledJob.last_status || 'idle')">{{ selectedScheduledJob.last_status || 'idle' }}</el-tag>
+                  </div>
+                </div>
+                <div class="detail-summary-grid">
+                  <div><span>间隔</span><strong>{{ selectedScheduledJob.interval_minutes || 0 }} 分钟</strong></div>
+                  <div><span>防抖</span><strong>{{ selectedScheduledJob.debounce_seconds || 0 }} 秒</strong></div>
+                  <div><span>最近状态</span><strong>{{ selectedScheduledJob.last_status || '-' }}</strong></div>
+                  <div><span>最近执行</span><strong>{{ selectedScheduledJob.latest_run?.started_at || '-' }}</strong></div>
+                </div>
+                <el-table :data="selectedScheduledRuns" height="520" class="candidate-table">
+                  <el-table-column prop="status" label="状态" width="110">
+                    <template #default="{ row }"><el-tag :type="taskTag(row.status)">{{ row.status }}</el-tag></template>
+                  </el-table-column>
+                  <el-table-column prop="trigger_source" label="来源" width="120" />
+                  <el-table-column prop="message" label="说明" min-width="320" show-overflow-tooltip />
+                  <el-table-column prop="started_at" label="开始时间" width="220" />
+                  <el-table-column prop="finished_at" label="结束时间" width="220" />
+                </el-table>
+              </template>
 
-            <el-tab-pane label="操作日志" name="logs">
-              <div class="log-layout">
-                <div class="operation-list">
+              <template v-else-if="selectedConsoleSection === 'operations'">
+                <div class="detail-header">
+                  <div>
+                    <h3>运行操作</h3>
+                    <p>手动触发任务和系统长操作</p>
+                  </div>
+                  <el-button v-if="dashboard.operations.length" plain @click="runAction('/operations/clear')">清空已结束操作</el-button>
+                </div>
+                <div class="operation-list operation-list-full">
                   <div v-if="!dashboard.operations.length" class="operation-item">
                     <el-tag type="success">idle</el-tag>
                     <div>
                       <strong>当前没有运行中的操作</strong>
-                      <span>已完成的操作不会继续保留在这里。</span>
+                      <span>手动操作完成后会自动从这里移除。</span>
                     </div>
                   </div>
-                  <div v-for="op in dashboard.operations.slice(0, 10)" :key="op.id" class="operation-item">
+                  <div v-for="op in dashboard.operations" :key="op.id" class="operation-item">
                     <el-tag :type="taskTag(op.status)">{{ op.status }}</el-tag>
                     <div>
                       <strong>{{ op.name }}</strong>
                       <span>{{ op.message || '处理中' }}</span>
                     </div>
                   </div>
-                  <el-button v-if="dashboard.operations.length" plain @click="runAction('/operations/clear')">清空已结束操作</el-button>
+                </div>
+              </template>
+
+              <template v-else-if="selectedConsoleSection === 'logs'">
+                <div class="detail-header">
+                  <div>
+                    <h3>服务日志</h3>
+                    <p>直接读取服务端日志文件</p>
+                  </div>
                 </div>
                 <div class="log-console">
                   <div class="log-toolbar">
@@ -210,24 +210,30 @@
                   </div>
                   <pre class="server-log">{{ filteredServerLogText }}</pre>
                 </div>
-              </div>
-            </el-tab-pane>
+              </template>
 
-            <el-tab-pane label="维护" name="maintenance">
-              <div class="maintenance-actions maintenance-pane">
-                <el-button type="primary" :icon="Search" :disabled="scanRunning" @click="runAction('/scan')">扫描全部</el-button>
-                <el-button type="primary" plain @click="runAction('/tasks/process?force=true')">立即处理云盘队列</el-button>
-                <el-button :icon="Refresh" @click="runAction('/tasks/poll')">刷新 PikPak 状态</el-button>
-                <el-button @click="runAction('/cloud/scan')">扫描云盘库</el-button>
-                <el-button type="warning" @click="runAction('/tasks/retry-failed')">重试失败任务</el-button>
-                <el-popconfirm title="会清空番剧、候选、任务、云盘资源、本地同步记录和日志。确定？" @confirm="runAction('/system/clear-data')">
-                  <template #reference>
-                    <el-button type="danger" plain>清除所有数据</el-button>
-                  </template>
-                </el-popconfirm>
-              </div>
-            </el-tab-pane>
-          </el-tabs>
+              <template v-else-if="selectedConsoleSection === 'maintenance'">
+                <div class="detail-header">
+                  <div>
+                    <h3>维护</h3>
+                    <p>手动触发、失败重试和数据清理</p>
+                  </div>
+                </div>
+                <div class="maintenance-actions maintenance-pane">
+                  <el-button type="primary" :icon="Search" :disabled="scanRunning" @click="runAction('/scan')">扫描全部</el-button>
+                  <el-button type="primary" plain @click="runAction('/tasks/process?force=true')">立即处理云盘队列</el-button>
+                  <el-button :icon="Refresh" @click="runAction('/tasks/poll')">刷新 PikPak 状态</el-button>
+                  <el-button @click="runAction('/cloud/scan')">扫描云盘库</el-button>
+                  <el-button type="warning" @click="runAction('/tasks/retry-failed')">重试失败任务</el-button>
+                  <el-popconfirm title="会清空番剧、候选、任务、云盘资源、本地同步记录和日志。确定？" @confirm="runAction('/system/clear-data')">
+                    <template #reference>
+                      <el-button type="danger" plain>清除所有数据</el-button>
+                    </template>
+                  </el-popconfirm>
+                </div>
+              </template>
+            </section>
+          </div>
         </el-card>
       </section>
 
@@ -480,7 +486,7 @@ import { APP_BUILD, APP_VERSION } from './version'
 const view = ref('dashboard')
 const appVersion = APP_VERSION
 const appBuild = APP_BUILD
-const consoleTab = ref('issues')
+const selectedConsoleSection = ref('queue:mikan_match')
 const logKeyword = ref('')
 const loading = ref(false)
 const savingSettings = ref(false)
@@ -501,9 +507,13 @@ const dashboard = reactive({
   sync_rules: [],
   cloud_assets: [],
   operations: [],
+  scheduled_jobs: [],
+  scheduled_runs: [],
   logs: [],
   server_logs: [],
   queue_summary: [],
+  queue_details: {},
+  console_sections: [],
   calendar: [],
   active_tasks: [],
   task_counts: {}
@@ -555,6 +565,39 @@ const issueCount = computed(() => issues.value.length)
 const runningRows = computed(() => dashboard.tasks.filter(t => ['pending', 'running', 'submitted', 'failed'].includes(t.status)))
 const syncActiveRows = computed(() => dashboard.sync_tasks.filter(t => ['pending', 'running', 'failed'].includes(t.status)))
 const scanOperation = computed(() => dashboard.operations.find(op => op.name === '扫描全部' && op.status === 'running'))
+const queueMap = computed(() => Object.fromEntries((dashboard.queue_summary || []).map(item => [item.key, item])))
+const selectedSectionMeta = computed(() => (dashboard.console_sections || []).find(item => item.key === selectedConsoleSection.value) || null)
+const selectedQueue = computed(() => {
+  const section = selectedSectionMeta.value
+  if (!section || section.kind !== 'queue') return null
+  return queueMap.value[section.queue_key] || null
+})
+const selectedQueueItems = computed(() => {
+  const section = selectedSectionMeta.value
+  if (!section || section.kind !== 'queue') return []
+  return dashboard.queue_details?.[section.queue_key]?.items || []
+})
+const selectedQueueAction = computed(() => {
+  const queue = selectedQueue.value
+  if (!queue) return ''
+  const actions = {
+    rss: '/scan',
+    cloud: '/tasks/process?force=true',
+    cloud_poll: '/tasks/poll',
+    sync: '/sync/tasks/process'
+  }
+  return actions[queue.key] || ''
+})
+const selectedScheduledJob = computed(() => {
+  const section = selectedSectionMeta.value
+  if (!section || section.kind !== 'scheduled') return null
+  return (dashboard.scheduled_jobs || []).find(item => item.job_key === section.job_key) || null
+})
+const selectedScheduledRuns = computed(() => {
+  const section = selectedSectionMeta.value
+  if (!section || section.kind !== 'scheduled') return []
+  return (dashboard.scheduled_runs || []).filter(item => item.job_key === section.job_key)
+})
 const scanRunning = computed(() => Boolean(scanOperation.value))
 const scanProgress = computed(() => {
   const message = scanOperation.value?.message || ''
@@ -605,6 +648,23 @@ function taskTag(status) {
   if (status === 'completed' || status === 'submitted' || status === 'synced') return 'success'
   if (status === 'running') return 'warning'
   return 'info'
+}
+
+function queueTag(queue) {
+  if (!queue) return 'info'
+  if (Number(queue.failed || 0) > 0) return 'danger'
+  if (queue.queue_state === 'running' || Number(queue.running || 0) > 0) return 'warning'
+  if (queue.queue_state === 'debouncing' || queue.queue_state === 'cooldown' || Number(queue.waiting || 0) > 0) return 'info'
+  if (Number(queue.pending || 0) > 0) return 'primary'
+  return 'success'
+}
+
+function queueBadge(queue) {
+  if (!queue) return '-'
+  if (Number(queue.failed || 0) > 0) return `${queue.failed} 失败`
+  if (Number(queue.running || 0) > 0) return `${queue.running} 运行`
+  if (Number(queue.pending || 0) > 0) return `${queue.pending} 待处理`
+  return '空闲'
 }
 
 function taskStatusText(row) {
@@ -740,6 +800,9 @@ async function reload() {
   try {
     Object.assign(dashboard, await getDashboard())
     Object.assign(settings, await getSettings())
+    if (!(dashboard.console_sections || []).some(item => item.key === selectedConsoleSection.value)) {
+      selectedConsoleSection.value = 'queue:mikan_match'
+    }
     if (view.value === 'settings') await reloadDiagnostics()
   } finally {
     loading.value = false

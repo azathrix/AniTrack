@@ -214,21 +214,114 @@ h1 {
   overflow: hidden;
 }
 
-.console-tabs-card {
+.console-workbench-card {
+  min-height: 780px;
+}
+
+.console-workbench-card .el-card__body {
   min-height: 720px;
 }
 
-.console-tabs-card .el-card__body {
-  min-height: 660px;
+.console-workbench {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 280px minmax(0, 1fr);
+  min-height: 700px;
 }
 
-.console-tabs-card .el-tabs,
-.console-tabs-card .el-tabs__content {
-  min-height: 620px;
+.console-nav {
+  background: #f8fafc;
+  border: 1px solid #dbe4ef;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  min-height: 700px;
+  max-height: 700px;
+  overflow: auto;
+  padding: 12px;
 }
 
-.console-tabs-card .el-tab-pane {
-  min-height: 560px;
+.console-nav-group {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  margin-top: 4px;
+  padding: 6px 8px 2px;
+}
+
+.console-nav-item {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  color: #1f2937;
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  padding: 10px 12px;
+  text-align: left;
+  width: 100%;
+}
+
+.console-nav-item.active {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+
+.console-detail {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.detail-header {
+  align-items: flex-start;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+}
+
+.detail-header h3 {
+  font-size: 20px;
+  margin: 0;
+}
+
+.detail-header p {
+  color: #64748b;
+  margin: 6px 0 0;
+}
+
+.detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.detail-summary-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.detail-summary-grid div {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.detail-summary-grid span {
+  color: #64748b;
+  display: block;
+  font-size: 12px;
+}
+
+.detail-summary-grid strong {
+  display: block;
+  font-size: 14px;
+  margin-top: 6px;
 }
 
 .scan-progress {
@@ -363,6 +456,10 @@ h1 {
   display: grid;
   gap: 10px;
   align-content: start;
+}
+
+.operation-list-full {
+  min-height: 520px;
 }
 
 .active-task {
@@ -703,8 +800,15 @@ h1 {
   .priority-layout,
   .module-grid,
   .queue-grid,
-  .log-layout {
+  .log-layout,
+  .console-workbench,
+  .detail-summary-grid {
     grid-template-columns: 1fr;
+  }
+
+  .console-nav {
+    min-height: 280px;
+    max-height: 280px;
   }
 
   .span-2,

@@ -912,6 +912,150 @@ def scheduled_jobs_summary() -> list[dict[str, Any]]:
     return result
 
 
+def queue_detail_map() -> dict[str, dict[str, Any]]:
+    with connect() as conn:
+        details: dict[str, dict[str, Any]] = {}
+        details["mikan_match"] = {
+            "items": enrich_retry_rows(
+                conn.execute(
+                    """
+                    SELECT mt.*, rc.title, rc.series_title, rc.reason
+                    FROM mikan_match_tasks mt
+                    JOIN rss_candidates rc ON rc.id=mt.candidate_id
+                    ORDER BY mt.updated_at DESC
+                    LIMIT 120
+                    """
+                ).fetchall()
+            )
+        }
+        details["metadata"] = {
+            "items": enrich_retry_rows(
+                conn.execute(
+                    """
+                    SELECT mt.*, rc.title, rc.series_title, rc.reason, rc.bangumi_id
+                    FROM metadata_tasks mt
+                    JOIN rss_candidates rc ON rc.id=mt.candidate_id
+                    ORDER BY mt.updated_at DESC
+                    LIMIT 120
+                    """
+                ).fetchall()
+            )
+        }
+        details["selection"] = {
+            "items": enrich_retry_rows(
+                conn.execute(
+                    """
+                    SELECT st.*, s.title_cn, s.selected_group, s.selected_resolution
+                    FROM selection_tasks st
+                    JOIN series s ON s.id=st.series_id
+                    WHERE COALESCE(s.hidden, 0)=0
+                    ORDER BY st.updated_at DESC
+                    LIMIT 120
+                    """
+                ).fetchall()
+            )
+        }
+        details["backfill"] = {
+            "items": enrich_retry_rows(
+                conn.execute(
+                    """
+                    SELECT bt.*, s.title_cn, s.bangumi_id, s.mikan_bangumi_id
+                    FROM backfill_tasks bt
+                    JOIN series s ON s.id=bt.series_id
+                    WHERE COALESCE(s.hidden, 0)=0
+                    ORDER BY bt.updated_at DESC
+                    LIMIT 120
+                    """
+                ).fetchall()
+            )
+        }
+        details["cloud"] = {"items": enrich_download_tasks(
+            conn.execute(
+                """
+                SELECT dt.*, s.title_cn, r.episode_number, r.subtitle_group, r.resolution, r.language, r.title AS release_title
+                FROM download_tasks dt
+                JOIN series s ON s.id=dt.series_id
+                JOIN releases r ON r.id=dt.release_id
+                WHERE s.bangumi_id != ''
+                ORDER BY dt.updated_at DESC
+                LIMIT 120
+                """
+            ).fetchall()
+        )}
+        details["cloud_poll"] = {"items": enrich_retry_rows(
+            conn.execute(
+                """
+                SELECT cpt.*, dt.series_id, dt.release_id, dt.pikpak_task_id, dt.pikpak_file_id,
+                       s.title_cn, r.episode_number, r.title AS release_title
+                FROM cloud_poll_tasks cpt
+                JOIN download_tasks dt ON dt.id=cpt.download_task_id
+                JOIN series s ON s.id=dt.series_id
+                JOIN releases r ON r.id=dt.release_id
+                ORDER BY cpt.updated_at DESC
+                LIMIT 120
+                """
+            ).fetchall()
+        )}
+        details["cloud_assets"] = {"items": enrich_retry_rows(
+            conn.execute(
+                """
+                SELECT cat.*, dt.series_id, dt.release_id, dt.pikpak_file_id, s.title_cn, r.episode_number, r.title AS release_title
+                FROM cloud_asset_tasks cat
+                JOIN download_tasks dt ON dt.id=cat.download_task_id
+                JOIN series s ON s.id=dt.series_id
+                JOIN releases r ON r.id=dt.release_id
+                ORDER BY cat.updated_at DESC
+                LIMIT 120
+                """
+            ).fetchall()
+        )}
+        details["sync"] = {"items": enrich_retry_rows(
+            conn.execute(
+                """
+                SELECT st.*, s.title_cn, ca.cloud_name, ca.provider_file_id
+                FROM sync_tasks st
+                JOIN series s ON s.id=st.series_id
+                JOIN cloud_assets ca ON ca.id=st.cloud_asset_id
+                WHERE s.bangumi_id != ''
+                ORDER BY st.updated_at DESC
+                LIMIT 120
+                """
+            ).fetchall()
+        )}
+        details["rss"] = {"items": rows_to_dicts(
+            conn.execute(
+                """
+                SELECT *
+                FROM rss_candidates
+                ORDER BY updated_at DESC
+                LIMIT 120
+                """
+            ).fetchall()
+        )}
+    return details
+
+
+def console_sections() -> list[dict[str, Any]]:
+    return [
+        {"key": "queues", "name": "队列", "kind": "group"},
+        {"key": "queue:rss", "name": "RSS 扫描", "kind": "queue", "queue_key": "rss"},
+        {"key": "queue:mikan_match", "name": "Mikan 匹配", "kind": "queue", "queue_key": "mikan_match"},
+        {"key": "queue:metadata", "name": "元数据", "kind": "queue", "queue_key": "metadata"},
+        {"key": "queue:selection", "name": "自动选集", "kind": "queue", "queue_key": "selection"},
+        {"key": "queue:backfill", "name": "整季补全", "kind": "queue", "queue_key": "backfill"},
+        {"key": "queue:cloud", "name": "PikPak 入库", "kind": "queue", "queue_key": "cloud"},
+        {"key": "queue:cloud_poll", "name": "PikPak 状态", "kind": "queue", "queue_key": "cloud_poll"},
+        {"key": "queue:cloud_assets", "name": "云盘资源登记", "kind": "queue", "queue_key": "cloud_assets"},
+        {"key": "queue:sync", "name": "本地同步", "kind": "queue", "queue_key": "sync"},
+        {"key": "scheduler", "name": "定时任务", "kind": "group"},
+        {"key": "scheduler:rss_scan", "name": "RSS 定时扫描", "kind": "scheduled", "job_key": "rss_scan"},
+        {"key": "scheduler:queue_dispatch", "name": "队列分发", "kind": "scheduled", "job_key": "queue_dispatch"},
+        {"key": "operations", "name": "运行操作", "kind": "operations"},
+        {"key": "logs", "name": "服务日志", "kind": "logs"},
+        {"key": "maintenance", "name": "维护", "kind": "maintenance"},
+    ]
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
@@ -1140,6 +1284,8 @@ def dashboard_data() -> dict[str, Any]:
         "task_counts": {row["status"]: row["count"] for row in task_counts},
         "active_tasks": enrich_download_tasks(active_tasks),
         "queue_summary": queue_summary(settings),
+        "queue_details": queue_detail_map(),
+        "console_sections": console_sections(),
         "server_logs": read_server_logs(160),
     }
 
