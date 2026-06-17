@@ -430,19 +430,6 @@ def init_db() -> None:
                 updated_at TEXT NOT NULL
             );
 
-            CREATE TABLE IF NOT EXISTS series_state_tasks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                series_id INTEGER NOT NULL UNIQUE,
-                entry_id INTEGER NOT NULL DEFAULT 0 UNIQUE,
-                status TEXT NOT NULL DEFAULT 'pending',
-                attempts INTEGER NOT NULL DEFAULT 0,
-                scope TEXT NOT NULL DEFAULT 'all',
-                retry_after TEXT NOT NULL DEFAULT '',
-                last_error TEXT NOT NULL DEFAULT '',
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-
             CREATE TABLE IF NOT EXISTS logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 level TEXT NOT NULL,
@@ -728,21 +715,6 @@ def migrate(conn: sqlite3.Connection) -> None:
     )
     conn.execute(
         """
-        CREATE TABLE IF NOT EXISTS series_state_tasks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            series_id INTEGER NOT NULL UNIQUE,
-            status TEXT NOT NULL DEFAULT 'pending',
-            attempts INTEGER NOT NULL DEFAULT 0,
-            scope TEXT NOT NULL DEFAULT 'all',
-            retry_after TEXT NOT NULL DEFAULT '',
-            last_error TEXT NOT NULL DEFAULT '',
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )
-        """
-    )
-    conn.execute(
-        """
         CREATE TABLE IF NOT EXISTS operations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
@@ -894,7 +866,7 @@ def migrate(conn: sqlite3.Connection) -> None:
     }
     if "entry_id" not in episode_columns:
         conn.execute("ALTER TABLE episodes ADD COLUMN entry_id INTEGER NOT NULL DEFAULT 0")
-    for table in ["selection_tasks", "backfill_tasks", "cloud_submissions", "cloud_assets", "sync_rules", "local_assets", "series_state_tasks"]:
+    for table in ["selection_tasks", "backfill_tasks", "cloud_submissions", "cloud_assets", "sync_rules", "local_assets"]:
         columns = {
             row["name"]
             for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
@@ -1070,7 +1042,6 @@ def merge_duplicate_series(conn: sqlite3.Connection) -> None:
             conn.execute("UPDATE cloud_submissions SET series_id=? WHERE series_id=?", (keep_id, old_id))
             conn.execute("UPDATE selection_tasks SET series_id=? WHERE series_id=?", (keep_id, old_id))
             conn.execute("UPDATE backfill_tasks SET series_id=? WHERE series_id=?", (keep_id, old_id))
-            conn.execute("UPDATE series_state_tasks SET series_id=? WHERE series_id=?", (keep_id, old_id))
             conn.execute(
                 """
                 INSERT INTO sync_rules
@@ -1440,7 +1411,6 @@ def diagnostics() -> dict[str, Any]:
             "sync_rules",
             "local_assets",
             "sync_tasks",
-            "series_state_tasks",
             "logs",
             "operations",
         ]
@@ -1465,7 +1435,6 @@ def clear_runtime_data() -> None:
     next_generation = now()
     with connect() as conn:
         for table in [
-            "series_state_tasks",
             "sync_tasks",
             "local_assets",
             "sync_rules",
@@ -1490,7 +1459,7 @@ def clear_runtime_data() -> None:
             "logs",
         ]:
             conn.execute(f"DELETE FROM {table}")
-        conn.execute("DELETE FROM sqlite_sequence WHERE name IN ('series_state_tasks','sync_tasks','local_assets','sync_rules','cloud_assets','cloud_asset_tasks','cloud_poll_tasks','cloud_submissions','download_tasks','backfill_tasks','selection_tasks','metadata_tasks','mikan_match_tasks','rss_candidates','library_entries','seasonal_entries','entries','works','releases','episodes','series','operations','logs')")
+        conn.execute("DELETE FROM sqlite_sequence WHERE name IN ('sync_tasks','local_assets','sync_rules','cloud_assets','cloud_asset_tasks','cloud_poll_tasks','cloud_submissions','download_tasks','backfill_tasks','selection_tasks','metadata_tasks','mikan_match_tasks','rss_candidates','library_entries','seasonal_entries','entries','works','releases','episodes','series','operations','logs')")
         conn.execute(
             "INSERT INTO settings (key, value) VALUES ('runtime_generation', ?) "
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value",

@@ -18,7 +18,6 @@ from . import rclone_service
 
 cloud_asset_tasks_lock = asyncio.Lock()
 sync_tasks_lock = asyncio.Lock()
-state_tasks_lock = asyncio.Lock()
 nfo_tasks_lock = asyncio.Lock()
 local_presence_tasks_lock = asyncio.Lock()
 sync_plan_tasks_lock = asyncio.Lock()
