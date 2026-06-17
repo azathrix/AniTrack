@@ -180,6 +180,7 @@ def init_db() -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 release_id INTEGER NOT NULL,
                 series_id INTEGER NOT NULL,
+                entry_id INTEGER NOT NULL DEFAULT 0,
                 status TEXT NOT NULL,
                 attempts INTEGER NOT NULL DEFAULT 0,
                 pikpak_task_id TEXT NOT NULL DEFAULT '',
@@ -196,6 +197,7 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS selection_tasks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 series_id INTEGER NOT NULL UNIQUE,
+                entry_id INTEGER NOT NULL DEFAULT 0 UNIQUE,
                 status TEXT NOT NULL DEFAULT 'pending',
                 attempts INTEGER NOT NULL DEFAULT 0,
                 reason TEXT NOT NULL DEFAULT '',
@@ -208,6 +210,7 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS backfill_tasks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 series_id INTEGER NOT NULL UNIQUE,
+                entry_id INTEGER NOT NULL DEFAULT 0 UNIQUE,
                 status TEXT NOT NULL DEFAULT 'pending',
                 attempts INTEGER NOT NULL DEFAULT 0,
                 backfill_mode TEXT NOT NULL DEFAULT 'none',
@@ -220,6 +223,7 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS cloud_submissions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 series_id INTEGER NOT NULL,
+                entry_id INTEGER NOT NULL DEFAULT 0,
                 episode_number INTEGER NOT NULL,
                 release_id INTEGER NOT NULL,
                 provider TEXT NOT NULL DEFAULT 'pikpak',
@@ -235,7 +239,7 @@ def init_db() -> None:
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 last_seen_at TEXT NOT NULL DEFAULT '',
-                UNIQUE(series_id, episode_number, provider)
+                UNIQUE(entry_id, episode_number, provider)
             );
 
             CREATE TABLE IF NOT EXISTS cloud_poll_tasks (
@@ -291,6 +295,7 @@ def init_db() -> None:
                 task_id INTEGER NOT NULL UNIQUE,
                 release_id INTEGER NOT NULL,
                 series_id INTEGER NOT NULL,
+                entry_id INTEGER NOT NULL DEFAULT 0,
                 episode_number INTEGER NOT NULL,
                 provider TEXT NOT NULL DEFAULT 'pikpak',
                 provider_file_id TEXT NOT NULL DEFAULT '',
@@ -304,6 +309,7 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS sync_rules (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 series_id INTEGER NOT NULL UNIQUE,
+                entry_id INTEGER NOT NULL DEFAULT 0 UNIQUE,
                 sync_enabled INTEGER NOT NULL DEFAULT 0,
                 auto_sync_following INTEGER NOT NULL DEFAULT 0,
                 local_root TEXT NOT NULL DEFAULT '',
@@ -316,6 +322,7 @@ def init_db() -> None:
                 cloud_asset_id INTEGER NOT NULL UNIQUE,
                 release_id INTEGER NOT NULL,
                 series_id INTEGER NOT NULL,
+                entry_id INTEGER NOT NULL DEFAULT 0,
                 episode_number INTEGER NOT NULL,
                 local_path TEXT NOT NULL,
                 nfo_status TEXT NOT NULL DEFAULT 'pending',
@@ -329,6 +336,7 @@ def init_db() -> None:
                 cloud_asset_id INTEGER NOT NULL,
                 release_id INTEGER NOT NULL,
                 series_id INTEGER NOT NULL,
+                entry_id INTEGER NOT NULL DEFAULT 0,
                 status TEXT NOT NULL,
                 attempts INTEGER NOT NULL DEFAULT 0,
                 sync_direction TEXT NOT NULL DEFAULT 'cloud_to_local',
@@ -346,6 +354,7 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS series_state_tasks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 series_id INTEGER NOT NULL UNIQUE,
+                entry_id INTEGER NOT NULL DEFAULT 0 UNIQUE,
                 status TEXT NOT NULL DEFAULT 'pending',
                 attempts INTEGER NOT NULL DEFAULT 0,
                 scope TEXT NOT NULL DEFAULT 'all',
@@ -541,6 +550,7 @@ def migrate(conn: sqlite3.Connection) -> None:
     }
     download_task_additions = {
         "retry_after": "TEXT NOT NULL DEFAULT ''",
+        "entry_id": "INTEGER NOT NULL DEFAULT 0",
     }
     for column, ddl in download_task_additions.items():
         if column not in download_task_columns:
@@ -550,6 +560,7 @@ def migrate(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS selection_tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             series_id INTEGER NOT NULL UNIQUE,
+            entry_id INTEGER NOT NULL DEFAULT 0 UNIQUE,
             status TEXT NOT NULL DEFAULT 'pending',
             attempts INTEGER NOT NULL DEFAULT 0,
             reason TEXT NOT NULL DEFAULT '',
@@ -565,6 +576,7 @@ def migrate(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS backfill_tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             series_id INTEGER NOT NULL UNIQUE,
+            entry_id INTEGER NOT NULL DEFAULT 0 UNIQUE,
             status TEXT NOT NULL DEFAULT 'pending',
             attempts INTEGER NOT NULL DEFAULT 0,
             backfill_mode TEXT NOT NULL DEFAULT 'none',
@@ -580,6 +592,7 @@ def migrate(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS cloud_submissions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             series_id INTEGER NOT NULL,
+            entry_id INTEGER NOT NULL DEFAULT 0,
             episode_number INTEGER NOT NULL,
             release_id INTEGER NOT NULL,
             provider TEXT NOT NULL DEFAULT 'pikpak',
@@ -595,7 +608,7 @@ def migrate(conn: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
             last_seen_at TEXT NOT NULL DEFAULT '',
-            UNIQUE(series_id, episode_number, provider)
+            UNIQUE(entry_id, episode_number, provider)
         )
         """
     )
@@ -788,6 +801,7 @@ def migrate(conn: sqlite3.Connection) -> None:
         for row in conn.execute("PRAGMA table_info(sync_tasks)").fetchall()
     }
     sync_task_additions = {
+        "entry_id": "INTEGER NOT NULL DEFAULT 0",
         "progress": "INTEGER NOT NULL DEFAULT 0",
         "progress_text": "TEXT NOT NULL DEFAULT ''",
         "retry_after": "TEXT NOT NULL DEFAULT ''",
@@ -801,6 +815,13 @@ def migrate(conn: sqlite3.Connection) -> None:
     }
     if "entry_id" not in episode_columns:
         conn.execute("ALTER TABLE episodes ADD COLUMN entry_id INTEGER NOT NULL DEFAULT 0")
+    for table in ["selection_tasks", "backfill_tasks", "cloud_submissions", "cloud_assets", "sync_rules", "local_assets", "series_state_tasks"]:
+        columns = {
+            row["name"]
+            for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+        }
+        if "entry_id" not in columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN entry_id INTEGER NOT NULL DEFAULT 0")
     merge_duplicate_series(conn)
     ensure_scheduled_jobs(conn)
 
@@ -856,6 +877,10 @@ def merge_duplicate_series(conn: sqlite3.Connection) -> None:
             conn.execute("UPDATE cloud_assets SET series_id=? WHERE series_id=?", (keep_id, old_id))
             conn.execute("UPDATE local_assets SET series_id=? WHERE series_id=?", (keep_id, old_id))
             conn.execute("UPDATE sync_tasks SET series_id=? WHERE series_id=?", (keep_id, old_id))
+            conn.execute("UPDATE cloud_submissions SET series_id=? WHERE series_id=?", (keep_id, old_id))
+            conn.execute("UPDATE selection_tasks SET series_id=? WHERE series_id=?", (keep_id, old_id))
+            conn.execute("UPDATE backfill_tasks SET series_id=? WHERE series_id=?", (keep_id, old_id))
+            conn.execute("UPDATE series_state_tasks SET series_id=? WHERE series_id=?", (keep_id, old_id))
             conn.execute(
                 """
                 INSERT INTO sync_rules
@@ -891,8 +916,9 @@ def merge_duplicate_series(conn: sqlite3.Connection) -> None:
                         ep["created_at"],
                         ep["updated_at"],
                     ),
-                )
+            )
             conn.execute("UPDATE download_tasks SET series_id=? WHERE series_id=?", (keep_id, old_id))
+            conn.execute("UPDATE cloud_submissions SET series_id=? WHERE series_id=?", (keep_id, old_id))
             conn.execute("DELETE FROM episodes WHERE series_id=?", (old_id,))
             conn.execute("DELETE FROM sync_rules WHERE series_id=?", (old_id,))
             conn.execute("DELETE FROM series WHERE id=?", (old_id,))

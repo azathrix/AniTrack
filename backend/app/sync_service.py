@@ -248,22 +248,29 @@ async def _process_cloud_asset_tasks(settings: dict[str, str], limit: int = 20, 
     return completed, failed
 
 
-def ensure_sync_rule(series_id: int, settings: dict[str, str], enabled: bool | None = None) -> None:
+def ensure_sync_rule(entry_id: int, settings: dict[str, str], enabled: bool | None = None) -> None:
     ts = now()
     auto_sync = settings.get("auto_sync_following", "true").lower() == "true"
     sync_enabled = auto_sync if enabled is None else enabled
     with connect() as conn:
+        series_row = conn.execute(
+            "SELECT series_id FROM releases WHERE entry_id=? ORDER BY id ASC LIMIT 1",
+            (entry_id,),
+        ).fetchone()
+        series_id = int(series_row["series_id"]) if series_row else 0
         conn.execute(
             """
             INSERT INTO sync_rules
-              (series_id, sync_enabled, auto_sync_following, local_root, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(series_id) DO UPDATE SET
+              (series_id, entry_id, sync_enabled, auto_sync_following, local_root, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(entry_id) DO UPDATE SET
+              series_id=excluded.series_id,
               local_root=CASE WHEN sync_rules.local_root='' THEN excluded.local_root ELSE sync_rules.local_root END,
               updated_at=excluded.updated_at
             """,
             (
                 series_id,
+                entry_id,
                 1 if sync_enabled else 0,
                 1 if auto_sync else 0,
                 settings.get("local_library_root") or "/media/pikpak-anime",
@@ -275,18 +282,23 @@ def ensure_sync_rule(series_id: int, settings: dict[str, str], enabled: bool | N
 
 def requeue_sync_tasks_for_series(series_id: int, settings: dict[str, str]) -> int:
     with connect() as conn:
+        entry_row = conn.execute(
+            "SELECT entry_id FROM releases WHERE series_id=? AND entry_id != 0 ORDER BY id ASC LIMIT 1",
+            (series_id,),
+        ).fetchone()
+        entry_id = int(entry_row["entry_id"]) if entry_row else series_id
         assets = conn.execute(
             """
             SELECT ca.id, ca.cloud_name
             FROM cloud_assets ca
-            WHERE ca.series_id=? AND ca.status='available'
+            WHERE ca.entry_id=? AND ca.status='available'
             ORDER BY ca.episode_number ASC
             """,
-            (series_id,),
+            (entry_id,),
         ).fetchall()
         if not assets:
             return 0
-    queued, _ = queue_sync_for_series(series_id, settings)
+    queued, _ = queue_sync_for_series(entry_id, settings)
     return queued
 
 
@@ -316,34 +328,47 @@ def normalize_local_target_path(target_path: str, source_name: str = "") -> str:
 
 
 def queue_sync_for_series(series_id: int, settings: dict[str, str]) -> tuple[int, str]:
-    ensure_sync_rule(series_id, settings, enabled=True)
+    entry_id = series_id
+    with connect() as conn:
+        entry_row = conn.execute("SELECT id FROM entries WHERE id=?", (series_id,)).fetchone()
+        if not entry_row:
+            mapped = conn.execute(
+                "SELECT entry_id FROM releases WHERE series_id=? AND entry_id != 0 ORDER BY id ASC LIMIT 1",
+                (series_id,),
+            ).fetchone()
+            if mapped:
+                entry_id = int(mapped["entry_id"])
+    ensure_sync_rule(entry_id, settings, enabled=True)
     with connect() as conn:
         assets = conn.execute(
             """
-            SELECT ca.*, s.title_cn
+            SELECT ca.*, e.display_title
             FROM cloud_assets ca
-            JOIN series s ON s.id=ca.series_id
-            WHERE ca.series_id=? AND ca.status='available'
+            JOIN entries e ON e.id=ca.entry_id
+            WHERE ca.entry_id=? AND ca.status='available'
             ORDER BY ca.episode_number ASC
             """,
-            (series_id,),
+            (entry_id,),
         ).fetchall()
         if not assets:
             return 0, "已开启本地同步；云盘资源入库后会自动同步"
         ts = now()
         queued = 0
         for asset in assets:
+            entry = conn.execute("SELECT * FROM entries WHERE id=?", (asset["entry_id"],)).fetchone()
             series = conn.execute("SELECT * FROM series WHERE id=?", (asset["series_id"],)).fetchone()
+            if not entry or not series:
+                continue
             target = normalize_local_target_path(
-                local_episode_path(dict(asset), dict(series), settings),
+                local_episode_path(dict(asset), dict(entry), settings),
                 str(asset["cloud_name"] or ""),
             )
             conn.execute(
                 """
                 INSERT INTO sync_tasks
-                  (cloud_asset_id, release_id, series_id, status, source_path, target_path,
+                  (cloud_asset_id, release_id, series_id, entry_id, status, source_path, target_path,
                    created_at, updated_at)
-                VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?)
                 ON CONFLICT(cloud_asset_id, sync_direction) DO UPDATE SET
                   status=CASE
                     WHEN sync_tasks.status='synced' AND sync_tasks.target_path=excluded.target_path THEN sync_tasks.status
@@ -365,6 +390,7 @@ def queue_sync_for_series(series_id: int, settings: dict[str, str]) -> tuple[int
                     asset["id"],
                     asset["release_id"],
                     asset["series_id"],
+                    asset["entry_id"],
                     asset["cloud_path"],
                     target,
                     ts,
@@ -387,27 +413,27 @@ def queue_sync_for_series(series_id: int, settings: dict[str, str]) -> tuple[int
 def reconcile_sync_intents(settings: dict[str, str]) -> tuple[int, int]:
     auto_sync = settings.get("auto_sync_following", "true").lower() == "true"
     with connect() as conn:
-        series_ids = [
-            int(row["series_id"])
+        entry_ids = [
+            int(row["entry_id"])
             for row in conn.execute(
                 """
-                SELECT DISTINCT ca.series_id
+                SELECT DISTINCT ca.entry_id
                 FROM cloud_assets ca
-                JOIN series s ON s.id=ca.series_id
-                LEFT JOIN sync_rules sr ON sr.series_id=ca.series_id
+                JOIN entries e ON e.id=ca.entry_id
+                LEFT JOIN sync_rules sr ON sr.entry_id=ca.entry_id
                 WHERE ca.status='available'
-                  AND COALESCE(s.hidden, 0)=0
-                  AND s.bangumi_id != ''
+                  AND COALESCE(e.hidden, 0)=0
+                  AND e.bangumi_id != ''
                   AND (COALESCE(sr.sync_enabled, 0)=1 OR ?=1)
                 """,
                 (1 if auto_sync else 0,),
             ).fetchall()
         ]
     queued_total = 0
-    for series_id in series_ids:
-        queued, _ = queue_sync_for_series(series_id, settings)
+    for entry_id in entry_ids:
+        queued, _ = queue_sync_for_series(entry_id, settings)
         queued_total += queued
-    return len(series_ids), queued_total
+    return len(entry_ids), queued_total
 
 
 def backfill_cloud_assets_from_completed_tasks(settings: dict[str, str]) -> int:

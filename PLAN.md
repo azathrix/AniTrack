@@ -947,7 +947,29 @@ access_token + refresh_token
 - 番剧库页显示 `work` 分组，并支持展开到 `entry`。
 - 所有后半段任务仍挂在 `entry_id` 上，而不是挂在 `work_id` 上。
 
-状态：未开始。
+状态：进行中。
+
+已完成：
+
+- `works / entries / seasonal_entries / library_entries` 表已落地。
+- 新番首页统计与列表已优先读取 `seasonal_entries -> entries`。
+- 最近 7 天已同步到本地的新番日历已接入 `seasonal_entries` 读模型。
+- 自动选集与整季补全任务已开始以 `entry_id` 作为执行单位：
+  - `selection_tasks.entry_id`
+  - `backfill_tasks.entry_id`
+- 新番详情接口已切到“路径名保留 `/api/series/{id}`，内部按 `entry.id` 查询”的兼容模式。
+- 保存新番配置时，已优先更新 `entries` 并重新入队 `selection/backfill`。
+- 同步意图和同步计划已开始以 `entry_id` 为主：
+  - `sync_rules.entry_id`
+  - `sync_tasks.entry_id`
+  - `queue_sync_for_series(...)` 内部优先解析为 `entry_id`
+- 云盘提交链已开始以 `entry_id + episode_number` 去重，避免不同条目误共用同一集任务。
+
+当前剩余：
+
+- `cloud_assets / local_assets / cloud_submissions` 的所有查询与控制台明细仍需彻底切到 `entry_id` 主视角。
+- 云盘库扫描导入仍主要按旧 `series` 兼容逻辑运行，后续要拆成番剧库域专属入口。
+- 新番域和番剧库域的前端二层展示（`work -> entry`）还未完成。
 
 ### P2: 可观测任务和数据安全
 

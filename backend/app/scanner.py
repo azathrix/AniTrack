@@ -245,7 +245,7 @@ async def gather_limited(coros, limit: int = 4):
     return await asyncio.gather(*(run(coro) for coro in coros))
 
 
-def upsert_release(item: ParsedRelease, metadata: dict | None = None) -> tuple[int, int]:
+def upsert_release(item: ParsedRelease, metadata: dict | None = None) -> tuple[int, int, int]:
     fp = fingerprint(item.series_title or item.title, item.bangumi_id)
     metadata = metadata or {}
     labels = parse_entry_labels(metadata.get("title_cn") or item.series_title)
@@ -424,18 +424,38 @@ def upsert_release(item: ParsedRelease, metadata: dict | None = None) -> tuple[i
             (series_id, release_id),
         )
         conn.execute(
+            "UPDATE download_tasks SET entry_id=? WHERE release_id=?",
+            (entry_id, release_id),
+        )
+        conn.execute(
             "UPDATE cloud_assets SET series_id=? WHERE release_id=?",
             (series_id, release_id),
+        )
+        conn.execute(
+            "UPDATE cloud_assets SET entry_id=? WHERE release_id=?",
+            (entry_id, release_id),
         )
         conn.execute(
             "UPDATE local_assets SET series_id=? WHERE release_id=?",
             (series_id, release_id),
         )
         conn.execute(
+            "UPDATE local_assets SET entry_id=? WHERE release_id=?",
+            (entry_id, release_id),
+        )
+        conn.execute(
             "UPDATE sync_tasks SET series_id=? WHERE release_id=?",
             (series_id, release_id),
         )
-    return series_id, release_id
+        conn.execute(
+            "UPDATE sync_tasks SET entry_id=? WHERE release_id=?",
+            (entry_id, release_id),
+        )
+        conn.execute(
+            "UPDATE cloud_submissions SET entry_id=? WHERE release_id=?",
+            (entry_id, release_id),
+        )
+    return series_id, entry_id, release_id
 
 
 def upsert_rss_candidate(item: ParsedRelease, reason: str = "") -> int:
@@ -626,50 +646,52 @@ def candidate_to_parsed_release(candidate) -> ParsedRelease:
     )
 
 
-def resolved_backfill_mode(series: dict, settings: dict[str, str]) -> str:
-    value = (series["backfill_mode"] or "inherit").strip() or "inherit"
+def resolved_backfill_mode(entry: dict, settings: dict[str, str]) -> str:
+    value = (entry["backfill_mode"] or "inherit").strip() or "inherit"
     if value == "inherit":
         value = (settings.get("default_backfill") or "none").strip() or "none"
     return value
 
 
-def enqueue_selection_task(conn, series_id: int, ts: str, reason: str = "") -> None:
+def enqueue_selection_task(conn, series_id: int, entry_id: int, ts: str, reason: str = "") -> None:
     conn.execute(
         """
         INSERT INTO selection_tasks
-          (series_id, status, reason, created_at, updated_at)
-        VALUES (?, 'pending', ?, ?, ?)
-        ON CONFLICT(series_id) DO UPDATE SET
+          (series_id, entry_id, status, reason, created_at, updated_at)
+        VALUES (?, ?, 'pending', ?, ?, ?)
+        ON CONFLICT(entry_id) DO UPDATE SET
+          series_id=excluded.series_id,
           status='pending',
           reason=excluded.reason,
           retry_after='',
           last_error='',
           updated_at=excluded.updated_at
         """,
-        (series_id, reason[:500], ts, ts),
+        (series_id, entry_id, reason[:500], ts, ts),
     )
 
 
-def enqueue_backfill_task(conn, series_id: int, settings: dict[str, str], ts: str) -> None:
-    series = conn.execute("SELECT * FROM series WHERE id=?", (series_id,)).fetchone()
-    if not series:
+def enqueue_backfill_task(conn, series_id: int, entry_id: int, settings: dict[str, str], ts: str) -> None:
+    entry = conn.execute("SELECT * FROM entries WHERE id=?", (entry_id,)).fetchone()
+    if not entry:
         return
-    backfill_mode = resolved_backfill_mode(series, settings)
+    backfill_mode = resolved_backfill_mode(entry, settings)
     if backfill_mode == "none":
         return
     conn.execute(
         """
         INSERT INTO backfill_tasks
-          (series_id, status, backfill_mode, created_at, updated_at)
-        VALUES (?, 'pending', ?, ?, ?)
-        ON CONFLICT(series_id) DO UPDATE SET
+          (series_id, entry_id, status, backfill_mode, created_at, updated_at)
+        VALUES (?, ?, 'pending', ?, ?, ?)
+        ON CONFLICT(entry_id) DO UPDATE SET
+          series_id=excluded.series_id,
           status='pending',
           backfill_mode=excluded.backfill_mode,
           retry_after='',
           last_error='',
           updated_at=excluded.updated_at
         """,
-        (series_id, backfill_mode, ts, ts),
+        (series_id, entry_id, backfill_mode, ts, ts),
     )
 
 
@@ -823,7 +845,7 @@ async def _process_metadata_tasks(settings: dict[str, str], limit: int = 20) -> 
         try:
             metadata = await fetch_bangumi_metadata(row["bangumi_id"], settings.get("rss_proxy", ""))
             release = candidate_to_parsed_release(row)
-            series_id, release_id = upsert_release(release, metadata)
+            series_id, entry_id, release_id = upsert_release(release, metadata)
         except Exception as exc:
             error = str(exc)[:2000]
             with connect() as conn:
@@ -851,8 +873,8 @@ async def _process_metadata_tasks(settings: dict[str, str], limit: int = 20) -> 
                 "UPDATE rss_candidates SET status='completed', reason='', updated_at=? WHERE id=?",
                 (ts, row["candidate_id"]),
             )
-            enqueue_selection_task(conn, series_id, ts, "元数据完成，等待自动选集")
-            enqueue_backfill_task(conn, series_id, settings, ts)
+            enqueue_selection_task(conn, series_id, entry_id, ts, "元数据完成，等待自动选集")
+            enqueue_backfill_task(conn, series_id, entry_id, settings, ts)
         return 1, 0
 
     results = await gather_limited([handle(row) for row in rows], limit=4)
@@ -977,46 +999,46 @@ def filter_by_language_priority(
     return rows, "", f"language存在多个候选: {', '.join(values)}"
 
 
-def auto_download_enabled(series, settings: dict[str, str]) -> bool:
-    value = series["auto_download"]
+def auto_download_enabled(entry, settings: dict[str, str]) -> bool:
+    value = entry["auto_download"]
     return value == "on" or (value == "inherit" and bool_setting(settings.get("auto_download_unique", "true")))
 
 
-def resolve_series_choice(series_id: int, settings: dict[str, str]) -> tuple[list[int], dict[str, str]]:
+def resolve_entry_choice(entry_id: int, settings: dict[str, str]) -> tuple[list[int], dict[str, str]]:
     with connect() as conn:
-        series = conn.execute("SELECT * FROM series WHERE id=?", (series_id,)).fetchone()
+        entry = conn.execute("SELECT * FROM entries WHERE id=?", (entry_id,)).fetchone()
         rows = conn.execute(
             """
             SELECT id, episode_number, subtitle_group, resolution, language
             FROM releases
-            WHERE series_id=?
+            WHERE entry_id=?
             ORDER BY episode_number ASC, id DESC
             """,
-            (series_id,),
+            (entry_id,),
         ).fetchall()
 
     info = {
-        "enabled": "true" if series and auto_download_enabled(series, settings) else "false",
+        "enabled": "true" if entry and auto_download_enabled(entry, settings) else "false",
         "selected_group": "",
         "selected_resolution": "",
         "selected_language": "",
         "reason": "",
     }
-    if not series:
-        info["reason"] = "番剧不存在"
+    if not entry:
+        info["reason"] = "条目不存在"
         return [], info
-    if not series["bangumi_id"]:
+    if not entry["bangumi_id"]:
         info["reason"] = "缺少 Bangumi ID，不能进入自动入库"
         return [], info
     if not rows:
         info["reason"] = "没有可下载发布"
         return [], info
-    if not auto_download_enabled(series, settings):
+    if not auto_download_enabled(entry, settings):
         info["reason"] = "自动下载已关闭"
         return [], info
 
     candidates = list(rows)
-    selected_group = series["selected_group"] or ""
+    selected_group = entry["selected_group"] or ""
     if selected_group:
         candidates = [row for row in candidates if row["subtitle_group"] == selected_group]
         if not candidates:
@@ -1034,7 +1056,7 @@ def resolve_series_choice(series_id: int, settings: dict[str, str]) -> tuple[lis
             info["reason"] = reason.replace("subtitle_group", "字幕组")
             return [], info
 
-    selected_resolution = series["selected_resolution"] or ""
+    selected_resolution = entry["selected_resolution"] or ""
     if selected_resolution:
         candidates = [row for row in candidates if row["resolution"] == selected_resolution]
         if not candidates:
@@ -1088,9 +1110,18 @@ def resolve_series_choice(series_id: int, settings: dict[str, str]) -> tuple[lis
     return ids, info
 
 
-def mark_selected_releases(series_id: int, release_ids: list[int]) -> None:
+def resolve_series_choice(series_id: int, settings: dict[str, str]) -> tuple[list[int], dict[str, str]]:
     with connect() as conn:
-        conn.execute("UPDATE releases SET selected=0 WHERE series_id=?", (series_id,))
+        row = conn.execute(
+            "SELECT entry_id FROM seasonal_entries se JOIN entries e ON e.id=se.entry_id WHERE e.id=? LIMIT 1",
+            (series_id,),
+        ).fetchone()
+    return resolve_entry_choice(int(row["entry_id"]) if row else series_id, settings)
+
+
+def mark_selected_releases(entry_id: int, release_ids: list[int]) -> None:
+    with connect() as conn:
+        conn.execute("UPDATE releases SET selected=0 WHERE entry_id=?", (entry_id,))
     if not release_ids:
         return
     with connect() as conn:
@@ -1115,13 +1146,13 @@ async def _process_selection_tasks(settings: dict[str, str], limit: int = 20) ->
         )
         rows = conn.execute(
             """
-            SELECT st.*, s.title_cn
+            SELECT st.*, e.display_title AS title_cn, e.selected_group, e.selected_resolution
             FROM selection_tasks st
-            JOIN series s ON s.id=st.series_id
+            JOIN entries e ON e.id=st.entry_id
             WHERE st.status IN ('pending', 'failed')
               AND (st.retry_after='' OR st.retry_after <= ?)
-              AND COALESCE(s.hidden, 0)=0
-              AND s.bangumi_id != ''
+              AND COALESCE(e.hidden, 0)=0
+              AND e.bangumi_id != ''
             ORDER BY st.id ASC
             LIMIT ?
             """,
@@ -1137,8 +1168,8 @@ async def _process_selection_tasks(settings: dict[str, str], limit: int = 20) ->
                 (now(), row["id"]),
             )
         try:
-            ids, choice = resolve_series_choice(int(row["series_id"]), settings)
-            mark_selected_releases(int(row["series_id"]), ids)
+            ids, choice = resolve_entry_choice(int(row["entry_id"]), settings)
+            mark_selected_releases(int(row["entry_id"]), ids)
             with connect() as conn:
                 ts = now()
                 if choice["reason"]:
@@ -1197,13 +1228,13 @@ async def _process_backfill_tasks(settings: dict[str, str], limit: int = 8) -> t
         )
         rows = conn.execute(
             """
-            SELECT bt.*, s.title_cn, s.mikan_bangumi_id, s.bangumi_id
+            SELECT bt.*, e.display_title AS title_cn, e.mikan_bangumi_id, e.bangumi_id
             FROM backfill_tasks bt
-            JOIN series s ON s.id=bt.series_id
+            JOIN entries e ON e.id=bt.entry_id
             WHERE bt.status IN ('pending', 'failed')
               AND (bt.retry_after='' OR bt.retry_after <= ?)
-              AND COALESCE(s.hidden, 0)=0
-              AND s.bangumi_id != ''
+              AND COALESCE(e.hidden, 0)=0
+              AND e.bangumi_id != ''
             ORDER BY bt.id ASC
             LIMIT ?
             """,
@@ -1237,8 +1268,8 @@ async def _process_backfill_tasks(settings: dict[str, str], limit: int = 8) -> t
                 existing = {
                     int(item["episode_number"])
                     for item in conn.execute(
-                        "SELECT episode_number FROM releases WHERE series_id=?",
-                        (row["series_id"],),
+                        "SELECT episode_number FROM releases WHERE entry_id=?",
+                        (row["entry_id"],),
                     ).fetchall()
                 }
                 written = 0
@@ -1247,7 +1278,7 @@ async def _process_backfill_tasks(settings: dict[str, str], limit: int = 8) -> t
                     if release.episode_number in existing:
                         continue
                     release.bangumi_id = str(
-                        conn.execute("SELECT bangumi_id FROM series WHERE id=?", (row["series_id"],)).fetchone()["bangumi_id"]
+                        conn.execute("SELECT bangumi_id FROM entries WHERE id=?", (row["entry_id"],)).fetchone()["bangumi_id"]
                     )
                     candidate_id = upsert_rss_candidate(release, "整季补全写入候选，等待后续识别/元数据处理")
                     if candidate_id:
@@ -1280,20 +1311,21 @@ def queue_release(release_id: int, settings: dict[str, str]) -> None:
         release = conn.execute("SELECT * FROM releases WHERE id=?", (release_id,)).fetchone()
         if not release:
             return
+        entry = conn.execute("SELECT * FROM entries WHERE id=?", (release["entry_id"],)).fetchone()
         series = conn.execute("SELECT * FROM series WHERE id=?", (release["series_id"],)).fetchone()
-        if not series:
+        if not series or not entry:
             return
-        if not series["bangumi_id"]:
-            log("warn", f"云盘入库跳过: {series['title_cn']} - 缺少 Bangumi ID")
+        if not entry["bangumi_id"]:
+            log("warn", f"云盘入库跳过: {entry['display_title']} - 缺少 Bangumi ID")
             return
         existing_cloud = conn.execute(
             """
             SELECT id
             FROM cloud_assets
-            WHERE release_id=? OR (series_id=? AND episode_number=?)
+            WHERE release_id=? OR (entry_id=? AND episode_number=?)
             LIMIT 1
             """,
-            (release_id, release["series_id"], release["episode_number"]),
+            (release_id, release["entry_id"], release["episode_number"]),
         ).fetchone()
         if existing_cloud:
             return
@@ -1301,32 +1333,33 @@ def queue_release(release_id: int, settings: dict[str, str]) -> None:
             """
             SELECT id, status
             FROM cloud_submissions
-            WHERE series_id=? AND episode_number=? AND provider='pikpak'
+            WHERE entry_id=? AND episode_number=? AND provider='pikpak'
             LIMIT 1
             """,
-            (release["series_id"], release["episode_number"]),
+            (release["entry_id"], release["episode_number"]),
         ).fetchone()
         if existing_submission and existing_submission["status"] in {"pending", "submitted", "running", "completed"}:
             return
-        series_dict = dict(series)
-        target = target_dir(series_dict, settings)
-        name = render_episode_name(series_dict, release["episode_number"], "", settings)
+        entry_dict = dict(entry)
+        target = target_dir(entry_dict, settings)
+        name = render_episode_name(entry_dict, release["episode_number"], "", settings)
         ts = now()
         conn.execute(
             """
             INSERT INTO download_tasks
-              (release_id, series_id, status, target_dir, normalized_name, retry_after, created_at, updated_at)
-            VALUES (?, ?, 'pending', ?, ?, '', ?, ?)
+              (release_id, series_id, entry_id, status, target_dir, normalized_name, retry_after, created_at, updated_at)
+            VALUES (?, ?, ?, 'pending', ?, ?, '', ?, ?)
             ON CONFLICT(release_id) DO UPDATE SET
               status=CASE
                 WHEN download_tasks.status IN ('completed','submitted','running') THEN download_tasks.status
                 ELSE 'pending'
               END,
+              entry_id=excluded.entry_id,
               target_dir=excluded.target_dir,
               normalized_name=excluded.normalized_name,
               updated_at=excluded.updated_at
             """,
-            (release_id, release["series_id"], target, name, ts, ts),
+            (release_id, release["series_id"], release["entry_id"], target, name, ts, ts),
         )
         task = conn.execute("SELECT * FROM download_tasks WHERE release_id=?", (release_id,)).fetchone()
         if task:
@@ -1339,12 +1372,12 @@ def queue_release(release_id: int, settings: dict[str, str]) -> None:
                   FROM download_tasks dt
                   JOIN releases r ON r.id=dt.release_id
                   WHERE dt.id != ?
-                    AND dt.series_id=?
+                    AND dt.entry_id=?
                     AND r.episode_number=?
                     AND dt.status IN ('pending','running','submitted','failed')
                 )
                 """,
-                (ts, task["id"], release["series_id"], release["episode_number"]),
+                (ts, task["id"], release["entry_id"], release["episode_number"]),
             )
             conn.execute(
                 """
@@ -1355,21 +1388,22 @@ def queue_release(release_id: int, settings: dict[str, str]) -> None:
                   FROM download_tasks dt
                   JOIN releases r ON r.id=dt.release_id
                   WHERE dt.id != ?
-                    AND dt.series_id=?
+                    AND dt.entry_id=?
                     AND r.episode_number=?
                 )
                   AND provider='pikpak'
                   AND status IN ('pending','running','submitted','failed')
                 """,
-                (ts, ts, task["id"], release["series_id"], release["episode_number"]),
+                (ts, ts, task["id"], release["entry_id"], release["episode_number"]),
             )
             conn.execute(
                 """
                 INSERT INTO cloud_submissions
-                  (series_id, episode_number, release_id, provider, download_task_id, status,
+                  (series_id, entry_id, episode_number, release_id, provider, download_task_id, status,
                    target_dir, normalized_name, created_at, updated_at, last_seen_at)
-                VALUES (?, ?, ?, 'pikpak', ?, 'pending', ?, ?, ?, ?, ?)
-                ON CONFLICT(series_id, episode_number, provider) DO UPDATE SET
+                VALUES (?, ?, ?, ?, 'pikpak', ?, 'pending', ?, ?, ?, ?, ?)
+                ON CONFLICT(entry_id, episode_number, provider) DO UPDATE SET
+                  series_id=excluded.series_id,
                   release_id=excluded.release_id,
                   download_task_id=excluded.download_task_id,
                   status=CASE
@@ -1385,6 +1419,7 @@ def queue_release(release_id: int, settings: dict[str, str]) -> None:
                 """,
                 (
                     release["series_id"],
+                    release["entry_id"],
                     release["episode_number"],
                     release_id,
                     task["id"],
@@ -1401,6 +1436,7 @@ def sync_cloud_submission(
     conn,
     *,
     series_id: int,
+    entry_id: int,
     episode_number: int,
     release_id: int,
     download_task_id: int,
@@ -1416,11 +1452,12 @@ def sync_cloud_submission(
     conn.execute(
         """
         INSERT INTO cloud_submissions
-          (series_id, episode_number, release_id, provider, download_task_id, status, attempts,
+          (series_id, entry_id, episode_number, release_id, provider, download_task_id, status, attempts,
            submission_id, provider_file_id, target_dir, normalized_name, retry_after, last_error,
            created_at, updated_at, last_seen_at)
-        VALUES (?, ?, ?, 'pikpak', ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(series_id, episode_number, provider) DO UPDATE SET
+        VALUES (?, ?, ?, ?, 'pikpak', ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(entry_id, episode_number, provider) DO UPDATE SET
+          series_id=excluded.series_id,
           release_id=excluded.release_id,
           download_task_id=excluded.download_task_id,
           status=excluded.status,
@@ -1435,6 +1472,7 @@ def sync_cloud_submission(
         """,
         (
             series_id,
+            entry_id,
             episode_number,
             release_id,
             download_task_id,
@@ -1583,6 +1621,7 @@ async def _process_tasks(settings: dict[str, str], limit: int = 6, force: bool =
                 sync_cloud_submission(
                     conn,
                     series_id=int(task["series_id"]),
+                    entry_id=int(task["entry_id"]),
                     episode_number=int(task["episode_number"]),
                     release_id=int(task["release_id"]),
                     download_task_id=int(task["id"]),
@@ -1608,6 +1647,7 @@ async def _process_tasks(settings: dict[str, str], limit: int = 6, force: bool =
             sync_cloud_submission(
                 conn,
                 series_id=int(task["series_id"]),
+                entry_id=int(task["entry_id"]),
                 episode_number=int(task["episode_number"]),
                 release_id=int(task["release_id"]),
                 download_task_id=int(task["id"]),
@@ -1634,6 +1674,7 @@ async def _process_tasks(settings: dict[str, str], limit: int = 6, force: bool =
                     sync_cloud_submission(
                         conn,
                         series_id=int(task["series_id"]),
+                        entry_id=int(task["entry_id"]),
                         episode_number=int(task["episode_number"]),
                         release_id=int(task["release_id"]),
                         download_task_id=int(task["id"]),
@@ -1671,6 +1712,7 @@ async def _process_tasks(settings: dict[str, str], limit: int = 6, force: bool =
                 sync_cloud_submission(
                     conn,
                     series_id=int(task["series_id"]),
+                    entry_id=int(task["entry_id"]),
                     episode_number=int(task["episode_number"]),
                     release_id=int(task["release_id"]),
                     download_task_id=int(task["id"]),
@@ -1699,6 +1741,7 @@ async def _process_tasks(settings: dict[str, str], limit: int = 6, force: bool =
                 sync_cloud_submission(
                     conn,
                     series_id=int(task["series_id"]),
+                    entry_id=int(task["entry_id"]),
                     episode_number=int(task["episode_number"]),
                     release_id=int(task["release_id"]),
                     download_task_id=int(task["id"]),
@@ -1803,6 +1846,7 @@ async def poll_submitted_tasks(settings: dict[str, str], limit: int = 20, force:
                     sync_cloud_submission(
                         conn,
                         series_id=int(task["series_id"]),
+                        entry_id=int(task["entry_id"]),
                         episode_number=int(task["episode_number"]),
                         release_id=int(task["release_id"]),
                         download_task_id=int(task["id"]),
@@ -1836,6 +1880,7 @@ async def poll_submitted_tasks(settings: dict[str, str], limit: int = 20, force:
                 sync_cloud_submission(
                     conn,
                     series_id=int(task["series_id"]),
+                    entry_id=int(task["entry_id"]),
                     episode_number=int(task["episode_number"]),
                     release_id=int(task["release_id"]),
                     download_task_id=int(task["id"]),
@@ -1882,8 +1927,8 @@ async def poll_submitted_tasks(settings: dict[str, str], limit: int = 20, force:
             )
             if status == "completed":
                 conn.execute(
-                    "UPDATE episodes SET status='downloaded', updated_at=? WHERE series_id=? AND episode_number=(SELECT episode_number FROM releases WHERE id=?)",
-                    (ts, task["series_id"], task["release_id"]),
+                    "UPDATE episodes SET status='downloaded', updated_at=? WHERE entry_id=? AND episode_number=(SELECT episode_number FROM releases WHERE id=?)",
+                    (ts, task["entry_id"], task["release_id"]),
                 )
                 conn.execute(
                     "UPDATE cloud_poll_tasks SET status='completed', retry_after='', last_error='', updated_at=? WHERE id=?",

@@ -17,7 +17,7 @@ from .config import APP_DIR
 from .db import LOG_PATH, cleanup_operations, clear_runtime_data, connect, diagnostics, finish_operation, finish_scheduled_job_run, get_runtime_generation, get_settings, init_db, log, mark_scheduled_job, merge_duplicate_series, now, read_server_logs, save_settings, start_operation, start_scheduled_job_run, update_operation
 from .library import bool_setting
 from .metadata import generate_nfo_for_series, refresh_series_metadata
-from .scanner import enqueue_backfill_task, enqueue_missing_mikan_match_tasks, enqueue_selection_task, mark_selected_releases, poll_submitted_tasks, process_backfill_tasks, process_metadata_tasks, process_mikan_match_tasks, process_selection_tasks, process_tasks, queue_release, reclaim_mikan_match_tasks, repair_series_mikan_ids, resolve_series_choice, scan_and_queue
+from .scanner import enqueue_backfill_task, enqueue_missing_mikan_match_tasks, enqueue_selection_task, mark_selected_releases, poll_submitted_tasks, process_backfill_tasks, process_metadata_tasks, process_mikan_match_tasks, process_selection_tasks, process_tasks, queue_release, reclaim_mikan_match_tasks, repair_series_mikan_ids, resolve_entry_choice, resolve_series_choice, scan_and_queue
 from .sync_service import backfill_cloud_assets_from_completed_tasks, cancel_sync_for_series, process_cloud_asset_tasks, process_sync_tasks, queue_sync_for_series, reconcile_rclone_submitted_tasks, reconcile_sync_intents, scan_cloud_library
 
 
@@ -281,13 +281,13 @@ def ready_count_sync_plan() -> int:
     with connect() as conn:
         row = conn.execute(
             """
-            SELECT COUNT(DISTINCT ca.series_id) AS count
+            SELECT COUNT(DISTINCT ca.entry_id) AS count
             FROM cloud_assets ca
-            JOIN series s ON s.id=ca.series_id
-            LEFT JOIN sync_rules sr ON sr.series_id=ca.series_id
+            JOIN entries e ON e.id=ca.entry_id
+            LEFT JOIN sync_rules sr ON sr.entry_id=ca.entry_id
             WHERE ca.status='available'
-              AND COALESCE(s.hidden, 0)=0
-              AND s.bangumi_id != ''
+              AND COALESCE(e.hidden, 0)=0
+              AND e.bangumi_id != ''
               AND (COALESCE(sr.sync_enabled, 0)=1 OR ?=1)
             """,
             (1 if auto_sync else 0,),
@@ -945,10 +945,10 @@ def queue_detail_map() -> dict[str, dict[str, Any]]:
             "items": enrich_retry_rows(
                 conn.execute(
                     """
-                    SELECT st.*, s.title_cn, s.selected_group, s.selected_resolution
+                    SELECT st.*, e.display_title AS title_cn, e.selected_group, e.selected_resolution
                     FROM selection_tasks st
-                    JOIN series s ON s.id=st.series_id
-                    WHERE COALESCE(s.hidden, 0)=0
+                    JOIN entries e ON e.id=st.entry_id
+                    WHERE COALESCE(e.hidden, 0)=0
                     ORDER BY st.updated_at DESC
                     LIMIT 120
                     """
@@ -959,10 +959,10 @@ def queue_detail_map() -> dict[str, dict[str, Any]]:
             "items": enrich_retry_rows(
                 conn.execute(
                     """
-                    SELECT bt.*, s.title_cn, s.bangumi_id, s.mikan_bangumi_id
+                    SELECT bt.*, e.display_title AS title_cn, e.bangumi_id, e.mikan_bangumi_id
                     FROM backfill_tasks bt
-                    JOIN series s ON s.id=bt.series_id
-                    WHERE COALESCE(s.hidden, 0)=0
+                    JOIN entries e ON e.id=bt.entry_id
+                    WHERE COALESCE(e.hidden, 0)=0
                     ORDER BY bt.updated_at DESC
                     LIMIT 120
                     """
@@ -1223,20 +1223,20 @@ def dashboard_data() -> dict[str, Any]:
         ).fetchall()
         selection_tasks = conn.execute(
             """
-            SELECT st.*, s.title_cn
+            SELECT st.*, e.display_title AS title_cn
             FROM selection_tasks st
-            JOIN series s ON s.id=st.series_id
-            WHERE COALESCE(s.hidden, 0)=0
+            JOIN entries e ON e.id=st.entry_id
+            WHERE COALESCE(e.hidden, 0)=0
             ORDER BY st.updated_at DESC
             LIMIT 80
             """
         ).fetchall()
         backfill_tasks = conn.execute(
             """
-            SELECT bt.*, s.title_cn
+            SELECT bt.*, e.display_title AS title_cn
             FROM backfill_tasks bt
-            JOIN series s ON s.id=bt.series_id
-            WHERE COALESCE(s.hidden, 0)=0
+            JOIN entries e ON e.id=bt.entry_id
+            WHERE COALESCE(e.hidden, 0)=0
             ORDER BY bt.updated_at DESC
             LIMIT 80
             """
@@ -1289,11 +1289,11 @@ def dashboard_data() -> dict[str, Any]:
         ).fetchall()
         sync_rules = conn.execute(
             """
-            SELECT sr.*, s.title_cn
+            SELECT sr.*, e.display_title AS title_cn
             FROM sync_rules sr
-            JOIN series s ON s.id=sr.series_id
-            WHERE COALESCE(s.hidden, 0)=0
-              AND s.bangumi_id != ''
+            JOIN entries e ON e.id=sr.entry_id
+            WHERE COALESCE(e.hidden, 0)=0
+              AND e.bangumi_id != ''
             ORDER BY sr.updated_at DESC
             LIMIT 200
             """
@@ -1453,10 +1453,10 @@ async def api_update_settings(payload: SettingsPayload) -> dict[str, Any]:
     ):
         with connect() as conn:
             ts = now()
-            series_rows = conn.execute("SELECT id FROM series WHERE COALESCE(hidden, 0)=0 AND bangumi_id != ''").fetchall()
-            for row in series_rows:
-                enqueue_selection_task(conn, int(row["id"]), ts, "全局规则变更，重新计算自动选集")
-                enqueue_backfill_task(conn, int(row["id"]), current, ts)
+            entry_rows = conn.execute("SELECT id, (SELECT series_id FROM releases r WHERE r.entry_id=e.id ORDER BY id ASC LIMIT 1) AS series_id FROM entries e WHERE COALESCE(hidden, 0)=0 AND bangumi_id != ''").fetchall()
+            for row in entry_rows:
+                enqueue_selection_task(conn, int(row["series_id"] or 0), int(row["id"]), ts, "全局规则变更，重新计算自动选集")
+                enqueue_backfill_task(conn, int(row["series_id"] or 0), int(row["id"]), current, ts)
     reschedule()
     trigger_queues(["selection", "backfill"])
     log("info", "全局设置已保存")
@@ -1466,36 +1466,40 @@ async def api_update_settings(payload: SettingsPayload) -> dict[str, Any]:
 @app.get("/api/series/{series_id}")
 async def api_series(series_id: int) -> dict[str, Any]:
     with connect() as conn:
-        series = conn.execute("SELECT * FROM series WHERE id=?", (series_id,)).fetchone()
+        entry = conn.execute("SELECT * FROM entries WHERE id=?", (series_id,)).fetchone()
+        if not entry:
+            return {"series": None, "releases": [], "tasks": [], "cloud_assets": [], "local_assets": [], "groups": [], "resolutions": [], "languages": []}
+        series = conn.execute(
+            "SELECT * FROM series WHERE bangumi_id=? ORDER BY id ASC LIMIT 1",
+            (entry["bangumi_id"],),
+        ).fetchone()
         releases = conn.execute(
-            "SELECT * FROM releases WHERE series_id=? ORDER BY episode_number ASC, id DESC",
+            "SELECT * FROM releases WHERE entry_id=? ORDER BY episode_number ASC, id DESC",
             (series_id,),
         ).fetchall()
         tasks = conn.execute(
             """
             SELECT *
             FROM download_tasks
-            WHERE series_id=?
+            WHERE entry_id=?
               AND status IN ('pending', 'running', 'submitted', 'failed')
             ORDER BY id DESC
             """,
             (series_id,),
         ).fetchall()
         cloud_assets = conn.execute(
-            "SELECT * FROM cloud_assets WHERE series_id=? ORDER BY episode_number ASC, id DESC",
+            "SELECT * FROM cloud_assets WHERE entry_id=? ORDER BY episode_number ASC, id DESC",
             (series_id,),
         ).fetchall()
         local_assets = conn.execute(
-            "SELECT * FROM local_assets WHERE series_id=? ORDER BY episode_number ASC, id DESC",
+            "SELECT * FROM local_assets WHERE entry_id=? ORDER BY episode_number ASC, id DESC",
             (series_id,),
         ).fetchall()
-    if not series:
-        return {"series": None, "releases": [], "tasks": [], "cloud_assets": [], "local_assets": [], "groups": [], "resolutions": [], "languages": []}
     groups = sorted({r["subtitle_group"] for r in releases if r["subtitle_group"]})
     resolutions = sorted({r["resolution"] for r in releases if r["resolution"]})
     languages = sorted({r["language"] for r in releases if r["language"]})
     return {
-        "series": row_to_dict(series),
+        "series": {**row_to_dict(entry), "legacy_series_id": series["id"] if series else 0},
         "releases": rows_to_dicts(releases),
         "tasks": enrich_download_tasks(tasks),
         "cloud_assets": rows_to_dicts(cloud_assets),
@@ -1511,7 +1515,7 @@ async def api_update_series(series_id: int, payload: SeriesPayload) -> dict[str,
     with connect() as conn:
         conn.execute(
             """
-            UPDATE series
+            UPDATE entries
             SET title_cn=?, bangumi_id=?, tmdb_id=?, year=?, season_number=?,
                 auto_download=?, selected_group=?, selected_resolution=?,
                 backfill_mode=?, updated_at=?
@@ -1531,9 +1535,26 @@ async def api_update_series(series_id: int, payload: SeriesPayload) -> dict[str,
                 series_id,
             ),
         )
+        conn.execute(
+            """
+            UPDATE series
+            SET title_cn=?, bangumi_id=?, tmdb_id=?, year=?, season_number=?, updated_at=?
+            WHERE bangumi_id=?
+            """,
+            (
+                payload.title_cn.strip(),
+                payload.bangumi_id.strip(),
+                payload.tmdb_id.strip(),
+                payload.year,
+                payload.season_number,
+                now(),
+                payload.bangumi_id.strip(),
+            ),
+        )
         ts = now()
-        enqueue_selection_task(conn, series_id, ts, "番剧规则变更，重新计算自动选集")
-        enqueue_backfill_task(conn, series_id, get_settings(), ts)
+        series_row = conn.execute("SELECT series_id FROM releases WHERE entry_id=? ORDER BY id ASC LIMIT 1", (series_id,)).fetchone()
+        enqueue_selection_task(conn, int(series_row["series_id"] or 0) if series_row else 0, series_id, ts, "番剧规则变更，重新计算自动选集")
+        enqueue_backfill_task(conn, int(series_row["series_id"] or 0) if series_row else 0, series_id, get_settings(), ts)
     log("info", f"番剧设置已保存: {payload.title_cn}")
     with connect() as conn:
         merge_duplicate_series(conn)
@@ -1543,13 +1564,13 @@ async def api_update_series(series_id: int, payload: SeriesPayload) -> dict[str,
 @app.delete("/api/series/{series_id}")
 async def api_delete_series(series_id: int) -> dict[str, str]:
     with connect() as conn:
-        series = conn.execute("SELECT title_cn FROM series WHERE id=?", (series_id,)).fetchone()
-        if not series:
+        entry = conn.execute("SELECT display_title FROM entries WHERE id=?", (series_id,)).fetchone()
+        if not entry:
             return {"status": "not_found", "message": "番剧不存在"}
-        title = series["title_cn"]
+        title = entry["display_title"]
         ts = now()
         conn.execute(
-            "UPDATE series SET hidden=1, updated_at=? WHERE id=?",
+            "UPDATE entries SET hidden=1, updated_at=? WHERE id=?",
             (ts, series_id),
         )
     log("warn", f"已隐藏误识别番剧: {title}")
@@ -1706,14 +1727,14 @@ async def api_clear_data() -> dict[str, str]:
 async def api_download_series(series_id: int) -> dict[str, str]:
     settings = get_settings()
     with connect() as conn:
-        series = conn.execute("SELECT * FROM series WHERE id=?", (series_id,)).fetchone()
-        if not series:
+        entry = conn.execute("SELECT * FROM entries WHERE id=?", (series_id,)).fetchone()
+        if not entry:
             return {"status": "not_found"}
-    ids, choice = resolve_series_choice(series_id, settings)
+    ids, choice = resolve_entry_choice(series_id, settings)
     mark_selected_releases(series_id, ids)
     if not ids:
         message = choice["reason"] or "没有可入云盘发布"
-        log("warn", f"手动入云盘跳过: {series['title_cn']} - {message}")
+        log("warn", f"手动入云盘跳过: {entry['display_title']} - {message}")
         return {"status": "skipped", "count": "0", "message": message}
     for release_id in ids:
         queue_release(release_id, settings)

@@ -634,7 +634,7 @@ const selectedSeriesStats = computed(() => {
 })
 const selectedSyncRule = computed(() => {
   const id = selectedSeries.value?.series?.id
-  return dashboard.sync_rules.find(item => item.series_id === id) || {}
+  return dashboard.sync_rules.find(item => item.entry_id === id) || {}
 })
 const syncWanted = computed(() => Boolean(selectedSyncRule.value.sync_enabled))
 const syncSummary = computed(() => {
