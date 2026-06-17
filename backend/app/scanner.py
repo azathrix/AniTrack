@@ -10,7 +10,7 @@ import httpx
 import feedparser
 
 from .db import connect, hide_orphan_series, log, merge_duplicate_series, now
-from .queue_bridge import request_queue_trigger, request_queue_triggers
+from .queue_bridge import request_queue_trigger
 from .library import bool_setting, parse_entry_labels, render_episode_name, target_dir
 from .metadata import fetch_bangumi_metadata
 from .parser import ParsedRelease, fingerprint, normalize_title_key, parse_entry, parse_episode, parse_group, parse_language, parse_resolution, parse_series_title, parse_year, split_lines
@@ -1968,7 +1968,7 @@ async def _process_tasks(settings: dict[str, str], limit: int = 6, force: bool =
                         (ts, task["id"]),
                     )
                     enqueue_cloud_asset_task(conn, task["id"], ts)
-                    request_queue_triggers(["cloud_asset", "sync_plan"])
+                    request_queue_trigger("cloud_asset")
                 else:
                     if not rclone_service.enabled(settings):
                         enqueue_cloud_poll_task(conn, task["id"], ts)
@@ -2073,7 +2073,7 @@ async def poll_submitted_tasks(settings: dict[str, str], limit: int = 20, force:
                         (ts, task["poll_task_id"]),
                     )
                     enqueue_cloud_asset_task(conn, task["id"], ts)
-                    request_queue_triggers(["cloud_asset", "sync_plan"])
+                    request_queue_trigger("cloud_asset")
                 completed += 1
                 continue
             with connect() as conn:
@@ -2148,7 +2148,7 @@ async def poll_submitted_tasks(settings: dict[str, str], limit: int = 20, force:
                     (ts, task["poll_task_id"]),
                 )
                 enqueue_cloud_asset_task(conn, task["id"], ts)
-                request_queue_triggers(["cloud_asset", "sync_plan"])
+                request_queue_trigger("cloud_asset")
                 completed += 1
             elif status == "failed":
                 conn.execute(

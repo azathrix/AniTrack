@@ -802,8 +802,6 @@ async def handle_sync_queue() -> None:
             break
     if ready_count_sync() > 0:
         trigger_queue("sync")
-    if ready_count_nfo() > 0:
-        trigger_queue("nfo")
 
 
 async def handle_nfo_queue() -> None:

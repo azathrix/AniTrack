@@ -17,15 +17,3 @@ def request_queue_trigger(name: str, delay: float | None = None) -> None:
     if not callback or not name:
         return
     callback(name, delay)
-
-
-def request_queue_triggers(names: list[str], delay: float | None = None) -> None:
-    callback = _trigger
-    if not callback:
-        return
-    seen: set[str] = set()
-    for name in names:
-        if not name or name in seen:
-            continue
-        seen.add(name)
-        callback(name, delay)

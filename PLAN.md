@@ -1285,6 +1285,11 @@ access_token + refresh_token
   - `queue_sync_for_series()` 现在只负责挂 `sync_plan_tasks`
   - 真正生成 `sync_tasks` 改由 `sync_plan` worker 内部的物化步骤负责
   - 同步计划与本地同步执行不再混在一个 helper 里
+- 下载完成后的主链唤醒已继续收口：
+  - `download/completed` 不再同时唤醒 `cloud_asset` 和 `sync_plan`
+  - 现在统一改为先登记 `cloud_asset`，再由云盘资源登记成功后唤醒 `sync_plan`
+- 运行时桥接层已移除多队列批量唤醒 helper：
+  - 避免再次回退到“一个动作同时推进多个下游队列”的旧模式
 
 ### P4: 修复自动入云盘语义
 
