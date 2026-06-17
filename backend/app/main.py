@@ -77,6 +77,13 @@ class SeriesPayload(BaseModel):
     backfill_mode: str = "inherit"
 
 
+class LibraryImportPayload(BaseModel):
+    source_type: str = "cloud_scan"
+    query: str = ""
+    magnet: str = ""
+    source_ref: str = ""
+
+
 def row_to_dict(row: Any) -> dict[str, Any]:
     return dict(row) if row is not None else {}
 
@@ -1710,6 +1717,52 @@ async def api_scan_cloud() -> dict[str, str]:
     operation_id = run_operation("扫描云盘库", run, "正在扫描 PikPak 云盘库")
     trigger_queues(["sync_plan", "sync"])
     return {"status": "started", "operation_id": str(operation_id), "message": "云盘库扫描已启动"}
+
+
+@app.post("/api/library/import")
+async def api_library_import(payload: LibraryImportPayload) -> dict[str, str]:
+    source_type = (payload.source_type or "").strip() or "cloud_scan"
+    if source_type == "cloud_scan":
+        async def run() -> str:
+            settings = get_settings()
+            imported, skipped = await scan_cloud_library(settings)
+            log("info", f"番剧库导入完成: 云盘扫描入库 {imported} 个，跳过 {skipped} 个")
+            return f"云盘扫描入库 {imported} 个，跳过 {skipped} 个"
+
+        operation_id = run_operation("番剧库导入", run, "正在扫描云盘并写入番剧库条目")
+        trigger_queues(["sync_plan", "sync"])
+        return {"status": "started", "operation_id": str(operation_id), "message": "番剧库云盘导入已启动"}
+    if source_type in {"search", "magnet", "manual"}:
+        log("info", f"番剧库导入请求已记录: {source_type}")
+        return {"status": "planned", "message": "番剧库导入入口已预留，搜索源与手动导入将在后续阶段接入"}
+    return {"status": "invalid", "message": "不支持的番剧库导入类型"}
+
+
+@app.post("/api/library/{entry_id}/backfill")
+async def api_backfill_library_entry(entry_id: int) -> dict[str, str]:
+    settings = get_settings()
+    with connect() as conn:
+        entry = conn.execute(
+            "SELECT id, domain_kind FROM entries WHERE id=?",
+            (entry_id,),
+        ).fetchone()
+        if not entry:
+            return {"status": "not_found", "message": "条目不存在"}
+        if entry["domain_kind"] != "library":
+            return {"status": "invalid_domain", "message": "该条目不属于番剧库"}
+        series_row = conn.execute(
+            "SELECT series_id FROM releases WHERE entry_id=? ORDER BY id ASC LIMIT 1",
+            (entry_id,),
+        ).fetchone()
+        enqueue_backfill_task(
+            conn,
+            int(series_row["series_id"] or 0) if series_row else 0,
+            entry_id,
+            settings,
+            now(),
+        )
+    trigger_queue("backfill", delay=0)
+    return {"status": "queued", "message": "番剧库补全任务已加入队列"}
 
 
 @app.post("/api/sync/tasks/process")

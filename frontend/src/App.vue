@@ -252,6 +252,7 @@
         <div class="toolbar">
           <el-input v-model="keyword" clearable placeholder="搜索番剧库条目、Bangumi ID、标题" />
           <el-segmented v-model="seriesFilter" :options="['全部', '待配置', '已入云盘', '已同步', '失败']" />
+          <el-button plain @click="runAction('/library/import')">导入云盘到番剧库</el-button>
         </div>
         <div class="anime-grid">
           <article v-for="item in filteredSeries" :key="item.id" class="anime-card" @click="openSeries(item.id, view === 'library' ? 'library' : 'seasonal')">
@@ -437,6 +438,7 @@
           <el-button type="primary" @click="saveCurrentSeries">保存</el-button>
           <el-button plain @click="runSeriesAction('metadata')">刷新元数据</el-button>
           <el-button plain @click="runSeriesAction('nfo')">生成 NFO</el-button>
+          <el-button v-if="selectedSeriesDomain === 'library'" plain @click="runSeriesAction('backfill')">补全条目</el-button>
           <el-popconfirm title="只从列表隐藏这个误识别条目，保留关联记录。确定隐藏？" @confirm="deleteCurrentSeries">
             <template #reference>
               <el-button type="danger" plain>{{ selectedSeriesDomain === 'library' ? '隐藏条目' : '隐藏误识别' }}</el-button>
