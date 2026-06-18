@@ -543,7 +543,7 @@ def save_entry_payload(entry_id: int, payload: EntryPayload, *, expected_domain:
                 entry_id,
             ),
         )
-        ts = now()
+        should_refresh_seasonal = domain_kind == "seasonal"
         if domain_kind == "seasonal":
             conn.execute(
                 """
@@ -561,20 +561,26 @@ def save_entry_payload(entry_id: int, payload: EntryPayload, *, expected_domain:
                     payload.bangumi_id.strip(),
                 ),
             )
-            enqueue_selection_task(
-                conn,
-                0,
-                entry_id,
-                ts,
-                "番剧规则变更，重新计算自动选集",
-            )
-            enqueue_backfill_task(
-                conn,
-                0,
-                entry_id,
-                get_settings(),
-                ts,
-            )
+    if should_refresh_seasonal:
+        start_pipeline(
+            "seasonal_mikan_tracking",
+            trigger_source="settings",
+            first_step_key="release_selection",
+            subject_type="entry",
+            subject_id=entry_id,
+            payload={"entry_id": entry_id, "domain_kind": "seasonal"},
+            message="番剧规则变更，重新计算自动选集",
+        )
+        start_pipeline(
+            "seasonal_mikan_tracking",
+            trigger_source="settings",
+            first_step_key="season_backfill",
+            subject_type="entry",
+            subject_id=entry_id,
+            payload={"entry_id": entry_id, "domain_kind": "seasonal"},
+            message="番剧规则变更，重新执行补全",
+        )
+        trigger_queue("processor", delay=0)
     if domain_kind == "seasonal":
         log("info", f"新番条目设置已保存: {payload.title_cn}")
         with connect() as conn:
@@ -2674,13 +2680,33 @@ async def api_update_settings(payload: SettingsPayload) -> dict[str, Any]:
         ]
     ):
         with connect() as conn:
-            ts = now()
             entry_rows = conn.execute(
-                "SELECT id FROM entries e WHERE COALESCE(hidden, 0)=0 AND bangumi_id != ''"
+                "SELECT id, domain_kind FROM entries e WHERE COALESCE(hidden, 0)=0 AND bangumi_id != ''"
             ).fetchall()
-            for row in entry_rows:
-                enqueue_selection_task(conn, 0, int(row["id"]), ts, "全局规则变更，重新计算自动选集")
-                enqueue_backfill_task(conn, 0, int(row["id"]), current, ts)
+        for row in entry_rows:
+            entry_id = int(row["id"])
+            domain_kind = str(row["domain_kind"] or "seasonal")
+            pipeline_key = "seasonal_mikan_tracking" if domain_kind == "seasonal" else "library_backfill"
+            start_pipeline(
+                pipeline_key,
+                trigger_source="settings",
+                first_step_key="release_selection",
+                subject_type="entry",
+                subject_id=entry_id,
+                payload={"entry_id": entry_id, "domain_kind": domain_kind},
+                message="全局规则变更，重新计算自动选集",
+            )
+            if domain_kind == "seasonal":
+                start_pipeline(
+                    "seasonal_mikan_tracking",
+                    trigger_source="settings",
+                    first_step_key="season_backfill",
+                    subject_type="entry",
+                    subject_id=entry_id,
+                    payload={"entry_id": entry_id, "domain_kind": domain_kind},
+                    message="全局规则变更，重新执行补全",
+                )
+        trigger_queue("processor", delay=0)
     reschedule()
     log("info", "全局设置已保存")
     return settings_response()
@@ -2811,7 +2837,6 @@ async def api_library_import(payload: LibraryImportPayload) -> dict[str, str]:
 
 @app.post("/api/library/{entry_id}/backfill")
 async def api_backfill_library_entry(entry_id: int) -> dict[str, str]:
-    settings = get_settings()
     with connect() as conn:
         entry = conn.execute(
             "SELECT id, domain_kind FROM entries WHERE id=?",
@@ -2821,14 +2846,17 @@ async def api_backfill_library_entry(entry_id: int) -> dict[str, str]:
             return {"status": "not_found", "message": "条目不存在"}
         if entry["domain_kind"] != "library":
             return {"status": "invalid_domain", "message": "该条目不属于番剧库"}
-        enqueue_backfill_task(
-            conn,
-            0,
-            entry_id,
-            settings,
-            now(),
-        )
-    return {"status": "queued", "message": "番剧库补全任务已加入队列"}
+    run_id = start_pipeline(
+        "library_backfill",
+        trigger_source="manual",
+        first_step_key="release_selection",
+        subject_type="entry",
+        subject_id=entry_id,
+        payload={"entry_id": entry_id, "domain_kind": "library"},
+        message="手动番剧库补全",
+    )
+    trigger_queue("processor", delay=0)
+    return {"status": "queued", "message": f"番剧库补全流水线已启动 run_id={run_id}"}
 
 
 @app.post("/api/sync/tasks/process")
