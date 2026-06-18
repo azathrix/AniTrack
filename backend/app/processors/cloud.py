@@ -12,7 +12,9 @@ from ..scanner import (
     ensure_download_task_for_release,
     extract_file_id,
     extract_task_id,
+    active_episode_download_task,
     is_rate_limited_error,
+    restore_active_cloud_submission,
     retry_after_time,
     sync_cloud_submission,
     task_retry_after,
@@ -324,14 +326,79 @@ async def process_download_submit(context: ProcessorContext, payload: dict) -> P
         )
 
     with connect() as conn:
-        conn.execute(
+        competing = active_episode_download_task(
+            conn,
+            int(task["entry_id"]),
+            int(task["episode_number"] or 0),
+            download_task_id,
+        )
+        if competing:
+            ts = now()
+            conn.execute(
+                """
+                UPDATE download_tasks
+                SET status='superseded', retry_after='', last_error='同集已有云盘任务在处理，跳过重复提交', updated_at=?
+                WHERE id=?
+                """,
+                (ts, download_task_id),
+            )
+            restore_active_cloud_submission(conn, competing)
+            return ProcessorResult.skipped(
+                "同集已有云盘任务在处理，跳过重复提交",
+                data={"download_task_id": download_task_id, "entry_id": int(task["entry_id"]), "active_download_task_id": int(competing["id"])},
+                next_payload={
+                    "_subject_type": "download_task",
+                    "_subject_id": int(competing["id"]),
+                    "download_task_id": int(competing["id"]),
+                    "release_id": int(competing["release_id"]),
+                    "entry_id": int(competing["entry_id"]),
+                },
+            )
+        cursor = conn.execute(
             """
             UPDATE download_tasks
             SET status='running', attempts=attempts+1, updated_at=?
             WHERE id=?
+              AND NOT EXISTS (
+                SELECT 1
+                FROM download_tasks odt
+                JOIN releases orl ON orl.id=odt.release_id
+                WHERE odt.entry_id=?
+                  AND orl.episode_number=?
+                  AND odt.id != ?
+                  AND odt.status IN ('running', 'submitted', 'completed')
+              )
             """,
-            (now(), download_task_id),
+            (now(), download_task_id, task["entry_id"], task["episode_number"], download_task_id),
         )
+        if cursor.rowcount == 0:
+            competing = active_episode_download_task(
+                conn,
+                int(task["entry_id"]),
+                int(task["episode_number"] or 0),
+                download_task_id,
+            )
+            ts = now()
+            conn.execute(
+                """
+                UPDATE download_tasks
+                SET status='superseded', retry_after='', last_error='同集已有云盘任务在处理，跳过重复提交', updated_at=?
+                WHERE id=?
+                """,
+                (ts, download_task_id),
+            )
+            restore_active_cloud_submission(conn, competing)
+            return ProcessorResult.skipped(
+                "同集已有云盘任务在处理，跳过重复提交",
+                data={"download_task_id": download_task_id, "entry_id": int(task["entry_id"]), "active_download_task_id": int(competing["id"]) if competing else 0},
+                next_payload={
+                    "_subject_type": "download_task",
+                    "_subject_id": int(competing["id"]) if competing else download_task_id,
+                    "download_task_id": int(competing["id"]) if competing else download_task_id,
+                    "release_id": int(competing["release_id"]) if competing else int(task["release_id"]),
+                    "entry_id": int(task["entry_id"]),
+                },
+            )
         sync_cloud_submission(
             conn,
             series_id=0,

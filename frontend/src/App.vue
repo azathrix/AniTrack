@@ -84,9 +84,10 @@
           <div class="console-workbench">
             <aside class="console-nav">
               <div class="console-nav-toolbar">
-                <el-segmented v-model="queueVisibilityMode" :options="['活跃', '全部']" size="small" />
+                <el-segmented v-model="consoleNavMode" :options="['队列', '定时任务']" size="small" />
+                <el-segmented v-if="consoleNavMode === '队列'" v-model="queueVisibilityMode" :options="['活跃', '全部']" size="small" />
               </div>
-              <div v-for="section in queueConsoleSections" :key="section.key">
+              <div v-if="consoleNavMode === '队列'" v-for="section in queueConsoleSections" :key="section.key">
                 <div v-if="section.kind === 'group'" class="console-nav-group">{{ section.name }}</div>
                 <button
                   v-else
@@ -110,6 +111,21 @@
                     {{ logsBadgeText }}
                   </el-tag>
                 </button>
+              </div>
+              <div v-else class="console-nav-list">
+                <button
+                  v-for="section in scheduledConsoleSections"
+                  :key="section.key"
+                  class="console-nav-item"
+                  :class="{ active: selectedConsoleSection === section.key }"
+                  @click="selectedConsoleSection = section.key"
+                >
+                  <span>{{ section.name }}</span>
+                  <el-tag size="small" :type="scheduledBadgeType(section.job_key)">
+                    {{ scheduledBadgeText(section.job_key) }}
+                  </el-tag>
+                </button>
+                <div v-if="!scheduledConsoleSections.length" class="console-nav-empty">暂无定时任务</div>
               </div>
             </aside>
 
@@ -287,20 +303,6 @@
         <div class="span-4 dashboard-bottom-grid">
           <el-card class="console-card utility-card">
             <el-tabs v-model="utilityTab">
-              <el-tab-pane label="定时器" name="scheduled">
-                <div class="scheduled-job-list">
-                  <div v-for="job in dashboard.scheduled_jobs || []" :key="job.job_key" class="scheduled-job-row">
-                    <div>
-                      <strong>{{ job.job_key }}</strong>
-                      <span>{{ job.latest_run?.message || job.last_error || '等待调度' }}</span>
-                    </div>
-                    <div class="scheduled-job-meta">
-                      <el-tag size="small" :type="taskTag(job.last_status || 'idle')">{{ job.last_status || 'idle' }}</el-tag>
-                      <span>{{ job.interval_minutes || 0 }} 分</span>
-                    </div>
-                  </div>
-                </div>
-              </el-tab-pane>
               <el-tab-pane label="日志" name="logs">
                 <div class="log-console compact-log-console">
                   <div class="log-toolbar">
@@ -340,8 +342,8 @@
               <span v-else>{{ item.display_title?.slice(0, 2) || item.title_cn?.slice(0, 2) || 'AN' }}</span>
             </div>
             <div class="anime-body">
-              <h3>{{ item.entry_display_title || item.display_title || item.title_cn }}</h3>
-              <p>{{ item.entry_secondary_title || item.work_display_title || item.bangumi_id || '未关联' }}</p>
+              <h3>{{ item.work_display_title || item.entry_display_title || item.display_title || item.title_cn }}</h3>
+              <p>{{ item.entry_scope_label || item.entry_secondary_title || item.bangumi_id || 'Season 01' }}</p>
               <div class="tagline">
                 <el-tag size="small" type="info">{{ item.release_count }} 发布</el-tag>
                 <el-tag size="small" type="warning">云盘 {{ item.cloud_asset_count || 0 }}</el-tag>
@@ -444,8 +446,8 @@
                   <span v-else>{{ item.display_title?.slice(0, 2) || item.title_cn?.slice(0, 2) || 'AN' }}</span>
                 </div>
                 <div class="anime-body">
-                  <h3>{{ item.entry_display_title || item.display_title || item.title_cn }}</h3>
-                  <p>Bangumi: {{ item.bangumi_id || '未关联' }}</p>
+                  <h3>{{ item.work_display_title || item.entry_display_title || item.display_title || item.title_cn }}</h3>
+                  <p>{{ item.entry_scope_label || item.entry_secondary_title || 'Season 01' }} · Bangumi: {{ item.bangumi_id || '未关联' }}</p>
                   <div class="tagline">
                     <el-tag size="small" type="info">{{ item.release_count }} 发布</el-tag>
                     <el-tag size="small" type="warning">云盘 {{ item.cloud_asset_count || 0 }}</el-tag>
@@ -706,6 +708,7 @@ const refreshInterval = ref(5000)
 const liveConnected = ref(false)
 const selectedQueueDomainFilter = ref('全部')
 const queueVisibilityMode = ref('活跃')
+const consoleNavMode = ref('队列')
 const utilityTab = ref('logs')
 const calendarWeek = ref('')
 const expandedWorkKeys = ref(new Set())
@@ -771,6 +774,7 @@ const queueConsoleSections = computed(() => (dashboard.console_sections || []).f
   if (section.kind === 'group') return true
   return section.kind === 'queue' && shouldShowConsoleSection(section)
 }))
+const scheduledConsoleSections = computed(() => (dashboard.console_sections || []).filter(section => section.kind === 'scheduled'))
 const visibleConsoleSections = computed(() => (dashboard.console_sections || []).filter(section => shouldShowConsoleSection(section)))
 const selectedSectionMeta = computed(() => (dashboard.console_sections || []).find(item => item.key === selectedConsoleSection.value) || null)
 const selectedQueue = computed(() => {
@@ -1305,6 +1309,16 @@ watch(selectedConsoleSection, () => {
   selectedQueueDomainFilter.value = '全部'
 })
 watch(queueVisibilityMode, () => {
+  if (!queueConsoleSections.value.some(item => item.key === selectedConsoleSection.value)) {
+    const fallback = queueConsoleSections.value.find(item => item.kind !== 'group')
+    selectedConsoleSection.value = fallback?.key || 'queue:mikan_match'
+  }
+})
+watch(consoleNavMode, value => {
+  if (value === '定时任务') {
+    selectedConsoleSection.value = scheduledConsoleSections.value[0]?.key || selectedConsoleSection.value
+    return
+  }
   if (!queueConsoleSections.value.some(item => item.key === selectedConsoleSection.value)) {
     const fallback = queueConsoleSections.value.find(item => item.kind !== 'group')
     selectedConsoleSection.value = fallback?.key || 'queue:mikan_match'

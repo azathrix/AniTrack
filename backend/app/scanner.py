@@ -1438,6 +1438,47 @@ def sync_cloud_submission(
     )
 
 
+def active_episode_download_task(conn, entry_id: int, episode_number: int, exclude_download_task_id: int = 0):
+    return conn.execute(
+        """
+        SELECT dt.*, r.episode_number
+        FROM download_tasks dt
+        JOIN releases r ON r.id=dt.release_id
+        WHERE dt.entry_id=?
+          AND r.episode_number=?
+          AND dt.id != ?
+          AND dt.status IN ('running', 'submitted', 'completed')
+        ORDER BY CASE dt.status
+          WHEN 'completed' THEN 0
+          WHEN 'submitted' THEN 1
+          WHEN 'running' THEN 2
+          ELSE 9
+        END, dt.updated_at ASC
+        LIMIT 1
+        """,
+        (entry_id, episode_number, exclude_download_task_id),
+    ).fetchone()
+
+
+def restore_active_cloud_submission(conn, active_task) -> None:
+    if not active_task:
+        return
+    status = str(active_task["status"] or "")
+    sync_cloud_submission(
+        conn,
+        series_id=0,
+        entry_id=int(active_task["entry_id"]),
+        episode_number=int(active_task["episode_number"] or 0),
+        release_id=int(active_task["release_id"]),
+        download_task_id=int(active_task["id"]),
+        status="completed" if status == "completed" else ("submitted" if status == "submitted" else "running"),
+        target_dir=str(active_task["target_dir"] or ""),
+        normalized_name=str(active_task["normalized_name"] or ""),
+        submission_id=str(active_task["pikpak_task_id"] or ""),
+        provider_file_id=str(active_task["pikpak_file_id"] or ""),
+    )
+
+
 def ensure_download_task_for_release(conn, release_id: int, settings: dict[str, str]) -> int | None:
     release = conn.execute("SELECT * FROM releases WHERE id=?", (release_id,)).fetchone()
     if not release:
@@ -1915,16 +1956,61 @@ async def _process_tasks(settings: dict[str, str], limit: int = 6, force: bool =
             log("info", f"云盘同集文件已存在，跳过重复提交: {actual_name}")
             continue
         with connect() as conn:
-            conn.execute(
+            competing = active_episode_download_task(
+                conn,
+                int(task["entry_id"]),
+                int(task["episode_number"] or 0),
+                int(task["id"]),
+            )
+            if competing:
+                conn.execute(
+                    """
+                    UPDATE download_tasks
+                    SET status='superseded', retry_after='', last_error='同集已有云盘任务在处理，跳过重复提交', updated_at=?
+                    WHERE id=?
+                    """,
+                    (now(), task["id"]),
+                )
+                restore_active_cloud_submission(conn, competing)
+                log("info", f"同集已有云盘任务在处理，跳过重复提交: {task['title']}")
+                continue
+            cursor = conn.execute(
                 """
                 UPDATE download_tasks
                 SET status='running',
                     attempts=CASE WHEN ?=1 THEN attempts ELSE attempts+1 END,
                     updated_at=?
                 WHERE id=?
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM download_tasks odt
+                    JOIN releases orl ON orl.id=odt.release_id
+                    WHERE odt.entry_id=?
+                      AND orl.episode_number=?
+                      AND odt.id != ?
+                      AND odt.status IN ('running', 'submitted', 'completed')
+                  )
                 """,
-                (1 if force else 0, now(), task["id"]),
+                (1 if force else 0, now(), task["id"], task["entry_id"], task["episode_number"], task["id"]),
             )
+            if cursor.rowcount == 0:
+                competing = active_episode_download_task(
+                    conn,
+                    int(task["entry_id"]),
+                    int(task["episode_number"] or 0),
+                    int(task["id"]),
+                )
+                conn.execute(
+                    """
+                    UPDATE download_tasks
+                    SET status='superseded', retry_after='', last_error='同集已有云盘任务在处理，跳过重复提交', updated_at=?
+                    WHERE id=?
+                    """,
+                    (now(), task["id"]),
+                )
+                restore_active_cloud_submission(conn, competing)
+                log("info", f"同集已有云盘任务在处理，跳过重复提交: {task['title']}")
+                continue
             sync_cloud_submission(
                 conn,
                 series_id=0,
@@ -2068,7 +2154,7 @@ async def poll_submitted_tasks(settings: dict[str, str], limit: int = 20, force:
         local_tasks = conn.execute(
             """
             SELECT cpt.id AS poll_task_id, cpt.attempts AS poll_attempts,
-                   dt.*, r.title
+                   dt.*, r.title, r.episode_number
             FROM cloud_poll_tasks cpt
             JOIN download_tasks dt ON dt.id=cpt.download_task_id
             JOIN releases r ON r.id=dt.release_id
