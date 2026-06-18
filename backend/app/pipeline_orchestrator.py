@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from .database import connect
-from .db import now
+from .db import log, now
 from .pipeline_models import ProcessorContext, ProcessorResult, merge_payload
 from .pipeline_runtime import finish_pipeline_run, get_pipeline_id, record_processor_event, start_pipeline_run
 from .processor_registry import get_processor
@@ -14,6 +14,17 @@ from .queue_bridge import request_queue_trigger
 
 TERMINAL_STATUSES = {"completed", "failed", "blocked", "cancelled"}
 STALE_RUNNING_MINUTES = 10
+LOG_PAYLOAD_KEYS = [
+    "entry_id",
+    "release_id",
+    "candidate_id",
+    "download_task_id",
+    "cloud_asset_id",
+    "episode_number",
+    "domain_kind",
+    "title",
+    "normalized_name",
+]
 
 
 def load_json(value: str) -> dict[str, Any]:
@@ -36,6 +47,20 @@ def retry_after_seconds(seconds: int) -> str:
 
 def stale_running_cutoff() -> str:
     return (datetime.now(timezone.utc) - timedelta(minutes=STALE_RUNNING_MINUTES)).isoformat()
+
+
+def compact_payload(payload: dict[str, Any] | None) -> str:
+    if not payload:
+        return "-"
+    values: list[str] = []
+    for key in LOG_PAYLOAD_KEYS:
+        value = payload.get(key)
+        if value not in (None, ""):
+            values.append(f"{key}={str(value)[:120]}")
+    if values:
+        return " ".join(values)
+    keys = ",".join(sorted(str(key) for key in payload.keys())[:8])
+    return f"keys={keys}" if keys else "-"
 
 
 def pipeline_step(pipeline_id: int, step_key: str) -> dict[str, Any]:
@@ -167,6 +192,11 @@ def start_pipeline(
     if not step:
         return 0
     run_id = start_pipeline_run(pipeline_key, trigger_source, message or f"启动流水线 {pipeline_key}")
+    log(
+        "info",
+        f"流水线启动: run_id={run_id} pipeline={pipeline_key} trigger={trigger_source} "
+        f"first_step={step['step_key']} subject={subject_type}:{subject_id} payload={compact_payload(payload)}",
+    )
     enqueue_processor_task(
         pipeline_id=pipeline_id,
         run_id=run_id,
@@ -186,6 +216,7 @@ def claim_next_task(processor_key: str = "") -> dict[str, Any]:
     if processor_key:
         processor_filter = "AND pt.processor_key=?"
         params.append(processor_key)
+    task: dict[str, Any] = {}
     with connect() as conn:
         conn.execute(
             """
@@ -241,7 +272,16 @@ def claim_next_task(processor_key: str = "") -> dict[str, Any]:
             """,
             (row["id"],),
         ).fetchone()
-        return dict(claimed) if claimed else {}
+        if not claimed:
+            return {}
+        task = dict(claimed)
+    log(
+        "info",
+        f"处理器开始: task_id={task['id']} run_id={task['run_id']} step={task['step_key']} "
+        f"processor={task['processor_key']} subject={task['subject_type']}:{task['subject_id']} "
+        f"attempt={task['attempts']} payload={compact_payload(load_json(str(task['payload_json'] or '')))}",
+    )
+    return task
 
 
 def task_context(task: dict[str, Any]) -> ProcessorContext:
@@ -291,6 +331,12 @@ def complete_task(task: dict[str, Any], result: ProcessorResult) -> None:
                 task["id"],
             ),
         )
+    log(
+        "info" if task_status == "completed" else "warn",
+        f"处理器完成: task_id={task['id']} run_id={task['run_id']} step={task['step_key']} "
+        f"processor={task['processor_key']} result={result.status} task_status={task_status} "
+        f"retry_after={result.retry_after or '-'} message={result.message or '-'} data={compact_payload(result.data)}",
+    )
 
 
 def dispatch_result(task: dict[str, Any], payload: dict[str, Any], result: ProcessorResult) -> int:
@@ -319,8 +365,18 @@ def dispatch_result(task: dict[str, Any], payload: dict[str, Any], result: Proce
     if not transitions:
         if result.status == "success":
             finish_pipeline_run(int(task["run_id"]), "completed", result.message or "流水线执行完成", result.data)
+            log(
+                "info",
+                f"流水线完成: run_id={task['run_id']} task_id={task['id']} step={task['step_key']} "
+                f"message={result.message or '流水线执行完成'}",
+            )
         elif result.status in {"failed_terminal", "conflict"}:
             finish_pipeline_run(int(task["run_id"]), "failed", result.message, result.data)
+            log(
+                "warn",
+                f"流水线失败: run_id={task['run_id']} task_id={task['id']} step={task['step_key']} "
+                f"result={result.status} message={result.message}",
+            )
         return 0
 
     enqueued = 0
@@ -351,6 +407,12 @@ def dispatch_result(task: dict[str, Any], payload: dict[str, Any], result: Proce
                 dedupe_key=item_dedupe,
             )
             if task_id:
+                log(
+                    "info",
+                    f"流水线转移: run_id={task['run_id']} from={task['step_key']} to={step_key} "
+                    f"parent_task_id={task['id']} next_task_id={task_id} subject={item_subject_type}:{item_subject_id} "
+                    f"payload={compact_payload(item_payload)}",
+                )
                 enqueued += 1
     return enqueued
 
@@ -367,6 +429,11 @@ async def run_one_task(processor_key: str = "") -> bool:
         try:
             result = await processor(task_context(task), payload)
         except Exception as exc:
+            log(
+                "error",
+                f"处理器异常: task_id={task['id']} run_id={task['run_id']} step={task['step_key']} "
+                f"processor={task['processor_key']} error={str(exc)[:1800]}",
+            )
             result = ProcessorResult.retryable(str(exc), retry_after_seconds(60))
     complete_task(task, result)
     dispatch_result(task, payload, result)

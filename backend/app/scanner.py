@@ -328,6 +328,10 @@ def coalesce_episode_release(conn, entry_id: int, episode_number: int, item: Par
         return None
     existing_guid = conn.execute("SELECT id FROM releases WHERE guid=?", (item.guid,)).fetchone()
     if existing_guid:
+        log(
+            "info",
+            f"RSS 发布去重: entry_id={entry_id} episode={episode_number} release_id={existing_guid['id']} reason=guid已存在",
+        )
         return int(existing_guid["id"])
     new_row = {
         "id": 0,
@@ -338,9 +342,20 @@ def coalesce_episode_release(conn, entry_id: int, episode_number: int, item: Par
     }
     best_existing = min((dict(row) for row in existing_rows), key=lambda row: release_priority_key(row, settings))
     if release_priority_key(best_existing, settings) <= release_priority_key(new_row, settings):
+        log(
+            "info",
+            f"RSS 发布合并保留旧项: entry_id={entry_id} episode={episode_number} "
+            f"keep_release_id={best_existing['id']} new_group={item.subtitle_group or '-'} "
+            f"new_resolution={item.resolution or '-'} new_language={item.language or '-'}",
+        )
         return int(best_existing["id"])
     keep_id = int(best_existing["id"])
     if release_has_downstream(conn, keep_id):
+        log(
+            "info",
+            f"RSS 发布合并保留旧项: entry_id={entry_id} episode={episode_number} "
+            f"keep_release_id={keep_id} reason=已有后续任务 new_guid={item.guid}",
+        )
         return keep_id
     conn.execute(
         """
@@ -361,6 +376,12 @@ def coalesce_episode_release(conn, entry_id: int, episode_number: int, item: Par
             ts,
             keep_id,
         ),
+    )
+    log(
+        "info",
+        f"RSS 发布合并替换旧项: entry_id={entry_id} episode={episode_number} "
+        f"release_id={keep_id} group={item.subtitle_group or '-'} resolution={item.resolution or '-'} "
+        f"language={item.language or '-'}",
     )
     return keep_id
 
@@ -1313,6 +1334,13 @@ async def _process_selection_tasks(settings: dict[str, str], limit: int = 20) ->
         try:
             ids, choice = resolve_entry_choice(int(row["entry_id"]), settings)
             mark_selected_releases(int(row["entry_id"]), ids)
+            log(
+                "info",
+                f"自动选集结果: entry_id={row['entry_id']} title={row['title_cn']} "
+                f"release_ids={','.join(str(item) for item in ids)} group={choice.get('selected_group') or '-'} "
+                f"resolution={choice.get('selected_resolution') or '-'} language={choice.get('selected_language') or '-'} "
+                f"fallback={choice.get('fallback_reason') or '-'} reason={choice.get('reason') or '-'}",
+            )
             with connect() as conn:
                 ts = now()
                 if choice["reason"]:

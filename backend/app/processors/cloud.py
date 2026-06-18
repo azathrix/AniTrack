@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from ..database import connect
-from ..db import get_settings, now
+from ..db import get_settings, log, now
 from ..library import render_episode_name, target_dir
 from ..pipeline_models import ProcessorContext, ProcessorResult
 from ..pikpak_service import list_offline_tasks, submit_offline_download
@@ -74,6 +74,11 @@ async def process_cloud_presence(context: ProcessorContext, payload: dict) -> Pr
                 """,
                 (int(existing_cloud["id"]), ts, release_id),
             )
+            log(
+                "info",
+                f"云盘存在性命中数据库: release_id={release_id} entry_id={entry_id} "
+                f"episode={episode_number} cloud_asset_id={int(existing_cloud['id'])}",
+            )
             return ProcessorResult.skipped(
                 "云盘资源已存在",
                 data={"release_id": release_id, "entry_id": entry_id, "cloud_asset_id": int(existing_cloud["id"])},
@@ -117,6 +122,12 @@ async def process_cloud_presence(context: ProcessorContext, payload: dict) -> Pr
                 """,
                 (asset_id, ts, release_id),
             )
+        log(
+            "info",
+            f"云盘存在性命中远端: release_id={release_id} entry_id={entry_id} episode={episode_number} "
+            f"target_dir={remote_target} expected={remote_name} actual={actual_name} "
+            f"file_id={file_id or '-'} cloud_asset_id={asset_id}",
+        )
         return ProcessorResult.skipped(
             "云盘同集文件已存在，跳过下载准备",
             data={"release_id": release_id, "entry_id": entry_id, "cloud_asset_id": asset_id, "provider_file_id": file_id},
@@ -139,6 +150,11 @@ async def process_cloud_presence(context: ProcessorContext, payload: dict) -> Pr
             """,
             (ts, release_id),
         )
+    log(
+        "info",
+        f"云盘存在性未命中: release_id={release_id} entry_id={entry_id} episode={episode_number} "
+        f"target_dir={remote_target} expected={remote_name}",
+    )
 
     return ProcessorResult.success(
         "云盘资源不存在，进入下载准备",
@@ -199,6 +215,12 @@ async def process_download_enqueue(context: ProcessorContext, payload: dict) -> 
                     """,
                     (ts, release_id),
                 )
+                log(
+                    "info",
+                    f"下载准备复用提交记录: release_id={release_id} entry_id={entry_id} episode={episode_number} "
+                    f"submission_id={existing_submission['id']} submission_status={existing_submission['status']} "
+                    f"download_task_id={download_task_id}",
+                )
             else:
                 download_task_id = ensure_download_task_for_release(conn, release_id, settings) or 0
                 conn.execute(
@@ -208,6 +230,11 @@ async def process_download_enqueue(context: ProcessorContext, payload: dict) -> 
                     WHERE release_id=?
                     """,
                     (ts, release_id),
+                )
+                log(
+                    "info",
+                    f"下载准备生成任务: release_id={release_id} entry_id={entry_id} "
+                    f"episode={episode_number} download_task_id={download_task_id}",
                 )
     except Exception as exc:
         return ProcessorResult.retryable(str(exc)[:2000], task_retry_after(settings, context.attempts + 1))
@@ -309,6 +336,12 @@ async def process_download_submit(context: ProcessorContext, payload: dict) -> P
                 provider_file_id=file_id,
             )
             enqueue_cloud_asset_task(conn, download_task_id, ts)
+        log(
+            "info",
+            f"PikPak 提交前命中远端: download_task_id={download_task_id} release_id={task['release_id']} "
+            f"entry_id={task['entry_id']} episode={task['episode_number']} expected={task['normalized_name']} "
+            f"actual={actual_name} file_id={file_id or '-'} cloud_asset_id={asset_id or 0}",
+        )
         return ProcessorResult.skipped(
             "云盘同集文件已存在，跳过重复提交",
             data={"download_task_id": download_task_id, "cloud_asset_id": asset_id, "provider_file_id": file_id},
@@ -340,6 +373,12 @@ async def process_download_submit(context: ProcessorContext, payload: dict) -> P
                 (ts, download_task_id),
             )
             restore_active_cloud_submission(conn, competing)
+            log(
+                "info",
+                f"PikPak 提交互斥跳过: download_task_id={download_task_id} "
+                f"active_download_task_id={int(competing['id'])} entry_id={task['entry_id']} "
+                f"episode={task['episode_number']}",
+            )
             return ProcessorResult.skipped(
                 "同集已有云盘任务在处理，跳过重复提交",
                 data={"download_task_id": download_task_id, "entry_id": int(task["entry_id"]), "active_download_task_id": int(competing["id"])},
@@ -385,6 +424,12 @@ async def process_download_submit(context: ProcessorContext, payload: dict) -> P
                 (ts, download_task_id),
             )
             restore_active_cloud_submission(conn, competing)
+            log(
+                "info",
+                f"PikPak 提交互斥回退: download_task_id={download_task_id} "
+                f"active_download_task_id={int(competing['id']) if competing else 0} entry_id={task['entry_id']} "
+                f"episode={task['episode_number']}",
+            )
             return ProcessorResult.skipped(
                 "同集已有云盘任务在处理，跳过重复提交",
                 data={"download_task_id": download_task_id, "entry_id": int(task["entry_id"]), "active_download_task_id": int(competing["id"]) if competing else 0},
@@ -412,6 +457,12 @@ async def process_download_submit(context: ProcessorContext, payload: dict) -> P
         result = await submit_offline_download(settings, source, task["target_dir"], task["normalized_name"])
         task_id = extract_task_id(result) if isinstance(result, dict) else ""
         file_id = extract_file_id(result) if isinstance(result, dict) else ""
+        log(
+            "info",
+            f"PikPak 提交返回: download_task_id={download_task_id} release_id={task['release_id']} "
+            f"entry_id={task['entry_id']} episode={task['episode_number']} target_dir={task['target_dir']} "
+            f"normalized_name={task['normalized_name']} pikpak_task_id={task_id or '-'} file_id={file_id or '-'}",
+        )
     except Exception as exc:
         if is_rate_limited_error(exc):
             retry_after = retry_after_time(settings)
@@ -531,6 +582,12 @@ async def process_cloud_poll(context: ProcessorContext, payload: dict) -> Proces
                 if matched:
                     file_id = cloud_file_id(matched)
                     status = "completed"
+                    log(
+                        "info",
+                        f"PikPak 状态轮询命中远端文件: download_task_id={download_task_id} "
+                        f"entry_id={task['entry_id']} episode={task['episode_number']} "
+                        f"actual={matched.get('name') or '-'} file_id={file_id or '-'}",
+                    )
                 else:
                     message = "rclone 已提交，目标目录暂未发现完成文件"
             elif file_id and not str(task["pikpak_task_id"] or ""):
@@ -545,6 +602,12 @@ async def process_cloud_poll(context: ProcessorContext, payload: dict) -> Proces
                     file_id = str(remote.get("file_id") or remote.get("reference_resource", {}).get("id", "") or file_id)
                     if phase == "PHASE_TYPE_COMPLETE":
                         status = "completed"
+                        log(
+                            "info",
+                            f"PikPak 状态轮询完成: download_task_id={download_task_id} "
+                            f"entry_id={task['entry_id']} episode={task['episode_number']} "
+                            f"pikpak_task_id={task['pikpak_task_id']} file_id={file_id or '-'}",
+                        )
                     elif phase == "PHASE_TYPE_ERROR":
                         status = "failed"
                         message = str(remote.get("message") or "PikPak 离线任务失败")
@@ -588,6 +651,11 @@ async def process_cloud_poll(context: ProcessorContext, payload: dict) -> Proces
                 retry_after=retry_after,
                 last_error=message,
             )
+        log(
+            "info" if status != "failed" else "warn",
+            f"PikPak 状态轮询等待: download_task_id={download_task_id} entry_id={task['entry_id']} "
+            f"episode={task['episode_number']} status={status} retry_after={retry_after} message={message or '-'}",
+        )
         return ProcessorResult.retryable(message or "云盘任务尚未完成，等待后继续轮询", retry_after)
 
     if matched:
@@ -626,6 +694,12 @@ async def process_cloud_poll(context: ProcessorContext, payload: dict) -> Proces
             provider_file_id=file_id,
         )
         enqueue_cloud_asset_task(conn, download_task_id, ts)
+    log(
+        "info",
+        f"PikPak 状态轮询登记后续: download_task_id={download_task_id} entry_id={task['entry_id']} "
+        f"release_id={task['release_id']} episode={task['episode_number']} actual_name={actual_name or '-'} "
+        f"file_id={file_id or '-'}",
+    )
     return ProcessorResult.success(
         "云盘任务已完成",
         data={"download_task_id": download_task_id, "entry_id": int(task["entry_id"])},

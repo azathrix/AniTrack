@@ -131,6 +131,7 @@ def enqueue_sync_plan_tasks(entry_ids: list[int], ts: str) -> int:
     with connect() as conn:
         for entry_id in unique_ids:
             enqueue_sync_plan_task(conn, entry_id, ts)
+    log("info", f"同步计划入队: entries={','.join(str(entry_id) for entry_id in unique_ids[:30])} count={len(unique_ids)}")
     return len(unique_ids)
 
 
@@ -207,6 +208,12 @@ def upsert_cloud_asset(task_id: int, settings: dict[str, str]) -> int | None:
                     ts,
                     existing_asset["id"],
                 ),
+            )
+            log(
+                "info",
+                f"云盘资源登记更新: cloud_asset_id={existing_asset['id']} task_id={task['id']} "
+                f"release_id={task['release_id']} entry_id={task['entry_id']} episode={release['episode_number']} "
+                f"file_id={task['pikpak_file_id'] or '-'} cloud_name={cloud_name}",
             )
         else:
             created = True
@@ -415,6 +422,7 @@ def materialize_sync_tasks_for_entry(entry_id: int, settings: dict[str, str]) ->
     with connect() as conn:
         rule = conn.execute("SELECT sync_enabled FROM sync_rules WHERE entry_id=?", (entry_id,)).fetchone()
         if not rule or not int(rule["sync_enabled"] or 0):
+            log("info", f"同步计划跳过: entry_id={entry_id} reason=本地同步未开启")
             return 0, "本地同步未开启，跳过同步计划"
         assets = conn.execute(
             """
@@ -427,6 +435,7 @@ def materialize_sync_tasks_for_entry(entry_id: int, settings: dict[str, str]) ->
             (entry_id,),
         ).fetchall()
         if not assets:
+            log("info", f"同步计划等待: entry_id={entry_id} reason=暂无可同步云盘资源")
             return 0, "已开启本地同步；云盘资源入库后会自动同步"
         ts = now()
         queued = 0
@@ -482,6 +491,12 @@ def materialize_sync_tasks_for_entry(entry_id: int, settings: dict[str, str]) ->
             ).fetchone()
             if task_row and task_row["status"] != "synced":
                 queued += 1
+            log(
+                "info",
+                f"同步任务调和: entry_id={entry_id} cloud_asset_id={asset['id']} release_id={asset['release_id']} "
+                f"episode={asset['episode_number']} status={task_row['status'] if task_row else '-'} target={target}",
+            )
+    log("info", f"同步计划完成: entry_id={entry_id} assets={len(assets)} queued={queued}")
     return queued, f"已生成本地同步任务: {queued} 条"
 
 
@@ -522,6 +537,7 @@ async def _process_sync_plan_tasks(settings: dict[str, str], limit: int = 20) ->
     completed = 0
     failed = 0
     for row in rows:
+        log("info", f"同步计划开始: task_id={row['id']} entry_id={row['entry_id']} title={row['title_cn']}")
         with connect() as conn:
             conn.execute(
                 "UPDATE sync_plan_tasks SET status='running', attempts=attempts+1, updated_at=? WHERE id=?",
@@ -541,6 +557,7 @@ async def _process_sync_plan_tasks(settings: dict[str, str], limit: int = 20) ->
             completed += 1
             if queued > 0:
                 request_queue_trigger("sync")
+            log("info", f"同步计划任务完成: task_id={row['id']} entry_id={row['entry_id']} queued={queued}")
         except Exception as exc:
             failed += 1
             with connect() as conn:
@@ -887,6 +904,12 @@ def upsert_cloud_asset_from_download_task(task_id: int, item: dict, settings: di
                     existing_asset["id"],
                 ),
             )
+            log(
+                "info",
+                f"云盘资源登记更新: cloud_asset_id={existing_asset['id']} task_id={task['id']} "
+                f"release_id={task['release_id']} entry_id={task['entry_id']} episode={release['episode_number']} "
+                f"file_id={provider_file_id or '-'} cloud_name={name}",
+            )
         else:
             created = True
             conn.execute(
@@ -978,6 +1001,12 @@ def upsert_cloud_asset_for_release(release_id: int, item: dict, settings: dict[s
                 ),
             )
             asset_id = int(existing_asset["id"])
+            log(
+                "info",
+                f"云盘资源登记更新: cloud_asset_id={asset_id} release_id={release['id']} "
+                f"entry_id={release['entry_id']} episode={release['episode_number']} "
+                f"file_id={provider_file_id or '-'} cloud_name={name}",
+            )
         else:
             conn.execute(
                 """
@@ -1279,6 +1308,11 @@ async def _process_sync_tasks(settings: dict[str, str], limit: int = 5) -> None:
         ).fetchall()
 
     async def handle(task) -> bool:
+        log(
+            "info",
+            f"本地同步开始: sync_task_id={task['id']} entry_id={task['entry_id']} release_id={task['release_id']} "
+            f"cloud_asset_id={task['cloud_asset_id']} cloud_name={task['cloud_name']} source={task['source_path']} target={task['target_path']}",
+        )
         with connect() as conn:
             conn.execute(
                 """
@@ -1346,8 +1380,18 @@ async def _process_sync_tasks(settings: dict[str, str], limit: int = 5) -> None:
                     if local_asset:
                         enqueue_nfo_task(conn, int(local_asset["id"]), int(task["release_id"]), int(task["series_id"]), int(task["entry_id"]), ts)
                         enqueue_local_presence_task(conn, int(local_asset["id"]), int(task["release_id"]), int(task["series_id"]), int(task["entry_id"]), ts)
+                log(
+                    "info",
+                    f"本地同步跳过下载: sync_task_id={task['id']} cloud_asset_id={task['cloud_asset_id']} "
+                    f"reason=本地文件已存在 target={normalized_target}",
+                )
                 return True
 
+            log(
+                "info",
+                f"本地同步下载: sync_task_id={task['id']} cloud_asset_id={task['cloud_asset_id']} "
+                f"file_id={task['provider_file_id'] or '-'} source={task['source_path']} target={normalized_target}",
+            )
             await download_cloud_file_to_local(
                 task["provider_file_id"],
                 task["source_path"],
@@ -1445,6 +1489,11 @@ async def _process_nfo_tasks(settings: dict[str, str], limit: int = 10) -> tuple
     completed = 0
     failed = 0
     for task in rows:
+        log(
+            "info",
+            f"NFO 任务开始: task_id={task['id']} entry_id={task['entry_id']} "
+            f"local_asset_id={task['local_asset_id']} local_path={task['local_path']}",
+        )
         with connect() as conn:
             conn.execute(
                 """
@@ -1473,6 +1522,10 @@ async def _process_nfo_tasks(settings: dict[str, str], limit: int = 10) -> tuple
                     (ts, task["id"]),
                 )
             completed += 1
+            log(
+                "info",
+                f"NFO 任务完成: task_id={task['id']} entry_id={task['entry_id']} local_asset_id={task['local_asset_id']}",
+            )
         except Exception as exc:
             failed += 1
             with connect() as conn:
