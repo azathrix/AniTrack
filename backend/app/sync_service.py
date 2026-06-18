@@ -1043,7 +1043,6 @@ def upsert_cloud_asset_for_release(release_id: int, item: dict, settings: dict[s
             if asset_id:
                 log("info", f"云盘资源已入库: {name}")
         if asset_id:
-            enqueue_sync_plan_task(conn, int(release["entry_id"]), ts)
             return asset_id
     return None
 
