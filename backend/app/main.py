@@ -1178,18 +1178,19 @@ async def handle_cleanup_queue() -> None:
 
 
 async def handle_processor_queue() -> None:
-    for _ in range(12):
-        before = ready_count_processor_tasks()
+    generation = get_runtime_generation()
+    for _ in range(30):
         processed = await run_ready_tasks(limit=50)
-        after = ready_count_processor_tasks()
+        if not runtime_generation_alive(generation):
+            return
         if processed:
             log("info", f"Processor 队列已处理: {processed} 个")
-        if before == 0 or processed == 0 or after >= before:
+        if processed == 0:
             break
-        if after <= 0:
+        if ready_count_processor_tasks() <= 0:
             break
     if ready_count_processor_tasks() > 0:
-        trigger_queue("processor")
+        trigger_queue("processor", delay=0)
 
 
 async def run_scan_source(settings: dict[str, str], operation_id: int | None = None) -> str:

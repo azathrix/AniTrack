@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..db import get_settings
+from ..db import get_settings, log
 from ..parser import ParsedRelease
 from ..pipeline_models import ProcessorContext, ProcessorResult
 from ..scanner import fetch_entries, upsert_rss_candidate
@@ -54,6 +54,7 @@ async def process_rss_fetch(_context: ProcessorContext, payload: dict) -> Proces
     fetch_settings = dict(settings)
     fetch_settings["rss_url"] = rss_url
     entries = await fetch_entries(fetch_settings)
+    log("info", f"RSS 拉取完成: {len(entries)} 条")
     next_tasks = []
     for item in entries:
         item_payload = release_to_payload(item)
