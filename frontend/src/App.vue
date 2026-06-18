@@ -10,6 +10,7 @@
       </div>
       <nav>
         <button :class="{ active: view === 'dashboard' }" @click="view = 'dashboard'"><el-icon><DataBoard /></el-icon> 控制台</button>
+        <button :class="{ active: view === 'calendar' }" @click="view = 'calendar'"><el-icon><Calendar /></el-icon> 更新日历</button>
         <button :class="{ active: view === 'library' }" @click="view = 'library'"><el-icon><Collection /></el-icon> 番剧库</button>
         <button :class="{ active: view === 'settings' }" @click="view = 'settings'"><el-icon><Setting /></el-icon> 设置</button>
       </nav>
@@ -58,92 +59,29 @@
           <strong>{{ dashboard.console_overview?.pending_task_count || 0 }}</strong>
         </div>
 
-        <el-card class="span-4 console-card">
-          <template #header>最近 7 天已同步新番</template>
-          <el-table :data="dashboard.seasonal_sync_calendar || []" height="240" class="candidate-table">
-            <el-table-column prop="work_display_title" label="作品" min-width="180" show-overflow-tooltip />
-            <el-table-column prop="entry_display_title" label="条目" min-width="220" show-overflow-tooltip />
-            <el-table-column prop="episode_number" label="集" width="70" />
-            <el-table-column prop="synced_at" label="同步时间" width="220" />
-            <el-table-column prop="local_path" label="本地路径" min-width="320" show-overflow-tooltip />
-          </el-table>
-        </el-card>
-
-        <el-card class="span-4 console-card">
-          <template #header>本季条目</template>
-          <div class="anime-grid">
-            <article v-for="item in filteredSeries" :key="item.id" class="anime-card" @click="openEntry(item.id, 'seasonal')">
-              <div class="cover">
-                <img v-if="item.poster_url" :src="item.poster_url" />
-                <span v-else>{{ item.display_title?.slice(0, 2) || item.title_cn?.slice(0, 2) || 'AN' }}</span>
-              </div>
-              <div class="anime-body">
-                <h3>{{ item.entry_display_title || item.display_title || item.title_cn }}</h3>
-                <p>{{ item.entry_secondary_title || item.work_display_title || item.bangumi_id || '未关联' }}</p>
-                <div class="tagline">
-                  <el-tag size="small" type="info">{{ item.release_count }} 发布</el-tag>
-                  <el-tag size="small" type="warning">云盘 {{ item.cloud_asset_count || 0 }}</el-tag>
-                  <el-tag size="small" type="success">本地 {{ item.local_asset_count || 0 }}</el-tag>
-                  <el-tag size="small">{{ item.entry_badge_text || item.entry_kind || 'season' }}</el-tag>
-                </div>
-                <p v-if="seasonalStatusSummary(item)" class="queue-note">{{ seasonalStatusSummary(item) }}</p>
-                <el-progress :percentage="progressOf(item)" :show-text="false" />
-              </div>
-            </article>
-          </div>
-        </el-card>
-
-        <el-card class="span-4 console-card">
-          <template #header>系统概览</template>
-          <div v-if="scanOperation" class="scan-progress">
+        <el-card v-if="scanOperation" class="span-4 console-card">
+          <div class="scan-progress">
             <div>
               <strong>{{ scanOperation.name }}</strong>
               <span>{{ scanOperation.message || '正在执行' }}</span>
             </div>
             <el-progress :percentage="scanProgress" :status="scanOperation.status === 'failed' ? 'exception' : undefined" />
           </div>
-          <div class="detail-summary-grid console-overview-grid">
-            <div><span>队列总数</span><strong>{{ dashboard.console_overview?.queue_total || 0 }}</strong></div>
-            <div><span>运行队列</span><strong>{{ dashboard.console_overview?.running_queue_count || 0 }}</strong></div>
-            <div><span>待处理任务</span><strong>{{ dashboard.console_overview?.pending_task_count || 0 }}</strong></div>
-            <div><span>失败任务</span><strong>{{ dashboard.console_overview?.failed_task_count || 0 }}</strong></div>
-            <div><span>等待重试</span><strong>{{ dashboard.console_overview?.waiting_retry_count || 0 }}</strong></div>
-            <div><span>运行操作</span><strong>{{ dashboard.console_overview?.running_operation_count || 0 }}</strong></div>
-            <div><span>最近警告</span><strong>{{ dashboard.console_overview?.recent_warn_count || 0 }}</strong></div>
-            <div><span>最近错误</span><strong>{{ dashboard.console_overview?.recent_error_count || 0 }}</strong></div>
-          </div>
-          <p class="muted" v-if="(dashboard.console_overview?.active_queue_names || []).length">
-            活跃队列：{{ dashboard.console_overview.active_queue_names.join(' / ') }}
-          </p>
-          <div class="queue-grid">
-            <div v-for="queue in dashboard.queue_summary" :key="queue.key" class="queue-card">
-              <div class="queue-title">
-                <strong>{{ queue.name }}</strong>
-                <el-tag size="small" :type="queueTag(queue)">
-                  {{ queueState(queue) }}
-                </el-tag>
-              </div>
-              <p>{{ queue.description }}</p>
-              <p class="queue-note">{{ queue.state_reason || queuePendingHint(queue) }}</p>
-              <p v-if="queue.state_detail" class="queue-note queue-detail-note">{{ queue.state_detail }}</p>
-              <div class="queue-counts">
-                <span>待处理 <b>{{ queue.pending }}</b></span>
-                <span>运行中 <b>{{ queue.running }}</b></span>
-                <span>失败 <b>{{ queue.failed }}</b></span>
-              </div>
-            </div>
-          </div>
         </el-card>
 
         <el-card class="span-4 console-card console-workbench-card">
           <div class="console-workbench">
             <aside class="console-nav">
+              <div class="console-nav-toolbar">
+                <el-segmented v-model="queueVisibilityMode" :options="['活跃', '全部']" size="small" />
+              </div>
               <div v-for="section in dashboard.console_sections || []" :key="section.key">
                 <div v-if="section.kind === 'group'" class="console-nav-group">{{ section.name }}</div>
                 <button
                   v-else
                   class="console-nav-item"
                   :class="{ active: selectedConsoleSection === section.key }"
+                  v-show="shouldShowConsoleSection(section)"
                   @click="selectedConsoleSection = section.key"
                 >
                   <span>{{ section.name }}</span>
@@ -156,9 +94,6 @@
                   </el-tag>
                   <el-tag v-else-if="section.kind === 'scheduled'" size="small" :type="scheduledBadgeType(section.job_key)">
                     {{ scheduledBadgeText(section.job_key) }}
-                  </el-tag>
-                  <el-tag v-else-if="section.kind === 'operations'" size="small" :type="operationsBadgeType">
-                    {{ operationsBadgeText }}
                   </el-tag>
                   <el-tag v-else-if="section.kind === 'logs'" size="small" :type="logsBadgeType">
                     {{ logsBadgeText }}
@@ -198,6 +133,7 @@
                   <div><span>状态细节</span><strong>{{ selectedQueue.state_detail || '-' }}</strong></div>
                   <div><span>运行队列</span><strong>{{ selectedQueue.runtime_queue_key || selectedQueue.key || '-' }}</strong></div>
                 </div>
+                <p class="queue-note queue-detail-note">{{ selectedQueue.state_reason || queuePendingHint(selectedQueue) }}</p>
                 <el-table :data="selectedQueueItems" height="520" class="candidate-table" empty-text="当前队列没有任务明细">
                   <el-table-column prop="status" label="状态" width="110">
                     <template #default="{ row }"><el-tag :type="taskTag(row.status)">{{ taskStatusText(row) }}</el-tag></template>
@@ -209,6 +145,27 @@
                       </el-tag>
                     </template>
                   </el-table-column>
+                  <el-table-column
+                    v-if="selectedQueue.key === 'processor'"
+                    prop="processor_key"
+                    label="处理器"
+                    width="160"
+                    show-overflow-tooltip
+                  />
+                  <el-table-column
+                    v-if="selectedQueue.key === 'processor'"
+                    prop="step_key"
+                    label="步骤"
+                    width="160"
+                    show-overflow-tooltip
+                  />
+                  <el-table-column
+                    v-if="selectedQueue.key === 'processor'"
+                    prop="subject_type"
+                    label="对象类型"
+                    width="120"
+                    show-overflow-tooltip
+                  />
                   <el-table-column prop="display_title" label="对象" min-width="240" show-overflow-tooltip />
                   <el-table-column prop="episode_number" label="集" width="70" />
                   <el-table-column prop="display_reason" label="说明" min-width="260" show-overflow-tooltip />
@@ -260,41 +217,6 @@
                   <el-table-column prop="started_at" label="开始时间" width="220" />
                   <el-table-column prop="finished_at" label="结束时间" width="220" />
                 </el-table>
-              </template>
-
-              <template v-else-if="selectedConsoleSection === 'operations'">
-                <div class="detail-header">
-                  <div>
-                    <h3>运行操作</h3>
-                    <p>手动触发任务和系统长操作</p>
-                  </div>
-                  <div class="detail-tags">
-                    <el-tag :type="operationsBadgeType">{{ operationsBadgeText }}</el-tag>
-                    <el-button v-if="dashboard.operations.length" plain @click="runAction('/operations/clear')">清空已结束操作</el-button>
-                  </div>
-                </div>
-                <div class="detail-summary-grid">
-                  <div><span>运行中</span><strong>{{ dashboard.console_overview?.running_operation_count || 0 }}</strong></div>
-                  <div><span>失败</span><strong>{{ dashboard.console_overview?.failed_operation_count || 0 }}</strong></div>
-                  <div><span>总数</span><strong>{{ dashboard.operations.length || 0 }}</strong></div>
-                  <div><span>说明</span><strong>只保留运行中和失败项</strong></div>
-                </div>
-                <div class="operation-list operation-list-full">
-                  <div v-if="!dashboard.operations.length" class="operation-item">
-                    <el-tag type="success">idle</el-tag>
-                    <div>
-                      <strong>当前没有运行中的操作</strong>
-                      <span>手动操作完成后会自动从这里移除。</span>
-                    </div>
-                  </div>
-                  <div v-for="op in dashboard.operations" :key="op.id" class="operation-item">
-                    <el-tag :type="taskTag(op.status)">{{ op.status }}</el-tag>
-                    <div>
-                      <strong>{{ op.name }}</strong>
-                      <span>{{ op.message || '处理中' }}</span>
-                    </div>
-                  </div>
-                </div>
               </template>
 
               <template v-else-if="selectedConsoleSection === 'logs'">
@@ -350,6 +272,47 @@
             </section>
           </div>
         </el-card>
+      </section>
+
+      <section v-if="view === 'calendar'" class="calendar-page">
+        <div class="toolbar calendar-toolbar">
+          <el-date-picker
+            v-model="calendarWeek"
+            type="week"
+            format="[第] ww [周] YYYY"
+            value-format="YYYY-MM-DD"
+            placeholder="选择周"
+          />
+          <el-button-group>
+            <el-button @click="shiftCalendarWeek(-1)">上一周</el-button>
+            <el-button @click="setCalendarThisWeek">本周</el-button>
+            <el-button @click="shiftCalendarWeek(1)">下一周</el-button>
+          </el-button-group>
+        </div>
+        <div class="week-calendar-grid">
+          <section v-for="day in weekDays" :key="day.key" class="week-day-column">
+            <header>
+              <strong>{{ day.label }}</strong>
+              <span>{{ day.dateLabel }}</span>
+            </header>
+            <article
+              v-for="item in day.items"
+              :key="`${day.key}-${item.entry_id}-${item.episode_number}-${item.updated_at}`"
+              class="calendar-entry-card"
+              @click="openEntry(item.entry_id, 'seasonal')"
+            >
+              <div class="calendar-entry-meta">
+                <strong>{{ item.work_display_title || item.entry_display_title || item.display_title }}</strong>
+                <span>{{ item.entry_scope_label || item.entry_secondary_title || '-' }}</span>
+              </div>
+              <div class="calendar-entry-tags">
+                <el-tag size="small" type="primary">第 {{ item.episode_number || '?' }} 集</el-tag>
+                <el-tag size="small" :type="item.synced ? 'success' : 'warning'">{{ item.synced ? '已同步' : '已更新' }}</el-tag>
+              </div>
+            </article>
+            <div v-if="!day.items.length" class="calendar-empty">无更新</div>
+          </section>
+        </div>
       </section>
 
       <section v-if="view === 'library'" class="library">
@@ -629,7 +592,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import draggable from 'vuedraggable'
 import { ElMessage } from 'element-plus'
-import { Collection, DataBoard, Refresh, Search, Setting } from '@element-plus/icons-vue'
+import { Calendar, Collection, DataBoard, Refresh, Search, Setting } from '@element-plus/icons-vue'
 import { deleteAction, getDashboard, getDiagnostics, getLibraryItem, getSeasonalItem, getSettings, postAction, saveLibraryItem, saveSeasonalItem, saveSettings } from './api'
 import { APP_BUILD, APP_VERSION } from './version'
 
@@ -643,6 +606,8 @@ const savingSettings = ref(false)
 const autoRefresh = ref(true)
 const refreshInterval = ref(5000)
 const selectedQueueDomainFilter = ref('全部')
+const queueVisibilityMode = ref('活跃')
+const calendarWeek = ref('')
 let refreshTimer = null
 const keyword = ref('')
 const seriesFilter = ref('全部')
@@ -654,6 +619,7 @@ const dashboard = reactive({
   library_items: [],
   library_summary: {},
   seasonal_sync_calendar: [],
+  seasonal_update_calendar: [],
   sync_rules: [],
   operations: [],
   scheduled_jobs: [],
@@ -669,6 +635,7 @@ const diagnostics = reactive({ tables: {} })
 
 const pageTitle = computed(() => ({
   dashboard: '控制台',
+  calendar: '更新日历',
   library: '番剧库',
   settings: '设置中心'
 }[view.value]))
@@ -678,8 +645,24 @@ const libraryRows = computed(() => dashboard.library_items || [])
 const activeDetailRows = computed(() => selectedEntryDomain.value === 'library' ? libraryRows.value : seasonalRows.value)
 const cloudAssetTotal = computed(() => seasonalRows.value.reduce((sum, item) => sum + Number(item.cloud_asset_count || 0), 0))
 const localAssetTotal = computed(() => seasonalRows.value.reduce((sum, item) => sum + Number(item.local_asset_count || 0), 0))
+const seasonalCalendarCards = computed(() => dashboard.seasonal_update_calendar || [])
+const weekStart = computed(() => startOfWeek(calendarWeek.value ? new Date(calendarWeek.value) : new Date()))
+const weekDays = computed(() => {
+  const labels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = addDays(weekStart.value, index)
+    const key = formatDateKey(date)
+    return {
+      key,
+      label: labels[index],
+      dateLabel: `${date.getMonth() + 1}/${date.getDate()}`,
+      items: seasonalCalendarCards.value.filter(item => formatDateKey(new Date(item.updated_at || item.synced_at || 0)) === key)
+    }
+  })
+})
 const scanOperation = computed(() => dashboard.operations.find(op => op.name === '扫描全部' && op.status === 'running'))
 const queueMap = computed(() => Object.fromEntries((dashboard.queue_summary || []).map(item => [item.key, item])))
+const visibleConsoleSections = computed(() => (dashboard.console_sections || []).filter(section => shouldShowConsoleSection(section)))
 const selectedSectionMeta = computed(() => (dashboard.console_sections || []).find(item => item.key === selectedConsoleSection.value) || null)
 const selectedQueue = computed(() => {
   const section = selectedSectionMeta.value
@@ -735,20 +718,6 @@ const filteredServerLogs = computed(() => {
   return rows.filter(line => String(line || '').toLowerCase().includes(keyword))
 })
 const filteredServerLogText = computed(() => filteredServerLogs.value.join('\n'))
-const operationsBadgeText = computed(() => {
-  const running = Number(dashboard.console_overview?.running_operation_count || 0)
-  const failed = Number(dashboard.console_overview?.failed_operation_count || 0)
-  if (failed > 0) return `${failed} 失败`
-  if (running > 0) return `${running} 运行`
-  return '空闲'
-})
-const operationsBadgeType = computed(() => {
-  const failed = Number(dashboard.console_overview?.failed_operation_count || 0)
-  const running = Number(dashboard.console_overview?.running_operation_count || 0)
-  if (failed > 0) return 'danger'
-  if (running > 0) return 'warning'
-  return 'success'
-})
 const logsBadgeText = computed(() => {
   const errors = Number(dashboard.console_overview?.recent_error_count || 0)
   const warns = Number(dashboard.console_overview?.recent_warn_count || 0)
@@ -839,6 +808,15 @@ function queueTag(queue) {
   return 'success'
 }
 
+function isQueueActive(queue) {
+  if (!queue) return false
+  return Number(queue.pending || 0) > 0
+    || Number(queue.running || 0) > 0
+    || Number(queue.failed || 0) > 0
+    || Number(queue.waiting || 0) > 0
+    || ['running', 'debouncing', 'rerun_pending', 'cooldown', 'ready', 'failed'].includes(String(queue.queue_state || ''))
+}
+
 function queueBadge(queue) {
   if (!queue) return '-'
   if (Number(queue.failed || 0) > 0) return `${queue.failed} 失败`
@@ -891,7 +869,7 @@ function queueState(queue) {
   if (queue.queue_state === 'debouncing') return '聚合中'
   if (queue.queue_state === 'rerun_pending') return '待重跑'
   if (queue.queue_state === 'cooldown' || Number(queue.waiting || 0) > 0) return '等待重试'
-  if (queue.queue_state === 'ready' || Number(queue.pending || 0) > 0) return '待处理'
+  if (queue.queue_state === 'ready' || Number(queue.pending || 0) > 0) return '待调度'
   return '空闲'
 }
 
@@ -901,11 +879,21 @@ function queuePendingHint(queue) {
   if (key === 'cloud_assets') return '待处理表示已发现完成的云盘任务，等待登记成正式云盘资源。'
   if (key === 'sync') return '待处理表示云盘资源已就绪，等待进入本地同步。'
   if (key === 'selection') return '待处理表示元数据已完成，等待按规则自动选择发布。'
+  if (key === 'processor') return '这里显示流水线统一处理器任务，扫描后可直接看每条数据卡在 RSS、匹配、元数据、整合、云盘还是本地同步。'
   if (key === 'backfill') return '待处理表示番剧已入库，等待去 Mikan 番组页补抓历史条目。'
   if (key === 'cloud') return '待处理表示已选中发布，等待提交到 PikPak。'
   if (key === 'metadata') return '待处理表示已拿到 Bangumi 线索，等待补全正式元数据。'
   if (key === 'mikan_match') return '待处理表示 RSS 候选已入队，等待解析对应的 Mikan/Bangumi 关联。'
   return '任务已入队，等待调度执行。'
+}
+
+function shouldShowConsoleSection(section) {
+  if (!section) return false
+  if (section.kind === 'group' || section.kind === 'logs' || section.kind === 'maintenance') return true
+  if (section.kind === 'scheduled') return queueVisibilityMode.value === '全部'
+  if (section.kind !== 'queue') return false
+  if (queueVisibilityMode.value === '全部') return true
+  return isQueueActive(queueMap.value[section.queue_key])
 }
 
 function seasonalStatusSummary(item) {
@@ -922,14 +910,45 @@ function libraryProgressOf(item) {
   return Math.min(100, Math.round(Number(item.local_asset_count || item.cloud_asset_count || 0) / total * 100))
 }
 
+function startOfWeek(date) {
+  const base = new Date(date)
+  const day = base.getDay() || 7
+  base.setHours(0, 0, 0, 0)
+  base.setDate(base.getDate() - day + 1)
+  return base
+}
+
+function addDays(date, days) {
+  const next = new Date(date)
+  next.setDate(next.getDate() + days)
+  return next
+}
+
+function formatDateKey(date) {
+  if (Number.isNaN(date.getTime())) return ''
+  const y = date.getFullYear()
+  const m = `${date.getMonth() + 1}`.padStart(2, '0')
+  const d = `${date.getDate()}`.padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+function setCalendarThisWeek() {
+  calendarWeek.value = formatDateKey(startOfWeek(new Date()))
+}
+
+function shiftCalendarWeek(delta) {
+  calendarWeek.value = formatDateKey(addDays(weekStart.value, delta * 7))
+}
+
 async function reload() {
   if (loading.value) return
   loading.value = true
   try {
     Object.assign(dashboard, await getDashboard())
     Object.assign(settings, await getSettings())
-    if (!(dashboard.console_sections || []).some(item => item.key === selectedConsoleSection.value)) {
-      selectedConsoleSection.value = 'queue:mikan_match'
+    if (!visibleConsoleSections.value.some(item => item.key === selectedConsoleSection.value)) {
+      const fallback = visibleConsoleSections.value.find(item => item.kind !== 'group')
+      selectedConsoleSection.value = fallback?.key || 'queue:mikan_match'
     }
     if (view.value === 'settings') await reloadDiagnostics()
   } finally {
@@ -1108,11 +1127,18 @@ watch(entryDrawerOpen, startAutoRefresh)
 watch(selectedConsoleSection, () => {
   selectedQueueDomainFilter.value = '全部'
 })
+watch(queueVisibilityMode, () => {
+  if (!visibleConsoleSections.value.some(item => item.key === selectedConsoleSection.value)) {
+    const fallback = visibleConsoleSections.value.find(item => item.kind !== 'group')
+    selectedConsoleSection.value = fallback?.key || 'queue:mikan_match'
+  }
+})
 watch(view, value => {
   if (value === 'settings') reloadDiagnostics().catch(error => ElMessage.error(apiErrorMessage(error)))
 })
 
 onMounted(async () => {
+  setCalendarThisWeek()
   await reload()
   startAutoRefresh()
 })
