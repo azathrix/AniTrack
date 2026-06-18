@@ -617,8 +617,19 @@ def queue_entry_download(entry_id: int) -> dict[str, str]:
         message = choice["reason"] or "没有可入云盘发布"
         log("warn", f"手动入云盘跳过: {entry['display_title']} - {message}")
         return {"status": "skipped", "count": "0", "message": message}
+    pipeline_key = "seasonal_mikan_tracking" if entry["domain_kind"] == "seasonal" else "library_backfill"
     for release_id in ids:
-        queue_release(release_id, settings)
+        run_id = start_pipeline(
+            pipeline_key,
+            trigger_source="manual",
+            first_step_key="cloud_presence",
+            subject_type="release",
+            subject_id=int(release_id),
+            payload={"release_id": int(release_id), "entry_id": entry_id, "domain_kind": entry["domain_kind"]},
+            message="手动入云盘",
+        )
+        log("info", f"手动入云盘流水线已启动: entry_id={entry_id} release_id={release_id} run_id={run_id}")
+    trigger_queue("processor", delay=0)
     return {"status": "queued", "count": str(len(ids)), "message": f"已加入云盘队列: {len(ids)} 条"}
 
 
@@ -634,11 +645,22 @@ def generate_entry_nfo(entry_id: int) -> dict[str, str]:
 
 
 def queue_entry_sync(entry_id: int) -> dict[str, str]:
-    settings = get_settings()
-    count, message = queue_sync_for_entry(entry_id, settings)
-    if count > 0:
-        return {"status": "queued", "count": str(count), "message": message}
-    return {"status": "completed", "count": "0", "message": message}
+    with connect() as conn:
+        entry = conn.execute("SELECT domain_kind FROM entries WHERE id=?", (entry_id,)).fetchone()
+    if not entry:
+        return {"status": "not_found", "message": "条目不存在"}
+    pipeline_key = "seasonal_mikan_tracking" if entry["domain_kind"] == "seasonal" else "library_backfill"
+    run_id = start_pipeline(
+        pipeline_key,
+        trigger_source="manual",
+        first_step_key="sync_plan",
+        subject_type="entry",
+        subject_id=entry_id,
+        payload={"entry_id": entry_id, "domain_kind": entry["domain_kind"]},
+        message="手动本地同步",
+    )
+    trigger_queue("processor", delay=0)
+    return {"status": "queued", "count": "1", "message": f"已启动本地同步流水线 run_id={run_id}"}
 
 
 def cancel_entry_sync(entry_id: int) -> dict[str, str]:
@@ -2290,7 +2312,7 @@ def dashboard_data() -> dict[str, Any]:
               GROUP_CONCAT(DISTINCT r.subtitle_group) AS subtitle_groups,
               GROUP_CONCAT(DISTINCT r.resolution) AS resolutions,
               GROUP_CONCAT(DISTINCT r.language) AS languages,
-              COUNT(DISTINCT CASE WHEN dt.status IN ('submitted','completed') THEN dt.id END) AS downloaded_count,
+              COUNT(DISTINCT CASE WHEN cs.status IN ('submitted','running','completed') THEN cs.id END) AS downloaded_count,
               COUNT(DISTINCT ca.id) AS cloud_asset_count,
               COUNT(DISTINCT la.id) AS local_asset_count,
               COALESCE(MAX(sr.sync_enabled), 0) AS sync_enabled
@@ -2299,7 +2321,7 @@ def dashboard_data() -> dict[str, Any]:
             JOIN works w ON w.id=e.work_id
             LEFT JOIN episodes ep ON ep.entry_id=e.id
             LEFT JOIN releases r ON r.entry_id=e.id
-            LEFT JOIN download_tasks dt ON dt.release_id=r.id
+            LEFT JOIN cloud_submissions cs ON cs.release_id=r.id
             LEFT JOIN cloud_assets ca ON ca.release_id=r.id
             LEFT JOIN local_assets la ON la.release_id=r.id AND la.status='synced'
             LEFT JOIN sync_rules sr ON sr.entry_id=e.id
@@ -2358,27 +2380,7 @@ def dashboard_data() -> dict[str, Any]:
             WHERE COALESCE(e.hidden, 0)=0
             """
         ).fetchone()
-        library_failed_row = conn.execute(
-            """
-            SELECT COUNT(DISTINCT entry_id) AS failed_entry_count
-            FROM (
-              SELECT dt.entry_id AS entry_id
-              FROM download_tasks dt
-              JOIN library_entries le ON le.entry_id=dt.entry_id
-              WHERE dt.status='failed'
-              UNION
-              SELECT st.entry_id AS entry_id
-              FROM sync_tasks st
-              JOIN library_entries le ON le.entry_id=st.entry_id
-              WHERE st.status='failed'
-              UNION
-              SELECT bt.entry_id AS entry_id
-              FROM backfill_tasks bt
-              JOIN library_entries le ON le.entry_id=bt.entry_id
-              WHERE bt.status='failed'
-            ) failed_entries
-            """
-        ).fetchone()
+        library_failed_row = {"failed_entry_count": 0}
         operations = conn.execute(
             """
             SELECT *
@@ -2747,7 +2749,8 @@ async def api_trigger_queue(queue_name: str) -> dict[str, str]:
         return await api_scan()
     name = canonical_queue_key(requested_name)
     if name not in queue_handlers:
-        return {"status": "invalid", "message": "不支持的队列"}
+        trigger_queue("processor", delay=0)
+        return {"status": "started", "message": f"已触发 Runtime 处理器处理 {requested_name}"}
     trigger_queue(name, delay=0)
     return {"status": "started", "message": f"队列 {requested_name} 已立即触发"}
 
@@ -2755,8 +2758,8 @@ async def api_trigger_queue(queue_name: str) -> dict[str, str]:
 @app.post("/api/tasks/process")
 async def api_process_tasks(force: bool = Query(False)) -> dict[str, str]:
     async def run() -> str:
-        trigger_queue("download", delay=0)
-        return "已触发云盘提交队列；后续状态、资源登记与同步计划会按任务链自动推进"
+        trigger_queue("processor", delay=0)
+        return "已触发 Runtime 处理器；云盘提交、状态、资源登记与同步计划会按流水线自动推进"
 
     operation_id = run_operation(
         "云盘队列立即处理" if force else "云盘队列处理",
@@ -2769,9 +2772,8 @@ async def api_process_tasks(force: bool = Query(False)) -> dict[str, str]:
 @app.post("/api/tasks/poll")
 async def api_poll_tasks() -> dict[str, str]:
     async def run() -> str:
-        trigger_queue("cloud_poll", delay=0)
-        trigger_queue("cloud_asset", delay=0)
-        return "已触发 PikPak 状态轮询与云盘资源登记；同步计划与本地同步会按任务链自动推进"
+        trigger_queue("processor", delay=0)
+        return "已触发 Runtime 处理器；等待中的 PikPak 状态任务到期后会继续推进"
 
     operation_id = run_operation("刷新云盘状态", run, "正在刷新 PikPak 任务和同步状态")
     return {"status": "started", "operation_id": str(operation_id), "message": "状态刷新已启动"}
@@ -2831,9 +2833,7 @@ async def api_backfill_library_entry(entry_id: int) -> dict[str, str]:
 
 @app.post("/api/sync/tasks/process")
 async def api_process_sync_tasks() -> dict[str, str]:
-    settings = get_settings()
     async def run() -> str:
-        auto_sync = bool_setting(settings.get("auto_sync_following", "false"))
         with connect() as conn:
             entry_ids = [
                 int(row["entry_id"])
@@ -2846,14 +2846,13 @@ async def api_process_sync_tasks() -> dict[str, str]:
                     WHERE ca.status='available'
                       AND COALESCE(e.hidden, 0)=0
                       AND e.bangumi_id != ''
-                      AND (COALESCE(sr.sync_enabled, 0)=1 OR ?=1)
+                      AND COALESCE(sr.sync_enabled, 0)=1
                     """,
-                    (1 if auto_sync else 0,),
                 ).fetchall()
             ]
-        planned = enqueue_sync_plan_tasks(entry_ids, now())
-        trigger_queue("sync_plan", delay=0)
-        return f"同步计划入队 {planned} 个；本地同步会按任务链自动推进"
+        for entry_id in entry_ids:
+            queue_entry_sync(entry_id)
+        return f"已启动同步流水线 {len(entry_ids)} 个；本地同步会按 Runtime 自动推进"
 
     operation_id = run_operation("本地同步", run, "正在把云盘资源同步到本地")
     return {"status": "started", "operation_id": str(operation_id), "message": "本地同步处理已启动"}
@@ -2918,8 +2917,25 @@ async def api_clear_data() -> dict[str, str]:
 
 @app.post("/api/releases/{release_id}/download")
 async def api_download_release(release_id: int) -> dict[str, str]:
-    queue_release(release_id, get_settings())
-    return {"status": "queued"}
+    with connect() as conn:
+        release = conn.execute(
+            "SELECT r.entry_id, e.domain_kind FROM releases r JOIN entries e ON e.id=r.entry_id WHERE r.id=?",
+            (release_id,),
+        ).fetchone()
+    if not release:
+        return {"status": "not_found", "message": "发布不存在"}
+    pipeline_key = "seasonal_mikan_tracking" if release["domain_kind"] == "seasonal" else "library_backfill"
+    run_id = start_pipeline(
+        pipeline_key,
+        trigger_source="manual",
+        first_step_key="cloud_presence",
+        subject_type="release",
+        subject_id=release_id,
+        payload={"release_id": release_id, "entry_id": int(release["entry_id"]), "domain_kind": release["domain_kind"]},
+        message="手动发布入云盘",
+    )
+    trigger_queue("processor", delay=0)
+    return {"status": "queued", "run_id": str(run_id)}
 
 @app.post("/api/seasonal/{entry_id}/download")
 async def api_download_seasonal_entry(entry_id: int) -> dict[str, str]:
