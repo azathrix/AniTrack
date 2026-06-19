@@ -3,13 +3,21 @@ setlocal
 
 set "ROOT=%~dp0"
 set "ROOT=%ROOT:~0,-1%"
-set "TARGET=\\InputName\docker\autoanime"
+set "SOURCE=%ROOT%\build\AutoAnime-clean"
+set "TARGET=%AUTOANIME_UPLOAD_TARGET%"
+if "%TARGET%"=="" set "TARGET=\\InputName\docker\autoanime"
+
+call "%ROOT%\package-clean.bat"
+if errorlevel 1 (
+  echo Clean package failed.
+  exit /b 1
+)
 
 if not exist "%TARGET%" mkdir "%TARGET%"
 
-robocopy "%ROOT%" "%TARGET%" ^
+robocopy "%SOURCE%" "%TARGET%" ^
   /MIR ^
-  /XD ".git" "build" "data" "test-data" "node_modules" ".vite" "frontend_dist" "__pycache__" ^
+  /XD ".git" "build" "data" "test-data" "node_modules" ".vite" "frontend_dist" "__pycache__" ".tmp-smoke" ".tmp-smoke-download" ".tmp-smoke-download2" ".tmp-smoke-media" ".tmp-smoke-media2" ^
   /XF "*.zip" "*.log" "*.pyc" ".env" ^
   /R:2 /W:2 /NFL /NDL /NP
 
