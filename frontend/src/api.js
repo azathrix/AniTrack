@@ -53,8 +53,8 @@ export async function saveLibraryItem(id, payload) {
   return (await api.put(`/library/${id}`, payload)).data
 }
 
-export async function postAction(path) {
-  return (await api.post(path)).data
+export async function postAction(path, payload = undefined) {
+  return (await api.post(path, payload)).data
 }
 
 export async function deleteAction(path) {

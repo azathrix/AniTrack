@@ -562,10 +562,22 @@
                   <div v-for="library in dashboard.media_libraries" :key="library.id" class="media-library-setting-row">
                     <div>
                       <strong>{{ library.name }}</strong>
-                      <span>{{ library.media_type }} · {{ library.download_strategy }}</span>
+                      <span>{{ library.media_type }} · {{ library.download_strategy }} · {{ Number(library.enabled || 0) ? '启用' : '停用' }}</span>
                     </div>
                     <code>{{ library.root_path }}</code>
+                    <el-button type="danger" link @click="deleteMediaLibrary(library.id)">删除</el-button>
                   </div>
+                </div>
+                <div class="media-library-editor">
+                  <el-input v-model="mediaLibraryForm.name" placeholder="媒体库名称，例如：国漫 / 电影 / 美剧" />
+                  <el-select v-model="mediaLibraryForm.media_type" placeholder="类型">
+                    <el-option label="动画" value="anime" />
+                    <el-option label="电影" value="movie" />
+                    <el-option label="剧集" value="tv" />
+                    <el-option label="其他" value="other" />
+                  </el-select>
+                  <el-input v-model="mediaLibraryForm.root_path" placeholder="/media/autoanime/Library" />
+                  <el-button type="primary" @click="saveMediaLibrary">新增媒体库</el-button>
                 </div>
                 <el-form-item label="追更自动下载到本地"><el-switch v-model="settings.auto_sync_following" /></el-form-item>
                 <el-form-item label="NFO 输出目录"><el-input v-model="settings.nfo_output_root" placeholder="留空；同步后默认写入本地媒体库" /></el-form-item>
@@ -761,6 +773,11 @@ const dashboard = reactive({
 })
 const settings = reactive({})
 const diagnostics = reactive({ tables: {} })
+const mediaLibraryForm = reactive({
+  name: '',
+  media_type: 'anime',
+  root_path: '',
+})
 
 const pageTitle = computed(() => ({
   dashboard: '控制台',
@@ -1260,6 +1277,39 @@ async function saveAllSettings() {
     ElMessage.error(apiErrorMessage(error))
   } finally {
     savingSettings.value = false
+  }
+}
+
+async function saveMediaLibrary() {
+  if (!mediaLibraryForm.name.trim() || !mediaLibraryForm.root_path.trim()) {
+    ElMessage.warning('媒体库名称和目录不能为空')
+    return
+  }
+  try {
+    const result = await postAction('/media-libraries', {
+      name: mediaLibraryForm.name.trim(),
+      media_type: mediaLibraryForm.media_type,
+      root_path: mediaLibraryForm.root_path.trim(),
+      download_strategy: 'download',
+      metadata_provider_priority: 'bangumi,tmdb,manual',
+      enabled: true,
+    })
+    ElMessage.success(result.message || '媒体库已保存')
+    mediaLibraryForm.name = ''
+    mediaLibraryForm.root_path = ''
+    await reload()
+  } catch (error) {
+    ElMessage.error(apiErrorMessage(error))
+  }
+}
+
+async function deleteMediaLibrary(id) {
+  try {
+    const result = await deleteAction(`/media-libraries/${id}`)
+    ElMessage.success(result.message || '媒体库已删除')
+    await reload()
+  } catch (error) {
+    ElMessage.error(apiErrorMessage(error))
   }
 }
 

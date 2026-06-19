@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -103,6 +104,17 @@ class LibraryImportPayload(BaseModel):
     source_ref: str = ""
 
 
+class MediaLibraryPayload(BaseModel):
+    key: str = ""
+    name: str = ""
+    media_type: str = "anime"
+    root_path: str = ""
+    download_strategy: str = "download"
+    metadata_provider_priority: str = "bangumi,tmdb,manual"
+    naming_template: str = ""
+    enabled: bool = True
+
+
 class PipelineStartPayload(BaseModel):
     trigger_source: str = "manual"
     first_step_key: str = ""
@@ -182,6 +194,11 @@ def split_setting(value: str) -> list[str]:
 
 def split_candidate_values(value: Any) -> list[str]:
     return [item.strip() for item in str(value or "").split(",") if item.strip()]
+
+
+def normalize_media_library_key(value: str) -> str:
+    key = re.sub(r"[^a-zA-Z0-9_]+", "_", (value or "").strip().lower()).strip("_")
+    return key[:64]
 
 
 def entry_scope_label(item: dict[str, Any]) -> str:
@@ -1788,6 +1805,64 @@ async def api_library_import(payload: LibraryImportPayload) -> dict[str, str]:
         log("info", f"番剧库导入请求已记录: {source_type}")
         return {"status": "planned", "message": "番剧库导入入口已预留，搜索源与手动导入将在后续阶段接入"}
     return {"status": "invalid", "message": "不支持的番剧库导入类型"}
+
+
+@app.post("/api/media-libraries")
+async def api_create_media_library(payload: MediaLibraryPayload) -> dict[str, str]:
+    key = normalize_media_library_key(payload.key or payload.name)
+    name = payload.name.strip() or key
+    root_path = payload.root_path.strip()
+    if not key or not root_path:
+        return {"status": "invalid", "message": "媒体库名称和本地目录不能为空"}
+    ts = now()
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO media_libraries
+              (key, name, media_type, root_path, enabled, download_strategy,
+               metadata_provider_priority, naming_template, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+              name=excluded.name,
+              media_type=excluded.media_type,
+              root_path=excluded.root_path,
+              enabled=excluded.enabled,
+              download_strategy=excluded.download_strategy,
+              metadata_provider_priority=excluded.metadata_provider_priority,
+              naming_template=excluded.naming_template,
+              updated_at=excluded.updated_at
+            """,
+            (
+                key,
+                name,
+                payload.media_type.strip() or "anime",
+                root_path,
+                1 if payload.enabled else 0,
+                payload.download_strategy.strip() or "download",
+                payload.metadata_provider_priority.strip() or "bangumi,tmdb,manual",
+                payload.naming_template.strip(),
+                ts,
+                ts,
+            ),
+        )
+    log("info", f"媒体库已保存: key={key} name={name} root={root_path}")
+    return {"status": "saved", "message": "媒体库已保存"}
+
+
+@app.delete("/api/media-libraries/{library_id}")
+async def api_delete_media_library(library_id: int) -> dict[str, str]:
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM media_libraries WHERE id=?", (library_id,)).fetchone()
+        if not row:
+            return {"status": "not_found", "message": "媒体库不存在"}
+        used = conn.execute("SELECT COUNT(*) AS total FROM entries WHERE target_library_id=?", (library_id,)).fetchone()
+        if int(used["total"] or 0) > 0:
+            conn.execute("UPDATE media_libraries SET enabled=0, updated_at=? WHERE id=?", (now(), library_id))
+            log("warn", f"媒体库已禁用: id={library_id} reason=仍有关联条目")
+            return {"status": "disabled", "message": "媒体库已有条目使用，已禁用但不删除"}
+        conn.execute("DELETE FROM media_libraries WHERE id=?", (library_id,))
+    log("info", f"媒体库已删除: id={library_id}")
+    return {"status": "deleted", "message": "媒体库已删除"}
 
 
 @app.post("/api/library/{entry_id}/backfill")
