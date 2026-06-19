@@ -27,7 +27,7 @@ from .pipeline_orchestrator import run_ready_tasks, start_pipeline
 from .pipeline_runtime import finish_pipeline_run, pipeline_overview, start_pipeline_run, update_pipeline_run
 from .processors import register_builtin_processors
 from .scanner import language_tokens, mark_selected_releases, priority_match, priority_pick, resolve_entry_choice
-from .sync_service import cancel_sync_for_entry, scan_cloud_library
+from .sync_service import cancel_sync_for_entry, ensure_sync_rule, scan_cloud_library
 
 
 scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
@@ -613,10 +613,12 @@ def generate_entry_nfo(entry_id: int) -> dict[str, str]:
 
 
 def queue_entry_sync(entry_id: int) -> dict[str, str]:
+    settings = get_settings()
     with connect() as conn:
         entry = conn.execute("SELECT domain_kind FROM entries WHERE id=?", (entry_id,)).fetchone()
     if not entry:
         return {"status": "not_found", "message": "条目不存在"}
+    ensure_sync_rule(entry_id, settings, enabled=True)
     pipeline_key = "seasonal_mikan_tracking" if entry["domain_kind"] == "seasonal" else "library_backfill"
     run_id = start_pipeline(
         pipeline_key,
@@ -628,7 +630,8 @@ def queue_entry_sync(entry_id: int) -> dict[str, str]:
         message="手动本地同步",
     )
     trigger_queue("processor", delay=0)
-    return {"status": "queued", "count": "1", "message": f"已启动本地同步流水线 run_id={run_id}"}
+    log("info", f"手动本地同步已开启规则并启动流水线: entry_id={entry_id} run_id={run_id}")
+    return {"status": "queued", "count": "1", "message": f"已开启本地同步并启动流水线 run_id={run_id}"}
 
 
 def cancel_entry_sync(entry_id: int) -> dict[str, str]:

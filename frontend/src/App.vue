@@ -627,7 +627,7 @@
             </div>
           </template>
         </el-form>
-        <div class="sync-panel" v-if="selectedEntryDomain === 'seasonal'">
+        <div class="sync-panel">
           <div>
             <strong>本地同步</strong>
             <span>{{ syncSummary }}</span>
