@@ -8,7 +8,7 @@ from typing import Any
 
 
 def enabled(settings: dict[str, str]) -> bool:
-    return (settings.get("cloud_transfer_backend") or "rclone").lower() == "rclone"
+    return (settings.get("download_backend") or "rclone").lower() == "rclone"
 
 
 def command(settings: dict[str, str]) -> str:
@@ -222,12 +222,12 @@ async def list_files(settings: dict[str, str], path: str, recursive: bool = True
             continue
         item_path = str(item.get("Path") or item.get("Name") or "")
         name = str(item.get("Name") or Path(item_path).name)
-        cloud_path = f"{root}/{item_path}".replace("//", "/") if item_path else f"{root}/{name}"
+        remote_path = f"{root}/{item_path}".replace("//", "/") if item_path else f"{root}/{name}"
         result.append(
             {
-                "id": item.get("ID") or item.get("Id") or item.get("id") or cloud_path,
+                "id": item.get("ID") or item.get("Id") or item.get("id") or remote_path,
                 "name": name,
-                "cloud_path": cloud_path,
+                "remote_path": remote_path,
                 "size": item.get("Size") or 0,
                 "is_dir": bool(item.get("IsDir")),
                 "raw": item,
@@ -286,3 +286,4 @@ async def run_rclone_streaming(settings: dict[str, str], args: list[str], progre
     if progress_cb:
         await progress_cb(100, "同步完成")
     return output
+

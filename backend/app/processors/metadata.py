@@ -62,3 +62,4 @@ async def process_metadata(context: ProcessorContext, payload: dict) -> Processo
     settings = get_settings()
     await refresh_entry_metadata(entry_id, settings.get("rss_proxy", ""))
     return ProcessorResult.success("元数据刷新完成", data={"entry_id": entry_id})
+

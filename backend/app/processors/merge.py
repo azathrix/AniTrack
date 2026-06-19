@@ -25,3 +25,4 @@ async def process_entry_merge(context: ProcessorContext, payload: dict) -> Proce
             "work_id": int(row["work_id"] or 0),
         },
     )
+

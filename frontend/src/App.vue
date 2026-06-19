@@ -29,7 +29,7 @@
     <main class="main">
       <header class="hero">
         <div>
-          <p class="eyebrow">Mikan · PikPak · Local</p>
+          <p class="eyebrow">Mikan · Downloader · Local</p>
           <h1>{{ pageTitle }}</h1>
           <p class="hero-sub">RSS 扫描负责写入源头任务，后续处理由各队列自动推进。<span class="build-version">v{{ appVersion }} · {{ appBuild }}</span></p>
         </div>
@@ -58,8 +58,8 @@
           <strong>{{ dashboard.seasonal_items.length }}</strong>
         </div>
         <div class="metric-card">
-          <span>云盘资源</span>
-          <strong>{{ cloudAssetTotal }}</strong>
+          <span>下载产物</span>
+          <strong>{{ downloadArtifactTotal }}</strong>
         </div>
         <div class="metric-card">
           <span>本地资源</span>
@@ -290,10 +290,10 @@
                 </div>
                 <div class="maintenance-actions maintenance-pane">
                   <el-button type="primary" :icon="Search" :disabled="scanRunning" @click="runAction('/scan')">扫描全部</el-button>
-                  <el-button type="primary" plain @click="runAction('/tasks/process?force=true')">立即处理云盘队列</el-button>
-                  <el-button :icon="Refresh" @click="runAction('/tasks/poll')">刷新 PikPak 状态</el-button>
+                  <el-button type="primary" plain @click="runAction('/tasks/process?force=true')">立即处理下载队列</el-button>
+                  <el-button :icon="Refresh" @click="runAction('/tasks/poll')">刷新下载状态</el-button>
                   <el-button type="warning" @click="runAction('/tasks/retry-failed')">重试失败任务</el-button>
-                  <el-popconfirm title="会清空番剧、候选、任务、云盘资源、本地同步记录和日志。确定？" @confirm="runAction('/system/clear-data')">
+                  <el-popconfirm title="会清空番剧、候选、任务、下载产物、本地同步记录和日志。确定？" @confirm="runAction('/system/clear-data')">
                     <template #reference>
                       <el-button type="danger" plain>清除所有数据</el-button>
                     </template>
@@ -320,10 +320,10 @@
               <el-tab-pane label="维护" name="maintenance">
                 <div class="maintenance-actions maintenance-pane compact-maintenance-pane">
                   <el-button type="primary" :icon="Search" :disabled="scanRunning" @click="runAction('/scan')">扫描全部</el-button>
-                  <el-button type="primary" plain @click="runAction('/tasks/process?force=true')">立即处理云盘队列</el-button>
-                  <el-button :icon="Refresh" @click="runAction('/tasks/poll')">刷新 PikPak 状态</el-button>
+                  <el-button type="primary" plain @click="runAction('/tasks/process?force=true')">立即处理下载队列</el-button>
+                  <el-button :icon="Refresh" @click="runAction('/tasks/poll')">刷新下载状态</el-button>
                   <el-button type="warning" @click="runAction('/tasks/retry-failed')">重试失败任务</el-button>
-                  <el-popconfirm title="会清空番剧、候选、任务、云盘资源、本地同步记录和日志。确定？" @confirm="runAction('/system/clear-data')">
+                  <el-popconfirm title="会清空番剧、候选、任务、下载产物、本地同步记录和日志。确定？" @confirm="runAction('/system/clear-data')">
                     <template #reference>
                       <el-button type="danger" plain>清除所有数据</el-button>
                     </template>
@@ -417,7 +417,7 @@
           <el-select v-model="libraryScopeFilter" clearable placeholder="季度 / 篇章" class="scope-select">
             <el-option v-for="scope in libraryScopeOptions" :key="scope" :label="scope" :value="scope" />
           </el-select>
-          <el-button plain @click="runAction('/library/import')">导入云盘到番剧库</el-button>
+          <el-button plain @click="runAction('/library/import')">导入现有资源到番剧库</el-button>
         </div>
         <div class="library-summary-grid">
           <div class="metric-card">
@@ -508,7 +508,7 @@
               </el-tab-pane>
               <el-tab-pane label="自动选择">
                 <div class="form-row">
-                  <el-form-item label="唯一匹配自动入云盘"><el-switch v-model="settings.auto_download_unique" /></el-form-item>
+                  <el-form-item label="唯一匹配自动下载"><el-switch v-model="settings.auto_download_unique" /></el-form-item>
                   <el-form-item label="按优先级选择"><el-switch v-model="settings.auto_download_by_priority" /></el-form-item>
                 </div>
                 <div class="priority-layout">
@@ -518,18 +518,18 @@
                   <PriorityList title="副字幕语言优先级" v-model="settings.secondary_language_priority" placeholder="添加副字幕语言" />
                 </div>
               </el-tab-pane>
-              <el-tab-pane label="PikPak">
-                <el-form-item label="云盘执行方式">
-                  <el-radio-group v-model="settings.cloud_transfer_backend">
+              <el-tab-pane label="下载器">
+                <el-form-item label="下载器执行方式">
+                  <el-radio-group v-model="settings.download_backend">
                     <el-radio-button label="rclone">rclone 命令</el-radio-button>
                     <el-radio-button label="api">PikPak API</el-radio-button>
                   </el-radio-group>
                 </el-form-item>
-                <div class="form-row" v-if="settings.cloud_transfer_backend === 'rclone'">
+                <div class="form-row" v-if="settings.download_backend === 'rclone'">
                   <el-form-item label="rclone 命令"><el-input v-model="settings.rclone_command" placeholder="rclone" /></el-form-item>
                   <el-form-item label="rclone remote"><el-input v-model="settings.rclone_remote" placeholder="pikpak" /></el-form-item>
                 </div>
-                <el-form-item v-if="settings.cloud_transfer_backend === 'rclone'" label="rclone 配置文件"><el-input v-model="settings.rclone_config_path" placeholder="/data/rclone/rclone.conf" /></el-form-item>
+                <el-form-item v-if="settings.download_backend === 'rclone'" label="rclone 配置文件"><el-input v-model="settings.rclone_config_path" placeholder="/data/rclone/rclone.conf" /></el-form-item>
                 <el-form-item label="认证方式">
                   <el-radio-group v-model="settings.pikpak_auth_mode">
                     <el-radio-button label="token">Access + Refresh Token</el-radio-button>
@@ -555,8 +555,8 @@
                   class="settings-alert"
                 />
                 <div class="form-row">
-                  <el-form-item label="云盘库根目录"><el-input v-model="settings.library_root" /></el-form-item>
-                <el-form-item label="默认本地媒体根目录"><el-input v-model="settings.local_library_root" placeholder="/media/pikpak-anime" /></el-form-item>
+                  <el-form-item label="下载器远端目录"><el-input v-model="settings.library_root" /></el-form-item>
+                <el-form-item label="默认本地媒体根目录"><el-input v-model="settings.local_library_root" placeholder="/media/autoanime" /></el-form-item>
                 </div>
                 <div class="media-library-settings">
                   <div v-for="library in dashboard.media_libraries" :key="library.id" class="media-library-setting-row">
@@ -579,7 +579,7 @@
                   <div><span>数据目录可写</span><strong>{{ diagnostics.data_dir_writable ? '是' : '否' }}</strong></div>
                   <div><span>数据库大小</span><strong>{{ diagnostics.db_size || 0 }} bytes</strong></div>
                   <div><span>作品 / 条目 / 发布</span><strong>{{ diagnostics.tables?.works || 0 }} / {{ diagnostics.tables?.entries || 0 }} / {{ diagnostics.tables?.releases || 0 }}</strong></div>
-                  <div><span>云盘 / 本地 / 同步规则</span><strong>{{ diagnostics.tables?.cloud_assets || 0 }} / {{ diagnostics.tables?.local_assets || 0 }} / {{ diagnostics.tables?.sync_rules || 0 }}</strong></div>
+                  <div><span>下载产物 / 本地 / 整理规则</span><strong>{{ diagnostics.tables?.download_artifacts || 0 }} / {{ diagnostics.tables?.local_assets || 0 }} / {{ diagnostics.tables?.sync_rules || 0 }}</strong></div>
                   <div><span>旧 series 表</span><strong>{{ diagnostics.tables?.legacy_series || 0 }}</strong></div>
                 </div>
                 <el-button :icon="Refresh" @click="reloadDiagnostics">刷新诊断</el-button>
@@ -605,7 +605,7 @@
           type="info"
           show-icon
           :closable="false"
-          :title="selectedEntryDomain === 'library' ? '这里处理番剧库条目本身；后续会补独立的补番/导入能力。' : '这里只处理规则和冲突；云盘入库与本地同步由后台任务自动推进。'"
+          :title="selectedEntryDomain === 'library' ? '这里处理番剧库条目本身；后续会补独立的补番/导入能力。' : '这里只处理规则和冲突；下载与本地整理由后台任务自动推进。'"
           class="settings-alert"
         />
         <el-form :model="selectedEntry" label-position="top">
@@ -618,7 +618,7 @@
           </div>
           <template v-if="selectedEntryDomain === 'seasonal'">
             <div class="form-row">
-              <el-form-item label="自动入云盘">
+              <el-form-item label="自动下载">
                 <el-select v-model="selectedEntry.auto_download">
                   <el-option label="跟随全局" value="inherit" />
                   <el-option label="开启" value="on" />
@@ -672,13 +672,13 @@
               <el-table-column prop="title" label="发布标题" min-width="260" show-overflow-tooltip />
             </el-table>
           </el-tab-pane>
-          <el-tab-pane label="云盘任务">
+          <el-tab-pane label="下载任务">
             <el-table :data="selectedEntryDetail.tasks" height="320">
               <el-table-column prop="status" label="状态" width="110">
                 <template #default="{ row }"><el-tag :type="taskTag(row.status)">{{ taskStatusText(row) }}</el-tag></template>
               </el-table-column>
               <el-table-column prop="target_dir" label="目标目录" min-width="220" show-overflow-tooltip />
-              <el-table-column prop="pikpak_task_id" label="PikPak 任务" min-width="180" show-overflow-tooltip />
+              <el-table-column prop="pikpak_task_id" label="下载任务" min-width="180" show-overflow-tooltip />
               <el-table-column prop="pikpak_file_id" label="文件 ID" min-width="180" show-overflow-tooltip />
               <el-table-column prop="last_error" label="错误" min-width="220" show-overflow-tooltip />
               <el-table-column label="下次处理" width="130">
@@ -686,11 +686,11 @@
               </el-table-column>
             </el-table>
           </el-tab-pane>
-          <el-tab-pane label="云盘资源">
-            <el-table :data="selectedEntryDetail.cloud_assets" height="320">
+          <el-tab-pane label="下载产物">
+            <el-table :data="selectedEntryDetail.download_artifacts" height="320">
               <el-table-column prop="episode_number" label="集" width="70" />
-              <el-table-column prop="provider" label="云盘" width="100" />
-              <el-table-column prop="cloud_path" label="云盘路径" min-width="260" show-overflow-tooltip />
+              <el-table-column prop="provider" label="下载器" width="100" />
+              <el-table-column prop="remote_path" label="远端路径" min-width="260" show-overflow-tooltip />
               <el-table-column prop="provider_file_id" label="文件 ID" min-width="180" show-overflow-tooltip />
             </el-table>
           </el-tab-pane>
@@ -789,7 +789,7 @@ const libraryScopeOptions = computed(() => {
   return Array.from(values).sort((a, b) => String(a).localeCompare(String(b)))
 })
 const activeDetailRows = computed(() => selectedEntryDomain.value === 'library' ? libraryRows.value : seasonalRows.value)
-const cloudAssetTotal = computed(() => seasonalRows.value.reduce((sum, item) => sum + Number(item.cloud_asset_count || 0), 0))
+const downloadArtifactTotal = computed(() => seasonalRows.value.reduce((sum, item) => sum + Number(item.download_artifact_count || 0), 0))
 const localAssetTotal = computed(() => seasonalRows.value.reduce((sum, item) => sum + Number(item.local_asset_count || 0), 0))
 const seasonalCalendarCards = computed(() => dashboard.seasonal_sync_calendar || [])
 const weekStart = computed(() => startOfWeek(calendarWeek.value ? new Date(calendarWeek.value) : new Date()))
@@ -901,7 +901,7 @@ const syncWanted = computed(() => Boolean(selectedSyncRule.value.sync_enabled))
 const syncSummary = computed(() => {
   const stats = selectedEntryStats.value
   if (Number(stats.local_asset_count || 0) > 0) return `本地可观看 ${stats.local_asset_count} 集`
-  if (syncWanted.value && Number(stats.cloud_asset_count || 0) > 0) return '已加入本地下载整理队列'
+  if (syncWanted.value && Number(stats.download_artifact_count || 0) > 0) return '已加入本地下载整理队列'
   if (syncWanted.value) return '已开启，下载完成后会整理到本地媒体库'
   return '关闭后不会自动整理到本地媒体库'
 })
@@ -937,7 +937,7 @@ const libraryWorks = computed(() => {
         year_label: item.year ? `${item.year}` : '',
         entry_count: 0,
         release_count: 0,
-        cloud_asset_count: 0,
+        download_artifact_count: 0,
         local_asset_count: 0,
         watch_status: 'unavailable',
         watch_status_label: '未缓存',
@@ -947,12 +947,12 @@ const libraryWorks = computed(() => {
     const group = groups.get(key)
     group.entry_count += 1
     group.release_count += Number(item.release_count || 0)
-    group.cloud_asset_count += Number(item.cloud_asset_count || 0)
+    group.download_artifact_count += Number(item.download_artifact_count || 0)
     group.local_asset_count += Number(item.local_asset_count || 0)
     if (group.local_asset_count > 0) {
       group.watch_status = 'ready'
       group.watch_status_label = `可观看 ${group.local_asset_count} 集`
-    } else if (group.cloud_asset_count > 0 || group.release_count > 0) {
+    } else if (group.download_artifact_count > 0 || group.release_count > 0) {
       group.watch_status = 'processing'
       group.watch_status_label = '处理中'
     }
@@ -1059,13 +1059,13 @@ function queueState(queue) {
 
 function queuePendingHint(queue) {
   const key = String(queue?.key || '')
-  if (key === 'rss') return '这里只显示最近的 RSS 候选；后续 Mikan、元数据、选集、云盘和同步都由任务链自动推进。'
-  if (key === 'cloud_asset_register') return '待处理表示已发现完成的云盘任务，等待登记成正式云盘资源。'
-  if (key === 'local_sync') return '待处理表示云盘资源已就绪，等待进入本地同步。'
+  if (key === 'rss') return '这里只显示最近的 RSS 候选；后续 Mikan、元数据、选集、下载器和本地整理都由任务链自动推进。'
+  if (key === 'download_artifact_register') return '待处理表示已发现完成的下载任务，等待登记成正式下载产物。'
+  if (key === 'local_sync') return '待处理表示下载产物已就绪，等待进入本地同步。'
   if (key === 'selection') return '待处理表示元数据已完成，等待按规则自动选择发布。'
-  if (key === 'processor') return '这里显示流水线统一处理器任务，扫描后可直接看每条数据卡在 RSS、匹配、元数据、整合、云盘还是本地同步。'
+  if (key === 'processor') return '这里显示流水线统一处理器任务，扫描后可直接看每条数据卡在 RSS、匹配、元数据、整合、下载器还是本地整理。'
   if (key === 'backfill') return '待处理表示番剧已入库，等待去 Mikan 番组页补抓历史条目。'
-  if (key === 'cloud_submit') return '待处理表示已选中发布，等待提交到 PikPak。'
+  if (key === 'download_submit') return '待处理表示已选中发布，等待提交到下载器。'
   if (key === 'metadata') return '待处理表示已拿到 Bangumi 线索，等待补全正式元数据。'
   if (key === 'mikan_match') return '待处理表示 RSS 候选已入队，等待解析对应的 Mikan/Bangumi 关联。'
   return '任务已入队，等待调度执行。'
@@ -1091,7 +1091,7 @@ function progressOf(item) {
 
 function libraryProgressOf(item) {
   const total = Number(item.release_count || item.episode_count || 1)
-  return Math.min(100, Math.round(Number(item.local_asset_count || item.cloud_asset_count || 0) / total * 100))
+  return Math.min(100, Math.round(Number(item.local_asset_count || item.download_artifact_count || 0) / total * 100))
 }
 
 function isWorkExpanded(key) {
@@ -1423,3 +1423,6 @@ onUnmounted(() => {
   stopAutoRefresh()
 })
 </script>
+
+
+

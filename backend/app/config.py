@@ -22,7 +22,7 @@ DEFAULT_SETTINGS = {
     "language_priority": "简体\n繁体\n日语",
     "secondary_language_priority": "繁体\n日语\n英语",
     "pikpak_rate_limit_cooldown_minutes": "60",
-    "cloud_transfer_backend": "rclone",
+    "download_backend": "rclone",
     "rclone_command": "rclone",
     "rclone_config_path": "/data/rclone/rclone.conf",
     "rclone_remote": "pikpak",
@@ -34,7 +34,7 @@ DEFAULT_SETTINGS = {
     "pikpak_encoded_token": "",
     "pikpak_proxy": "",
     "library_root": "/Anime",
-    "local_library_root": "/media/pikpak-anime",
+    "local_library_root": "/media/autoanime",
     "auto_sync_following": "false",
     "migration_auto_sync_default_v2": "",
     "nfo_output_root": "",
@@ -42,3 +42,4 @@ DEFAULT_SETTINGS = {
     "season_dir_template": "Season {season:02d}",
     "episode_name_template": "{title_cn} - S{season:02d}E{episode:02d} - {episode_title}",
 }
+

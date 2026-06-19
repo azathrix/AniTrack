@@ -21,7 +21,7 @@ async def process_sync_plan(context: ProcessorContext, payload: dict) -> Process
             """
             SELECT ca.*, e.display_title, e.title_cn, e.title_raw, e.season_number, e.year,
               e.bangumi_id, e.target_library_id
-            FROM cloud_assets ca
+            FROM download_artifacts ca
             JOIN entries e ON e.id=ca.entry_id
             WHERE ca.entry_id=? AND ca.status='available'
             ORDER BY ca.episode_number ASC
@@ -29,27 +29,27 @@ async def process_sync_plan(context: ProcessorContext, payload: dict) -> Process
             (entry_id,),
         ).fetchall()
     if not rows:
-        log("info", f"同步计划等待: entry_id={entry_id} reason=暂无可同步云盘资源")
-        return ProcessorResult.skipped("已开启本地同步；云盘资源入库后会自动同步", data={"entry_id": entry_id})
+        log("info", f"整理计划等待: entry_id={entry_id} reason=暂无可整理下载产物")
+        return ProcessorResult.skipped("已开启本地整理；下载完成后会自动整理", data={"entry_id": entry_id})
 
     next_tasks: list[dict] = []
     for row in rows:
         target = normalize_local_target_path(
             local_episode_path(dict(row), dict(row), settings),
-            str(row["cloud_name"] or ""),
+            str(row["artifact_name"] or ""),
         )
         next_tasks.append(
             {
-                "_subject_type": "cloud_asset",
+                "_subject_type": "download_artifact",
                 "_subject_id": int(row["id"]),
-                "cloud_asset_id": int(row["id"]),
+                "download_artifact_id": int(row["id"]),
                 "entry_id": entry_id,
                 "target_path": target,
             }
         )
         log(
             "info",
-            f"同步计划生成内存任务: entry_id={entry_id} cloud_asset_id={row['id']} "
+            f"同步计划生成内存任务: entry_id={entry_id} download_artifact_id={row['id']} "
             f"episode={row['episode_number']} target={target}",
         )
     return ProcessorResult.success(
@@ -57,3 +57,4 @@ async def process_sync_plan(context: ProcessorContext, payload: dict) -> Process
         data={"entry_id": entry_id, "created": len(next_tasks)},
         next_tasks=next_tasks,
     )
+

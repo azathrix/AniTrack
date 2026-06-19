@@ -276,8 +276,8 @@ def release_priority_key(row: dict, settings: dict[str, str]) -> tuple:
 
 def release_has_downstream(conn, release_id: int) -> bool:
     checks = [
-        "cloud_submissions",
-        "cloud_assets",
+        "download_jobs",
+        "download_artifacts",
         "local_assets",
     ]
     for table in checks:
@@ -556,11 +556,11 @@ def upsert_release(item: ParsedRelease, metadata: dict | None = None) -> tuple[i
             )
             release_id = conn.execute("SELECT id FROM releases WHERE guid=?", (item.guid,)).fetchone()["id"]
         conn.execute(
-            "UPDATE cloud_assets SET series_id=? WHERE release_id=?",
+            "UPDATE download_artifacts SET series_id=? WHERE release_id=?",
             (series_id, release_id),
         )
         conn.execute(
-            "UPDATE cloud_assets SET entry_id=? WHERE release_id=?",
+            "UPDATE download_artifacts SET entry_id=? WHERE release_id=?",
             (entry_id, release_id),
         )
         conn.execute(
@@ -572,7 +572,7 @@ def upsert_release(item: ParsedRelease, metadata: dict | None = None) -> tuple[i
             (entry_id, release_id),
         )
         conn.execute(
-            "UPDATE cloud_submissions SET entry_id=? WHERE release_id=?",
+            "UPDATE download_jobs SET entry_id=? WHERE release_id=?",
             (entry_id, release_id),
         )
     return series_id, entry_id, release_id
@@ -944,6 +944,7 @@ def retry_after_time(settings: dict[str, str], default_minutes: int = 60) -> str
 def task_retry_after(settings: dict[str, str], attempts: int) -> str:
     minutes = min(180, max(5, 5 * max(1, attempts)))
     return retry_after_time(settings, minutes)
+
 
 
 

@@ -18,7 +18,7 @@ async def process_nfo(context: ProcessorContext, payload: dict) -> ProcessorResu
     settings = get_settings()
     nfo_settings = dict(settings)
     if not nfo_settings.get("nfo_output_root"):
-        nfo_settings["nfo_output_root"] = settings.get("local_library_root") or "/media/pikpak-anime"
+        nfo_settings["nfo_output_root"] = settings.get("local_library_root") or "/media/autoanime"
     generate_nfo_for_entry(entry_id, nfo_settings)
     if local_asset_id > 0:
         with connect() as conn:
@@ -27,3 +27,4 @@ async def process_nfo(context: ProcessorContext, payload: dict) -> ProcessorResu
                 (now(), local_asset_id),
             )
     return ProcessorResult.success("NFO 生成完成", data={"entry_id": entry_id, "local_asset_id": local_asset_id})
+

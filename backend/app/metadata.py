@@ -176,3 +176,4 @@ def generate_nfo_for_entry(entry_id: int, settings: dict[str, str]) -> None:
             (now(), entry_id),
         )
     log("info", f"已生成 NFO: {entry['display_title'] or entry['title_cn']}")
+

@@ -264,3 +264,4 @@ def parse_entry(entry: Any) -> ParsedRelease:
         mikan_bangumi_id=parse_mikan_bangumi_id(entry, link),
         published_at=published,
     )
+

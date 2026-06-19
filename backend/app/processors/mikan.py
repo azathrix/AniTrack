@@ -89,3 +89,4 @@ async def process_mikan_match(context: ProcessorContext, payload: dict) -> Proce
             "mikan_bangumi_id": mikan_id,
         },
     )
+

@@ -129,7 +129,7 @@ async def list_cloud_files(
             for item in files:
                 name = str(item.get("name") or "")
                 path = f"{current_path.rstrip('/')}/{name}" if current_path else name
-                item["cloud_path"] = path
+                item["remote_path"] = path
                 kind = str(item.get("kind") or "")
                 mime_type = str(item.get("mime_type") or item.get("mimeType") or "")
                 is_folder = kind.endswith("#folder") or mime_type == "application/vnd.google-apps.folder"
@@ -160,7 +160,7 @@ async def rename_cloud_file(settings: dict[str, str], file_id: str, new_name: st
 
 async def get_cloud_download_url(settings: dict[str, str], file_id: str) -> str:
     if not file_id:
-        raise RuntimeError("缺少云盘文件 ID")
+        raise RuntimeError("缺少下载文件 ID")
     api = build_client(settings)
     if settings.get("pikpak_auth_mode") == "password":
         await api.login()
@@ -197,3 +197,4 @@ async def get_cloud_download_url(settings: dict[str, str], file_id: str) -> str:
         if value:
             return str(value)
     raise RuntimeError("云盘没有返回可用下载链接")
+

@@ -70,7 +70,7 @@ def ensure_sync_rule(entry_id: int, settings: dict[str, str], enabled: bool | No
                 entry_id,
                 1 if sync_enabled else 0,
                 1 if auto_sync else 0,
-                settings.get("local_library_root") or "/media/pikpak-anime",
+                settings.get("local_library_root") or "/media/autoanime",
                 ts,
                 ts,
                 1 if explicit_enabled else 0,
@@ -78,14 +78,14 @@ def ensure_sync_rule(entry_id: int, settings: dict[str, str], enabled: bool | No
         )
 
 
-def local_episode_path(cloud_asset: dict, entry: dict, settings: dict[str, str]) -> str:
+def local_episode_path(download_artifact: dict, entry: dict, settings: dict[str, str]) -> str:
     root = Path(local_library_root(entry, settings))
     series_dir = render_series_dir(entry, settings)
     season_dir = render_season_dir(int(entry.get("season_number") or 1), settings)
-    suffix = Path(cloud_asset.get("cloud_name") or "").suffix
-    filename = cloud_asset.get("cloud_name") or render_episode_name(
+    suffix = Path(download_artifact.get("artifact_name") or "").suffix
+    filename = download_artifact.get("artifact_name") or render_episode_name(
         entry,
-        int(cloud_asset.get("episode_number") or 0),
+        int(download_artifact.get("episode_number") or 0),
         "",
         settings,
     )
@@ -134,7 +134,7 @@ async def find_existing_remote_episode(
     return None
 
 
-def cloud_file_id(item: dict) -> str:
+def download_file_id(item: dict) -> str:
     return str(item.get("id") or item.get("file_id") or item.get("fileId") or "")
 
 
@@ -142,8 +142,8 @@ def synthetic_task_id(file_id: str) -> int:
     return 0 - (zlib.crc32(file_id.encode("utf-8")) % 2147483647) - 1
 
 
-def match_cloud_file_to_entry(item: dict, entry_rows: list[dict]) -> dict | None:
-    path = str(item.get("cloud_path") or item.get("name") or "")
+def match_remote_file_to_entry(item: dict, entry_rows: list[dict]) -> dict | None:
+    path = str(item.get("remote_path") or item.get("name") or "")
     match = re.search(r"bangumi[-_ ]?(\d+)", path, re.I)
     if match:
         bangumi_id = match.group(1)
@@ -178,7 +178,7 @@ def ensure_library_entry_for_reference(
         """
         INSERT INTO works
           (root_key, title_root, title_root_raw, bangumi_id, metadata_source, hidden, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'cloud_import', 0, ?, ?)
+        VALUES (?, ?, ?, ?, 'remote_import', 0, ?, ?)
         ON CONFLICT(root_key) DO UPDATE SET
           title_root=excluded.title_root,
           title_root_raw=excluded.title_root_raw,
@@ -197,7 +197,7 @@ def ensure_library_entry_for_reference(
     work_id = int(conn.execute("SELECT id FROM works WHERE root_key=?", (work_key,)).fetchone()["id"])
     target_library = conn.execute("SELECT id FROM media_libraries WHERE key='anime_library'").fetchone()
     target_library_id = int(target_library["id"] or 0) if target_library else 0
-    fingerprint_key = f"cloud-library:{entry_row.get('bangumi_id') or ''}:{normalize_title_key(display_title)}"
+    fingerprint_key = f"remote-library:{entry_row.get('bangumi_id') or ''}:{normalize_title_key(display_title)}"
     conn.execute(
         """
         INSERT INTO entries
@@ -207,7 +207,7 @@ def ensure_library_entry_for_reference(
            title_raw, title_cn, bangumi_id, mikan_bangumi_id, tmdb_id, year, season_number,
            poster_url, summary, metadata_source, hidden, auto_download, selected_group, selected_resolution,
            backfill_mode, created_at, updated_at)
-        VALUES (?, ?, 'library', 'anime', 'jp', 'cloud_import', ?, ?, ?, 'season', ?, ?, '', '', '', '', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'cloud_import', 0, 'inherit', '', '', 'inherit', ?, ?)
+        VALUES (?, ?, 'library', 'anime', 'jp', 'remote_import', ?, ?, ?, 'season', ?, ?, '', '', '', '', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'remote_import', 0, 'inherit', '', '', 'inherit', ?, ?)
         ON CONFLICT(fingerprint) DO UPDATE SET
           work_id=excluded.work_id,
           domain_kind='library',
@@ -255,7 +255,7 @@ def ensure_library_entry_for_reference(
         """
         INSERT INTO library_entries
           (entry_id, source_type, source_ref, wanted, archived, created_at, updated_at)
-        VALUES (?, 'cloud_scan', ?, 1, 0, ?, ?)
+        VALUES (?, 'remote_scan', ?, 1, 0, ?, ?)
         ON CONFLICT(entry_id) DO UPDATE SET
           source_ref=CASE WHEN excluded.source_ref!='' THEN excluded.source_ref ELSE library_entries.source_ref END,
           wanted=1,
@@ -267,10 +267,10 @@ def ensure_library_entry_for_reference(
     return resolve_entry_series_id(conn, entry_id), entry_id
 
 
-def upsert_scanned_cloud_asset(item: dict, entry: dict, settings: dict[str, str]) -> int | None:
-    file_id = cloud_file_id(item)
-    name = str(item.get("name") or Path(str(item.get("cloud_path") or "")).name)
-    path = str(item.get("cloud_path") or name)
+def upsert_scanned_download_artifact(item: dict, entry: dict, settings: dict[str, str]) -> int | None:
+    file_id = download_file_id(item)
+    name = str(item.get("name") or Path(str(item.get("remote_path") or "")).name)
+    path = str(item.get("remote_path") or name)
     if not file_id or not name:
         return None
     episode_number = parse_episode(name) or parse_episode(path) or 0
@@ -294,7 +294,7 @@ def upsert_scanned_cloud_asset(item: dict, entry: dict, settings: dict[str, str]
             (entry_id, episode_number),
         ).fetchone()
         if not release:
-            guid = f"cloud-import:pikpak:{file_id}"
+            guid = f"remote-import:pikpak:{file_id}"
             conn.execute(
                 """
                 INSERT INTO episodes
@@ -318,7 +318,7 @@ def upsert_scanned_cloud_asset(item: dict, entry: dict, settings: dict[str, str]
                 INSERT INTO releases
                   (series_id, entry_id, episode_number, guid, title, subtitle_group, resolution,
                    language, torrent_url, magnet, published_at, selected, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, '云盘导入', '', '', '', '', '', 1, ?, ?)
+                VALUES (?, ?, ?, ?, ?, '远端导入', '', '', '', '', '', 1, ?, ?)
                 ON CONFLICT(guid) DO UPDATE SET
                   series_id=excluded.series_id,
                   entry_id=excluded.entry_id,
@@ -333,14 +333,14 @@ def upsert_scanned_cloud_asset(item: dict, entry: dict, settings: dict[str, str]
             return None
         ts = now()
         existing = conn.execute(
-            "SELECT id FROM cloud_assets WHERE provider='pikpak' AND provider_file_id=?",
+            "SELECT id FROM download_artifacts WHERE provider='pikpak' AND provider_file_id=?",
             (file_id,),
         ).fetchone()
         if existing:
             conn.execute(
                 """
-                UPDATE cloud_assets
-                SET release_id=?, series_id=?, entry_id=?, episode_number=?, cloud_path=?, cloud_name=?,
+                UPDATE download_artifacts
+                SET release_id=?, series_id=?, entry_id=?, episode_number=?, remote_path=?, artifact_name=?,
                     status='available', updated_at=?
                 WHERE id=?
                 """,
@@ -349,9 +349,9 @@ def upsert_scanned_cloud_asset(item: dict, entry: dict, settings: dict[str, str]
         else:
             conn.execute(
                 """
-                INSERT INTO cloud_assets
+                INSERT INTO download_artifacts
                   (task_id, release_id, series_id, entry_id, episode_number, provider, provider_file_id,
-                   cloud_path, cloud_name, status, created_at, updated_at)
+                   remote_path, artifact_name, status, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, 'pikpak', ?, ?, ?, 'available', ?, ?)
                 """,
                 (
@@ -367,14 +367,14 @@ def upsert_scanned_cloud_asset(item: dict, entry: dict, settings: dict[str, str]
                     ts,
                 ),
             )
-        asset = conn.execute("SELECT id FROM cloud_assets WHERE provider_file_id=?", (file_id,)).fetchone()
+        asset = conn.execute("SELECT id FROM download_artifacts WHERE provider_file_id=?", (file_id,)).fetchone()
     return int(asset["id"]) if asset else None
 
 
-def upsert_cloud_asset_for_release(release_id: int, item: dict, settings: dict[str, str]) -> int | None:
-    file_id = cloud_file_id(item)
-    name = str(item.get("name") or Path(str(item.get("cloud_path") or "")).name)
-    path = str(item.get("cloud_path") or name)
+def upsert_download_artifact_for_release(release_id: int, item: dict, settings: dict[str, str]) -> int | None:
+    file_id = download_file_id(item)
+    name = str(item.get("name") or Path(str(item.get("remote_path") or "")).name)
+    path = str(item.get("remote_path") or name)
     if not name:
         return None
     with connect() as conn:
@@ -389,13 +389,13 @@ def upsert_cloud_asset_for_release(release_id: int, item: dict, settings: dict[s
         provider_file_id = file_id or f"rclone:{path}"
         task_id = synthetic_task_id(provider_file_id)
         existing = conn.execute(
-            "SELECT id FROM cloud_assets WHERE provider='pikpak' AND provider_file_id=?",
+            "SELECT id FROM download_artifacts WHERE provider='pikpak' AND provider_file_id=?",
             (provider_file_id,),
         ).fetchone()
         existing_by_episode = conn.execute(
             """
             SELECT id
-            FROM cloud_assets
+            FROM download_artifacts
             WHERE entry_id=? AND episode_number=? AND provider='pikpak'
             ORDER BY id ASC
             LIMIT 1
@@ -406,9 +406,9 @@ def upsert_cloud_asset_for_release(release_id: int, item: dict, settings: dict[s
         if existing_asset:
             conn.execute(
                 """
-                UPDATE cloud_assets
+                UPDATE download_artifacts
                 SET task_id=?, release_id=?, series_id=?, entry_id=?, episode_number=?, provider_file_id=?,
-                    cloud_path=?, cloud_name=?, status='available', updated_at=?
+                    remote_path=?, artifact_name=?, status='available', updated_at=?
                 WHERE id=?
                 """,
                 (
@@ -427,16 +427,16 @@ def upsert_cloud_asset_for_release(release_id: int, item: dict, settings: dict[s
             asset_id = int(existing_asset["id"])
             log(
                 "info",
-                f"云盘资源登记更新: cloud_asset_id={asset_id} release_id={release['id']} "
+                f"下载产物登记更新: download_artifact_id={asset_id} release_id={release['id']} "
                 f"entry_id={release['entry_id']} episode={release['episode_number']} "
-                f"file_id={provider_file_id or '-'} cloud_name={name}",
+                f"file_id={provider_file_id or '-'} artifact_name={name}",
             )
         else:
             conn.execute(
                 """
-                INSERT INTO cloud_assets
+                INSERT INTO download_artifacts
                   (task_id, release_id, series_id, entry_id, episode_number, provider, provider_file_id,
-                   cloud_path, cloud_name, status, created_at, updated_at)
+                   remote_path, artifact_name, status, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, 'pikpak', ?, ?, ?, 'available', ?, ?)
                 ON CONFLICT(task_id) DO UPDATE SET
                   release_id=excluded.release_id,
@@ -444,8 +444,8 @@ def upsert_cloud_asset_for_release(release_id: int, item: dict, settings: dict[s
                   entry_id=excluded.entry_id,
                   episode_number=excluded.episode_number,
                   provider_file_id=excluded.provider_file_id,
-                  cloud_path=excluded.cloud_path,
-                  cloud_name=excluded.cloud_name,
+                  remote_path=excluded.remote_path,
+                  artifact_name=excluded.artifact_name,
                   status='available',
                   updated_at=excluded.updated_at
                 """,
@@ -462,16 +462,16 @@ def upsert_cloud_asset_for_release(release_id: int, item: dict, settings: dict[s
                     ts,
                 ),
             )
-            asset = conn.execute("SELECT id FROM cloud_assets WHERE task_id=?", (task_id,)).fetchone()
+            asset = conn.execute("SELECT id FROM download_artifacts WHERE task_id=?", (task_id,)).fetchone()
             asset_id = int(asset["id"]) if asset else 0
             if asset_id:
-                log("info", f"云盘资源已入库: {name}")
+                log("info", f"下载产物已入库: {name}")
         if asset_id:
             return asset_id
     return None
 
 
-async def scan_cloud_library(settings: dict[str, str]) -> tuple[int, int]:
+async def scan_remote_library(settings: dict[str, str]) -> tuple[int, int]:
     files = await list_cloud_files(settings, settings.get("library_root") or "/Anime")
     with connect() as conn:
         entry_rows = [
@@ -490,21 +490,21 @@ async def scan_cloud_library(settings: dict[str, str]) -> tuple[int, int]:
     skipped = 0
     synced_entries: set[int] = set()
     for item in files:
-        name = str(item.get("name") or item.get("cloud_path") or "")
+        name = str(item.get("name") or item.get("remote_path") or "")
         if Path(name).suffix.lower() not in VIDEO_SUFFIXES:
             continue
-        entry = match_cloud_file_to_entry(item, entry_rows)
+        entry = match_remote_file_to_entry(item, entry_rows)
         if not entry:
             skipped += 1
             continue
-        asset_id = upsert_scanned_cloud_asset(item, entry, settings)
+        asset_id = upsert_scanned_download_artifact(item, entry, settings)
         if not asset_id:
             skipped += 1
             continue
         imported += 1
         with connect() as conn:
             rule = conn.execute(
-                "SELECT * FROM sync_rules WHERE entry_id=(SELECT entry_id FROM cloud_assets WHERE id=? LIMIT 1)",
+                "SELECT * FROM sync_rules WHERE entry_id=(SELECT entry_id FROM download_artifacts WHERE id=? LIMIT 1)",
                 (asset_id,),
             ).fetchone()
         if rule and rule["sync_enabled"]:
@@ -512,7 +512,7 @@ async def scan_cloud_library(settings: dict[str, str]) -> tuple[int, int]:
     return imported, skipped
 
 
-async def download_cloud_file_to_local(file_id: str, source: str, target: str, settings: dict[str, str], progress_cb=None) -> None:
+async def download_remote_file_to_local(file_id: str, source: str, target: str, settings: dict[str, str], progress_cb=None) -> None:
     target_path = Path(target)
     target_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -535,7 +535,7 @@ async def download_cloud_file_to_local(file_id: str, source: str, target: str, s
     source_path = Path(source)
     target_path = Path(target)
     if not source_path.exists():
-        raise RuntimeError("缺少云盘文件 ID，且云盘路径不是本机可访问文件")
+        raise RuntimeError("缺少下载文件 ID，且远端路径不是本机可访问文件")
     shutil.copy2(source_path, target_path)
 
 
@@ -566,4 +566,5 @@ def cancel_sync_for_entry(entry_id: int) -> tuple[int, str]:
             (now(), entry_id),
         )
     return removed, f"已取消同步并清理本地文件: {removed} 个"
+
 

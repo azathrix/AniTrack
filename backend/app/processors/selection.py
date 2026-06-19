@@ -35,3 +35,4 @@ async def process_selection(context: ProcessorContext, payload: dict) -> Process
         data={"entry_id": entry_id, "release_ids": release_ids},
         next_tasks=next_tasks,
     )
+

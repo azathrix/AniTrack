@@ -18,7 +18,7 @@ LOG_PAYLOAD_KEYS = [
     "release_id",
     "candidate_id",
     "download_task_id",
-    "cloud_asset_id",
+    "download_artifact_id",
     "episode_number",
     "domain_kind",
     "title",
@@ -336,3 +336,4 @@ async def run_ready_tasks(limit: int = 20, processor_key: str = "") -> int:
             break
         count += 1
     return count
+

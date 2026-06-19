@@ -115,7 +115,7 @@ def ensure_pipeline_runtime(conn: sqlite3.Connection) -> None:
     pipelines = [
         ("seasonal_mikan_tracking", "Mikan 新番追更", "seasonal"),
         ("library_backfill", "番剧库补番", "library"),
-        ("cloud_import", "云盘导入", "cloud_import"),
+        ("media_import", "媒体导入", "media_import"),
     ]
     for key, name, domain_kind in pipelines:
         conn.execute(
@@ -138,10 +138,10 @@ def ensure_pipeline_runtime(conn: sqlite3.Connection) -> None:
             ("seasonal_merge", "seasonal_merge"),
             ("season_backfill", "backfill"),
             ("release_selection", "selection"),
-            ("cloud_presence", "cloud_presence"),
-            ("cloud_submit", "cloud_submit"),
-            ("cloud_poll", "cloud_poll"),
-            ("cloud_asset_register", "cloud_asset_register"),
+            ("download_presence", "download_presence"),
+            ("download_submit", "download_submit"),
+            ("download_poll", "download_poll"),
+            ("download_artifact_register", "download_artifact_register"),
             ("sync_plan", "sync_plan"),
             ("local_sync", "local_sync"),
             ("nfo_generate", "nfo"),
@@ -153,20 +153,20 @@ def ensure_pipeline_runtime(conn: sqlite3.Connection) -> None:
             ("bangumi_metadata", "metadata"),
             ("library_merge", "library_merge"),
             ("release_selection", "selection"),
-            ("cloud_presence", "cloud_presence"),
-            ("cloud_submit", "cloud_submit"),
-            ("cloud_poll", "cloud_poll"),
-            ("cloud_asset_register", "cloud_asset_register"),
+            ("download_presence", "download_presence"),
+            ("download_submit", "download_submit"),
+            ("download_poll", "download_poll"),
+            ("download_artifact_register", "download_artifact_register"),
             ("sync_plan", "sync_plan"),
             ("local_sync", "local_sync"),
             ("nfo_generate", "nfo"),
         ],
-        "cloud_import": [
-            ("cloud_scan", "cloud_scan"),
-            ("cloud_identity_match", "cloud_identity_match"),
+        "media_import": [
+            ("source_scan", "source_scan"),
+            ("identity_match", "identity_match"),
             ("bangumi_metadata", "metadata"),
             ("library_merge", "library_merge"),
-            ("cloud_asset_register", "cloud_asset_register"),
+            ("download_artifact_register", "download_artifact_register"),
             ("sync_plan", "sync_plan"),
         ],
     }
@@ -176,6 +176,12 @@ def ensure_pipeline_runtime(conn: sqlite3.Connection) -> None:
             continue
         pipeline_id = int(pipeline["id"])
         conn.execute("DELETE FROM pipeline_transitions WHERE pipeline_id=?", (pipeline_id,))
+        step_keys = [step_key for step_key, _ in steps]
+        placeholders = ",".join("?" for _ in step_keys)
+        conn.execute(
+            f"DELETE FROM pipeline_steps WHERE pipeline_id=? AND step_key NOT IN ({placeholders})",
+            (pipeline_id, *step_keys),
+        )
         for order, (step_key, processor_key) in enumerate(steps, start=1):
             conn.execute(
                 """
@@ -202,7 +208,7 @@ def ensure_pipeline_runtime(conn: sqlite3.Connection) -> None:
                     (pipeline_id, step_key, next_step, ts, ts),
                 )
         special_transitions = [
-            ("cloud_presence", "skipped", "sync_plan"),
+            ("download_presence", "skipped", "sync_plan"),
         ]
         for from_step, result_status, to_step in special_transitions:
             step_keys = {step_key for step_key, _ in steps}
@@ -398,7 +404,7 @@ def init_db() -> None:
                 updated_at TEXT NOT NULL
             );
 
-            CREATE TABLE IF NOT EXISTS cloud_submissions (
+            CREATE TABLE IF NOT EXISTS download_jobs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 series_id INTEGER NOT NULL,
                 entry_id INTEGER NOT NULL DEFAULT 0,
@@ -420,7 +426,7 @@ def init_db() -> None:
                 UNIQUE(entry_id, episode_number, provider)
             );
 
-            CREATE TABLE IF NOT EXISTS cloud_assets (
+            CREATE TABLE IF NOT EXISTS download_artifacts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 task_id INTEGER NOT NULL UNIQUE,
                 release_id INTEGER NOT NULL,
@@ -429,8 +435,8 @@ def init_db() -> None:
                 episode_number INTEGER NOT NULL,
                 provider TEXT NOT NULL DEFAULT 'pikpak',
                 provider_file_id TEXT NOT NULL DEFAULT '',
-                cloud_path TEXT NOT NULL DEFAULT '',
-                cloud_name TEXT NOT NULL DEFAULT '',
+                remote_path TEXT NOT NULL DEFAULT '',
+                artifact_name TEXT NOT NULL DEFAULT '',
                 status TEXT NOT NULL DEFAULT 'available',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
@@ -449,7 +455,7 @@ def init_db() -> None:
 
             CREATE TABLE IF NOT EXISTS local_assets (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                cloud_asset_id INTEGER NOT NULL UNIQUE,
+                download_artifact_id INTEGER NOT NULL UNIQUE,
                 release_id INTEGER NOT NULL,
                 series_id INTEGER NOT NULL,
                 entry_id INTEGER NOT NULL DEFAULT 0,
@@ -461,8 +467,8 @@ def init_db() -> None:
                 updated_at TEXT NOT NULL
             );
 
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_cloud_assets_provider_file
-            ON cloud_assets(provider, provider_file_id)
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_download_artifacts_provider_file
+            ON download_artifacts(provider, provider_file_id)
             WHERE provider_file_id != '';
             """
         )
@@ -478,7 +484,7 @@ def init_db() -> None:
 
 def ensure_media_libraries(conn: sqlite3.Connection) -> None:
     ts = now()
-    local_root = DEFAULT_SETTINGS.get("local_library_root", "/media/pikpak-anime").rstrip("/")
+    local_root = DEFAULT_SETTINGS.get("local_library_root", "/media/autoanime").rstrip("/")
     libraries = [
         ("seasonal_anime", "新番库", "anime", f"{local_root}/Seasonal", "pikpak"),
         ("anime_library", "番剧库", "anime", f"{local_root}/Library", "pikpak"),
@@ -683,7 +689,7 @@ def migrate(conn: sqlite3.Connection) -> None:
         )
     conn.execute(
         """
-        CREATE TABLE IF NOT EXISTS cloud_submissions (
+        CREATE TABLE IF NOT EXISTS download_jobs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             series_id INTEGER NOT NULL,
             entry_id INTEGER NOT NULL DEFAULT 0,
@@ -708,8 +714,8 @@ def migrate(conn: sqlite3.Connection) -> None:
     )
     conn.execute(
         """
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_cloud_assets_provider_file
-        ON cloud_assets(provider, provider_file_id)
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_download_artifacts_provider_file
+        ON download_artifacts(provider, provider_file_id)
         WHERE provider_file_id != ''
         """
     )
@@ -753,7 +759,7 @@ def migrate(conn: sqlite3.Connection) -> None:
     }
     if "entry_id" not in episode_columns:
         conn.execute("ALTER TABLE episodes ADD COLUMN entry_id INTEGER NOT NULL DEFAULT 0")
-    for table in ["cloud_submissions", "cloud_assets", "sync_rules", "local_assets"]:
+    for table in ["download_jobs", "download_artifacts", "sync_rules", "local_assets"]:
         columns = {
             row["name"]
             for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
@@ -780,9 +786,9 @@ def merge_duplicate_series(conn: sqlite3.Connection) -> None:
         remove_ids = [value for value in ids if value != keep_id]
         for old_id in remove_ids:
             conn.execute("UPDATE releases SET series_id=? WHERE series_id=?", (keep_id, old_id))
-            conn.execute("UPDATE cloud_assets SET series_id=? WHERE series_id=?", (keep_id, old_id))
+            conn.execute("UPDATE download_artifacts SET series_id=? WHERE series_id=?", (keep_id, old_id))
             conn.execute("UPDATE local_assets SET series_id=? WHERE series_id=?", (keep_id, old_id))
-            conn.execute("UPDATE cloud_submissions SET series_id=? WHERE series_id=?", (keep_id, old_id))
+            conn.execute("UPDATE download_jobs SET series_id=? WHERE series_id=?", (keep_id, old_id))
             conn.execute(
                 """
                 INSERT INTO sync_rules
@@ -819,7 +825,7 @@ def merge_duplicate_series(conn: sqlite3.Connection) -> None:
                         ep["updated_at"],
                     ),
             )
-            conn.execute("UPDATE cloud_submissions SET series_id=? WHERE series_id=?", (keep_id, old_id))
+            conn.execute("UPDATE download_jobs SET series_id=? WHERE series_id=?", (keep_id, old_id))
             conn.execute("DELETE FROM episodes WHERE series_id=?", (old_id,))
             conn.execute("DELETE FROM sync_rules WHERE series_id=?", (old_id,))
             conn.execute("DELETE FROM series WHERE id=?", (old_id,))
@@ -833,7 +839,7 @@ def restore_visible_series(conn: sqlite3.Connection) -> int:
         WHERE COALESCE(hidden, 0)=1
           AND (
             id IN (SELECT DISTINCT series_id FROM releases)
-            OR id IN (SELECT DISTINCT series_id FROM cloud_assets)
+            OR id IN (SELECT DISTINCT series_id FROM download_artifacts)
             OR id IN (SELECT DISTINCT series_id FROM local_assets)
           )
         """,
@@ -849,7 +855,7 @@ def hide_orphan_series(conn: sqlite3.Connection) -> int:
         SET hidden=1, updated_at=?
         WHERE COALESCE(hidden, 0)=0
           AND id NOT IN (SELECT DISTINCT series_id FROM releases)
-          AND id NOT IN (SELECT DISTINCT series_id FROM cloud_assets)
+          AND id NOT IN (SELECT DISTINCT series_id FROM download_artifacts)
           AND id NOT IN (SELECT DISTINCT series_id FROM local_assets)
         """,
         (now(),),
@@ -963,8 +969,8 @@ def diagnostics() -> dict[str, Any]:
             "episodes",
             "releases",
             "rss_candidates",
-            "cloud_submissions",
-            "cloud_assets",
+            "download_jobs",
+            "download_artifacts",
             "sync_rules",
             "local_assets",
         ]
@@ -993,8 +999,8 @@ def clear_runtime_data() -> None:
         for table in [
             "local_assets",
             "sync_rules",
-            "cloud_assets",
-            "cloud_submissions",
+            "download_artifacts",
+            "download_jobs",
             "rss_candidates",
             "library_entries",
             "seasonal_entries",
@@ -1005,10 +1011,12 @@ def clear_runtime_data() -> None:
             "series",
         ]:
             conn.execute(f"DELETE FROM {table}")
-        conn.execute("DELETE FROM sqlite_sequence WHERE name IN ('local_assets','sync_rules','cloud_assets','cloud_submissions','rss_candidates','library_entries','seasonal_entries','entries','works','releases','episodes','series')")
+        conn.execute("DELETE FROM sqlite_sequence WHERE name IN ('local_assets','sync_rules','download_artifacts','download_jobs','rss_candidates','library_entries','seasonal_entries','entries','works','releases','episodes','series')")
         conn.execute(
             "INSERT INTO settings (key, value) VALUES ('runtime_generation', ?) "
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             (next_generation,),
         )
+
+
 

@@ -465,7 +465,7 @@ class RuntimeStore:
             "entry_id": task.payload.get("entry_id", task.subject_id if task.subject_type == "entry" else 0),
             "release_id": task.payload.get("release_id", task.subject_id if task.subject_type == "release" else 0),
             "candidate_id": task.payload.get("candidate_id", task.subject_id if task.subject_type == "rss_candidate" else 0),
-            "cloud_asset_id": task.payload.get("cloud_asset_id", task.subject_id if task.subject_type == "cloud_asset" else 0),
+            "download_artifact_id": task.payload.get("download_artifact_id", task.subject_id if task.subject_type == "download_artifact" else 0),
             "local_asset_id": task.payload.get("local_asset_id", task.subject_id if task.subject_type == "local_asset" else 0),
             "episode_number": task.payload.get("episode_number", ""),
             "display_title": task.payload.get("display_title", task.payload.get("title", "")),
@@ -491,3 +491,4 @@ class RuntimeStore:
 
 
 runtime_store = RuntimeStore()
+

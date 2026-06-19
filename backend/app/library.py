@@ -169,7 +169,7 @@ def local_library_root(entry: dict, settings: dict[str, str]) -> str:
             ).fetchone()
         if row and str(row["root_path"] or "").strip():
             return str(row["root_path"]).strip()
-    return settings.get("local_library_root") or "/media/pikpak-anime"
+    return settings.get("local_library_root") or "/media/autoanime"
 
 
 def local_series_path(entry: dict, settings: dict[str, str]) -> Path:
@@ -186,3 +186,4 @@ def target_dir(series: dict, settings: dict[str, str]) -> str:
             render_season_dir(int(series.get("season_number") or 1), settings),
         ]
     )
+

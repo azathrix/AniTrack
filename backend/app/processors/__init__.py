@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from .backfill import process_backfill
-from .cloud import (
-    process_cloud_asset_register,
-    process_cloud_poll,
-    process_cloud_presence,
-    process_cloud_submit,
+from .download import (
+    process_download_artifact_register,
+    process_download_poll,
+    process_download_presence,
+    process_download_submit,
 )
 from .merge import process_entry_merge
 from .metadata import process_metadata
@@ -27,11 +27,13 @@ def register_builtin_processors() -> None:
     register_processor("library_merge", process_entry_merge)
     register_processor("backfill", process_backfill)
     register_processor("selection", process_selection)
-    register_processor("cloud_presence", process_cloud_presence)
-    register_processor("cloud_submit", process_cloud_submit)
-    register_processor("cloud_poll", process_cloud_poll)
-    register_processor("cloud_asset_register", process_cloud_asset_register)
+    register_processor("download_presence", process_download_presence)
+    register_processor("download_submit", process_download_submit)
+    register_processor("download_poll", process_download_poll)
+    register_processor("download_artifact_register", process_download_artifact_register)
     register_processor("local_sync", process_local_sync)
     register_processor("nfo", process_nfo)
     register_processor("sync_plan", process_sync_plan)
     register_processor("local_presence", process_local_presence)
+
+

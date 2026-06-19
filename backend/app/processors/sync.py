@@ -6,59 +6,59 @@ from ..database import connect
 from ..db import get_settings, log, now
 from ..pipeline_models import ProcessorContext, ProcessorResult
 from ..sync_service import (
-    download_cloud_file_to_local,
+    download_remote_file_to_local,
     local_episode_path,
     normalize_local_target_path,
     task_retry_after,
 )
 
 
-def _cloud_asset_id(context: ProcessorContext, payload: dict) -> int:
-    if context.subject_type == "cloud_asset":
+def _download_artifact_id(context: ProcessorContext, payload: dict) -> int:
+    if context.subject_type == "download_artifact":
         return int(context.subject_id or 0)
-    return int(payload.get("cloud_asset_id") or 0)
+    return int(payload.get("download_artifact_id") or 0)
 
 
 async def process_local_sync(context: ProcessorContext, payload: dict) -> ProcessorResult:
-    cloud_asset_id = _cloud_asset_id(context, payload)
-    if cloud_asset_id <= 0:
-        return ProcessorResult.terminal("本地同步处理器缺少 cloud_asset_id")
+    download_artifact_id = _download_artifact_id(context, payload)
+    if download_artifact_id <= 0:
+        return ProcessorResult.terminal("本地同步处理器缺少 download_artifact_id")
     settings = get_settings()
     with connect() as conn:
         row = conn.execute(
             """
             SELECT ca.*, e.display_title, e.title_cn, e.title_raw, e.season_number, e.year,
               e.bangumi_id, e.target_library_id
-            FROM cloud_assets ca
+            FROM download_artifacts ca
             JOIN entries e ON e.id=ca.entry_id
             WHERE ca.id=? AND ca.status='available'
             """,
-            (cloud_asset_id,),
+            (download_artifact_id,),
         ).fetchone()
     if not row:
-        return ProcessorResult.terminal(f"云盘资源不存在或不可用: {cloud_asset_id}")
+        return ProcessorResult.terminal(f"下载产物不存在或不可用: {download_artifact_id}")
 
     target = str(payload.get("target_path") or "").strip()
     if not target:
         target = local_episode_path(dict(row), dict(row), settings)
-    target = normalize_local_target_path(target, str(row["cloud_name"] or ""))
+    target = normalize_local_target_path(target, str(row["artifact_name"] or ""))
     target_file = Path(target)
 
     try:
         if target_file.exists() and target_file.stat().st_size > 0:
             log(
                 "info",
-                f"本地同步跳过下载: cloud_asset_id={cloud_asset_id} reason=本地文件已存在 target={target}",
+                f"本地同步跳过下载: download_artifact_id={download_artifact_id} reason=本地文件已存在 target={target}",
             )
         else:
             log(
                 "info",
-                f"本地同步下载: cloud_asset_id={cloud_asset_id} entry_id={row['entry_id']} "
-                f"episode={row['episode_number']} source={row['cloud_path']} target={target}",
+                f"本地同步下载: download_artifact_id={download_artifact_id} entry_id={row['entry_id']} "
+                f"episode={row['episode_number']} source={row['remote_path']} target={target}",
             )
-            await download_cloud_file_to_local(
+            await download_remote_file_to_local(
                 str(row["provider_file_id"] or ""),
-                str(row["cloud_path"] or ""),
+                str(row["remote_path"] or ""),
                 target,
                 settings,
             )
@@ -70,10 +70,10 @@ async def process_local_sync(context: ProcessorContext, payload: dict) -> Proces
         conn.execute(
             """
             INSERT INTO local_assets
-              (cloud_asset_id, release_id, series_id, entry_id, episode_number, local_path,
+              (download_artifact_id, release_id, series_id, entry_id, episode_number, local_path,
                nfo_status, status, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, 'pending', 'synced', ?, ?)
-            ON CONFLICT(cloud_asset_id) DO UPDATE SET
+            ON CONFLICT(download_artifact_id) DO UPDATE SET
               release_id=excluded.release_id,
               series_id=excluded.series_id,
               entry_id=excluded.entry_id,
@@ -83,7 +83,7 @@ async def process_local_sync(context: ProcessorContext, payload: dict) -> Proces
               updated_at=excluded.updated_at
             """,
             (
-                cloud_asset_id,
+                download_artifact_id,
                 int(row["release_id"] or 0),
                 int(row["series_id"] or 0),
                 int(row["entry_id"] or 0),
@@ -94,25 +94,25 @@ async def process_local_sync(context: ProcessorContext, payload: dict) -> Proces
             ),
         )
         local_asset = conn.execute(
-            "SELECT id FROM local_assets WHERE cloud_asset_id=?",
-            (cloud_asset_id,),
+            "SELECT id FROM local_assets WHERE download_artifact_id=?",
+            (download_artifact_id,),
         ).fetchone()
     local_asset_id = int(local_asset["id"] or 0) if local_asset else 0
     log(
         "info",
-        f"本地同步完成: cloud_asset_id={cloud_asset_id} local_asset_id={local_asset_id} target={target}",
+        f"本地同步完成: download_artifact_id={download_artifact_id} local_asset_id={local_asset_id} target={target}",
     )
     return ProcessorResult.success(
         "本地同步完成",
         data={
-            "cloud_asset_id": cloud_asset_id,
+            "download_artifact_id": download_artifact_id,
             "local_asset_id": local_asset_id,
             "entry_id": int(row["entry_id"] or 0),
         },
         next_payload={
             "_subject_type": "local_asset",
             "_subject_id": local_asset_id,
-            "cloud_asset_id": cloud_asset_id,
+            "download_artifact_id": download_artifact_id,
             "local_asset_id": local_asset_id,
             "entry_id": int(row["entry_id"] or 0),
         },
@@ -141,3 +141,4 @@ async def process_local_presence(context: ProcessorContext, payload: dict) -> Pr
     if missing:
         return ProcessorResult.success("本地存在性检查完成，部分文件已标记移除", data={"missing": missing})
     return ProcessorResult.success("本地存在性检查完成", data={"entry_id": entry_id, "local_asset_id": local_asset_id})
+

@@ -60,3 +60,4 @@ export async function postAction(path) {
 export async function deleteAction(path) {
   return (await api.delete(path)).data
 }
+

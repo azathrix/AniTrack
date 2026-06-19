@@ -85,3 +85,4 @@ async def process_rss_candidate_persist(_context: ProcessorContext, payload: dic
             "mikan_bangumi_id": item.mikan_bangumi_id,
         },
     )
+

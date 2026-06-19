@@ -70,3 +70,4 @@ def merge_payload(base: dict[str, Any], update: dict[str, Any]) -> dict[str, Any
     result = dict(base)
     result.update(update)
     return result
+

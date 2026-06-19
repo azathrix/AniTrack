@@ -27,7 +27,7 @@ from .pipeline_orchestrator import run_ready_tasks, start_pipeline
 from .pipeline_runtime import finish_pipeline_run, pipeline_overview, start_pipeline_run, update_pipeline_run
 from .processors import register_builtin_processors
 from .scanner import language_tokens, mark_selected_releases, priority_match, priority_pick, resolve_entry_choice
-from .sync_service import cancel_sync_for_entry, ensure_sync_rule, scan_cloud_library
+from .sync_service import cancel_sync_for_entry, ensure_sync_rule, scan_remote_library
 
 
 scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
@@ -65,7 +65,7 @@ class SettingsPayload(BaseModel):
     resolution_priority: list[str] = []
     language_priority: list[str] = []
     secondary_language_priority: list[str] = []
-    cloud_transfer_backend: str = "rclone"
+    download_backend: str = "rclone"
     rclone_command: str = "rclone"
     rclone_config_path: str = "/data/rclone/rclone.conf"
     rclone_remote: str = "pikpak"
@@ -76,7 +76,7 @@ class SettingsPayload(BaseModel):
     pikpak_refresh_token: str = ""
     pikpak_proxy: str = ""
     library_root: str = "/Anime"
-    local_library_root: str = "/media/pikpak-anime"
+    local_library_root: str = "/media/autoanime"
     auto_sync_following: bool = False
     nfo_output_root: str = ""
     work_dir_template: str = ""
@@ -97,7 +97,7 @@ class EntryPayload(BaseModel):
 
 
 class LibraryImportPayload(BaseModel):
-    source_type: str = "cloud_scan"
+    source_type: str = "remote_scan"
     query: str = ""
     magnet: str = ""
     source_ref: str = ""
@@ -155,7 +155,7 @@ def enrich_retry_rows(rows: list[Any]) -> list[dict[str, Any]]:
             or row.get("series_title")
             or row.get("release_title")
             or row.get("local_path")
-            or row.get("cloud_name")
+            or row.get("artifact_name")
             or row.get("title")
             or ""
         )
@@ -215,7 +215,7 @@ def enrich_catalog_entry(item: dict[str, Any]) -> dict[str, Any]:
     scope_label = entry_scope_label(result)
     local_count = int(result.get("local_asset_count") or 0)
     release_count = int(result.get("release_count") or 0)
-    cloud_count = int(result.get("cloud_asset_count") or 0)
+    cloud_count = int(result.get("download_artifact_count") or 0)
     result["work_display_title"] = work_display_title
     result["entry_scope_label"] = scope_label
     result["entry_badge_text"] = entry_badge_text(result)
@@ -274,10 +274,10 @@ SEASONAL_STATUS_QUEUE_ORDER = [
     "metadata",
     "selection",
     "backfill",
-    "cloud_presence",
-    "cloud_submit",
-    "cloud_poll",
-    "cloud_asset_register",
+    "download_presence",
+    "download_submit",
+    "download_poll",
+    "download_artifact_register",
     "sync_plan",
     "local_sync",
     "nfo",
@@ -289,10 +289,10 @@ SEASONAL_STATUS_QUEUE_NAMES = {
     "metadata": "元数据",
     "selection": "自动选集",
     "backfill": "整季补全",
-    "cloud_presence": "云盘存在性检查",
-    "cloud_submit": "PikPak 入库",
-    "cloud_poll": "PikPak 状态",
-    "cloud_asset_register": "云盘资源登记",
+    "download_presence": "下载产物检查",
+    "download_submit": "提交下载器",
+    "download_poll": "下载状态",
+    "download_artifact_register": "下载产物登记",
     "sync_plan": "同步计划",
     "local_sync": "本地同步",
     "nfo": "NFO",
@@ -379,7 +379,7 @@ def summarize_seasonal_entry(
     auto_download_enabled = result.get("auto_download") == "on" or (
         result.get("auto_download") == "inherit" and bool_setting(settings.get("auto_download_unique", "true"))
     )
-    if int(result.get("release_count") or 0) > 0 and not auto_download_enabled and int(result.get("cloud_asset_count") or 0) <= 0:
+    if int(result.get("release_count") or 0) > 0 and not auto_download_enabled and int(result.get("download_artifact_count") or 0) <= 0:
         result["status_category"] = "paused"
         result["status_level"] = "info"
         result["status_summary"] = "自动下载已关闭，等待手动启用或调整规则"
@@ -391,28 +391,28 @@ def summarize_seasonal_entry(
         result["status_summary"] = "本地同步已就绪"
         return result
 
-    if int(result.get("sync_enabled") or 0) > 0 and int(result.get("cloud_asset_count") or 0) > 0:
-        result["status_category"] = "ready_cloud"
+    if int(result.get("sync_enabled") or 0) > 0 and int(result.get("download_artifact_count") or 0) > 0:
+        result["status_category"] = "ready_download"
         result["status_level"] = "success"
         result["status_summary"] = "已开启同步，等待或处理本地同步"
         return result
 
-    if int(result.get("cloud_asset_count") or 0) > 0:
-        result["status_category"] = "ready_cloud"
+    if int(result.get("download_artifact_count") or 0) > 0:
+        result["status_category"] = "ready_download"
         result["status_level"] = "success"
-        result["status_summary"] = "云盘资源已就绪"
+        result["status_summary"] = "下载产物已就绪"
         return result
 
     if int(result.get("downloaded_count") or 0) > 0:
         result["status_category"] = "submitted"
         result["status_level"] = "warning"
-        result["status_summary"] = "云盘任务已提交，等待云盘完成"
+        result["status_summary"] = "下载任务已提交，等待完成"
         return result
 
     if int(result.get("release_count") or 0) > 0:
         result["status_category"] = "ready"
         result["status_level"] = "info"
-        result["status_summary"] = "已入库，等待自动选择或入云盘"
+        result["status_summary"] = "已入库，等待自动选择或下载"
         return result
 
     return result
@@ -439,7 +439,7 @@ def empty_entry_response() -> dict[str, Any]:
         "entry": None,
         "releases": [],
         "tasks": [],
-        "cloud_assets": [],
+        "download_artifacts": [],
         "local_assets": [],
         "groups": [],
         "resolutions": [],
@@ -459,15 +459,15 @@ def build_entry_response(entry_id: int) -> dict[str, Any]:
         tasks = conn.execute(
             """
             SELECT *
-            FROM cloud_submissions
+            FROM download_jobs
             WHERE entry_id=?
               AND status IN ('pending', 'running', 'submitted', 'failed')
             ORDER BY id DESC
             """,
             (entry_id,),
         ).fetchall()
-        cloud_assets = conn.execute(
-            "SELECT * FROM cloud_assets WHERE entry_id=? ORDER BY episode_number ASC, id DESC",
+        download_artifacts = conn.execute(
+            "SELECT * FROM download_artifacts WHERE entry_id=? ORDER BY episode_number ASC, id DESC",
             (entry_id,),
         ).fetchall()
         local_assets = conn.execute(
@@ -482,7 +482,7 @@ def build_entry_response(entry_id: int) -> dict[str, Any]:
         "entry": entry_payload,
         "releases": rows_to_dicts(releases),
         "tasks": rows_to_dicts(tasks),
-        "cloud_assets": rows_to_dicts(cloud_assets),
+        "download_artifacts": rows_to_dicts(download_artifacts),
         "local_assets": rows_to_dicts(local_assets),
         "groups": groups,
         "resolutions": resolutions,
@@ -597,23 +597,23 @@ def queue_entry_download(entry_id: int) -> dict[str, str]:
     ids, choice = resolve_entry_choice(entry_id, settings)
     mark_selected_releases(entry_id, ids)
     if not ids:
-        message = choice["reason"] or "没有可入云盘发布"
-        log("warn", f"手动入云盘跳过: {entry['display_title']} - {message}")
+        message = choice["reason"] or "没有可下载发布"
+        log("warn", f"手动下载跳过: {entry['display_title']} - {message}")
         return {"status": "skipped", "count": "0", "message": message}
     pipeline_key = "seasonal_mikan_tracking" if entry["domain_kind"] == "seasonal" else "library_backfill"
     for release_id in ids:
         run_id = start_pipeline(
             pipeline_key,
             trigger_source="manual",
-            first_step_key="cloud_presence",
+            first_step_key="download_presence",
             subject_type="release",
             subject_id=int(release_id),
             payload={"release_id": int(release_id), "entry_id": entry_id, "domain_kind": entry["domain_kind"]},
-            message="手动入云盘",
+            message="手动下载",
         )
-        log("info", f"手动入云盘流水线已启动: entry_id={entry_id} release_id={release_id} run_id={run_id}")
+        log("info", f"手动下载流水线已启动: entry_id={entry_id} release_id={release_id} run_id={run_id}")
     trigger_queue("processor", delay=0)
-    return {"status": "queued", "count": str(len(ids)), "message": f"已加入云盘队列: {len(ids)} 条"}
+    return {"status": "queued", "count": str(len(ids)), "message": f"已加入下载队列: {len(ids)} 条"}
 
 
 def start_entry_metadata_refresh(entry_id: int) -> dict[str, str]:
@@ -928,12 +928,12 @@ def queue_summary(settings: dict[str, str]) -> list[dict[str, Any]]:
         runtime_item("metadata", "元数据", "刷新 Bangumi/条目元数据"),
         runtime_item("selection", "自动选集", "根据全局优先级选择唯一发布"),
         runtime_item("backfill", "整季补全", "补抓当季历史条目"),
-        runtime_item("cloud_presence", "云盘存在性检查", "先查云盘同集资源，避免重复提交"),
-        runtime_item("cloud_submit", "PikPak 入库", "提交离线任务并写 cloud_submissions"),
-        runtime_item("cloud_poll", "PikPak 状态", "轮询离线任务完成状态"),
-        runtime_item("cloud_asset_register", "云盘资源登记", "完成后写 cloud_assets"),
-        runtime_item("sync_plan", "同步计划", "从 sync_rules 与 cloud_assets 生成内存同步任务"),
-        runtime_item("local_sync", "本地同步", "同步到本地并写 local_assets"),
+        runtime_item("download_presence", "下载产物检查", "先查同集下载产物，避免重复提交"),
+        runtime_item("download_submit", "提交下载器", "提交磁链/种子到下载器"),
+        runtime_item("download_poll", "下载状态", "轮询下载器完成状态"),
+        runtime_item("download_artifact_register", "下载产物登记", "完成后登记下载产物"),
+        runtime_item("sync_plan", "整理计划", "从下载产物生成本地整理任务"),
+        runtime_item("local_sync", "本地整理", "整理到本地媒体库并写 local_assets"),
         runtime_item("nfo", "NFO", "本地同步完成后生成 NFO"),
         runtime_item("local_presence", "本地存在性检查", "检查本地最终文件状态"),
     ]
@@ -1029,10 +1029,10 @@ def hydrate_queue_item_titles(details: dict[str, dict[str, Any]]) -> None:
     entry_ids = {int(item.get("entry_id") or 0) for item in items if int(item.get("entry_id") or 0) > 0}
     release_ids = {int(item.get("release_id") or 0) for item in items if int(item.get("release_id") or 0) > 0}
     candidate_ids = {int(item.get("candidate_id") or 0) for item in items if int(item.get("candidate_id") or 0) > 0}
-    cloud_asset_ids = {
-        int(item.get("cloud_asset_id") or item.get("subject_id") or 0)
+    download_artifact_ids = {
+        int(item.get("download_artifact_id") or item.get("subject_id") or 0)
         for item in items
-        if item.get("subject_type") == "cloud_asset" and int(item.get("cloud_asset_id") or item.get("subject_id") or 0) > 0
+        if item.get("subject_type") == "download_artifact" and int(item.get("download_artifact_id") or item.get("subject_id") or 0) > 0
     }
     local_asset_ids = {
         int(item.get("local_asset_id") or item.get("subject_id") or 0)
@@ -1043,7 +1043,7 @@ def hydrate_queue_item_titles(details: dict[str, dict[str, Any]]) -> None:
     entry_titles: dict[int, dict[str, Any]] = {}
     release_titles: dict[int, dict[str, Any]] = {}
     candidate_titles: dict[int, dict[str, Any]] = {}
-    cloud_asset_titles: dict[int, dict[str, Any]] = {}
+    download_artifact_titles: dict[int, dict[str, Any]] = {}
     local_asset_titles: dict[int, dict[str, Any]] = {}
 
     def placeholders(values: set[int]) -> str:
@@ -1082,18 +1082,18 @@ def hydrate_queue_item_titles(details: dict[str, dict[str, Any]]) -> None:
                 tuple(candidate_ids),
             ).fetchall()
             candidate_titles = {int(row["id"]): dict(row) for row in rows}
-        if cloud_asset_ids:
+        if download_artifact_ids:
             rows = conn.execute(
                 f"""
-                SELECT ca.id, ca.release_id, ca.entry_id, ca.cloud_name, ca.episode_number,
+                SELECT ca.id, ca.release_id, ca.entry_id, ca.artifact_name, ca.episode_number,
                   e.display_title, e.title_cn, e.title_root, e.domain_kind
-                FROM cloud_assets ca
+                FROM download_artifacts ca
                 JOIN entries e ON e.id=ca.entry_id
-                WHERE ca.id IN ({placeholders(cloud_asset_ids)})
+                WHERE ca.id IN ({placeholders(download_artifact_ids)})
                 """,
-                tuple(cloud_asset_ids),
+                tuple(download_artifact_ids),
             ).fetchall()
-            cloud_asset_titles = {int(row["id"]): dict(row) for row in rows}
+            download_artifact_titles = {int(row["id"]): dict(row) for row in rows}
         if local_asset_ids:
             rows = conn.execute(
                 f"""
@@ -1119,14 +1119,14 @@ def hydrate_queue_item_titles(details: dict[str, dict[str, Any]]) -> None:
             row = entry_titles[entry_id]
         elif candidate_id and candidate_id in candidate_titles:
             row = candidate_titles[candidate_id]
-        elif subject_type == "cloud_asset":
-            row = cloud_asset_titles.get(int(item.get("cloud_asset_id") or item.get("subject_id") or 0), {})
+        elif subject_type == "download_artifact":
+            row = download_artifact_titles.get(int(item.get("download_artifact_id") or item.get("subject_id") or 0), {})
         elif subject_type == "local_asset":
             row = local_asset_titles.get(int(item.get("local_asset_id") or item.get("subject_id") or 0), {})
         if not row:
             continue
         title = str(row.get("display_title") or row.get("title_cn") or row.get("series_title") or row.get("title_root") or row.get("title") or "").strip()
-        release_title = str(row.get("release_title") or row.get("cloud_name") or row.get("local_path") or row.get("title") or title).strip()
+        release_title = str(row.get("release_title") or row.get("artifact_name") or row.get("local_path") or row.get("title") or title).strip()
         item["display_title"] = title or item.get("display_title") or ""
         item["title_cn"] = title or item.get("title_cn") or ""
         item["release_title"] = release_title or item.get("release_title") or ""
@@ -1144,12 +1144,12 @@ def console_sections() -> list[dict[str, Any]]:
         {"key": "queue:metadata", "name": "元数据", "kind": "queue", "queue_key": "metadata"},
         {"key": "queue:selection", "name": "自动选集", "kind": "queue", "queue_key": "selection"},
         {"key": "queue:backfill", "name": "整季补全", "kind": "queue", "queue_key": "backfill"},
-        {"key": "queue:cloud_presence", "name": "云盘存在性检查", "kind": "queue", "queue_key": "cloud_presence"},
-        {"key": "queue:cloud_submit", "name": "PikPak 入库", "kind": "queue", "queue_key": "cloud_submit"},
-        {"key": "queue:cloud_poll", "name": "PikPak 状态", "kind": "queue", "queue_key": "cloud_poll"},
-        {"key": "queue:cloud_asset_register", "name": "云盘资源登记", "kind": "queue", "queue_key": "cloud_asset_register"},
-        {"key": "queue:sync_plan", "name": "同步计划", "kind": "queue", "queue_key": "sync_plan"},
-        {"key": "queue:local_sync", "name": "本地同步", "kind": "queue", "queue_key": "local_sync"},
+        {"key": "queue:download_presence", "name": "下载产物检查", "kind": "queue", "queue_key": "download_presence"},
+        {"key": "queue:download_submit", "name": "提交下载器", "kind": "queue", "queue_key": "download_submit"},
+        {"key": "queue:download_poll", "name": "下载状态", "kind": "queue", "queue_key": "download_poll"},
+        {"key": "queue:download_artifact_register", "name": "下载产物登记", "kind": "queue", "queue_key": "download_artifact_register"},
+        {"key": "queue:sync_plan", "name": "整理计划", "kind": "queue", "queue_key": "sync_plan"},
+        {"key": "queue:local_sync", "name": "本地整理", "kind": "queue", "queue_key": "local_sync"},
         {"key": "queue:nfo", "name": "NFO", "kind": "queue", "queue_key": "nfo"},
         {"key": "queue:local_presence", "name": "本地存在性检查", "kind": "queue", "queue_key": "local_presence"},
         {"key": "queue:cleanup", "name": "清理", "kind": "queue", "queue_key": "cleanup"},
@@ -1263,7 +1263,7 @@ def dashboard_data() -> dict[str, Any]:
               GROUP_CONCAT(DISTINCT r.resolution) AS resolutions,
               GROUP_CONCAT(DISTINCT r.language) AS languages,
               COUNT(DISTINCT CASE WHEN cs.status IN ('submitted','running','completed') THEN cs.id END) AS downloaded_count,
-              COUNT(DISTINCT ca.id) AS cloud_asset_count,
+              COUNT(DISTINCT ca.id) AS download_artifact_count,
               COUNT(DISTINCT la.id) AS local_asset_count,
               COALESCE(MAX(sr.sync_enabled), 0) AS sync_enabled
             FROM entries e
@@ -1271,8 +1271,8 @@ def dashboard_data() -> dict[str, Any]:
             JOIN works w ON w.id=e.work_id
             LEFT JOIN episodes ep ON ep.entry_id=e.id
             LEFT JOIN releases r ON r.entry_id=e.id
-            LEFT JOIN cloud_submissions cs ON cs.release_id=r.id
-            LEFT JOIN cloud_assets ca ON ca.release_id=r.id
+            LEFT JOIN download_jobs cs ON cs.release_id=r.id
+            LEFT JOIN download_artifacts ca ON ca.release_id=r.id
             LEFT JOIN local_assets la ON la.release_id=r.id AND la.status='synced'
             LEFT JOIN sync_rules sr ON sr.entry_id=e.id
             WHERE COALESCE(e.hidden, 0)=0
@@ -1308,14 +1308,14 @@ def dashboard_data() -> dict[str, Any]:
               w.title_root AS work_title,
               COUNT(DISTINCT ep.id) AS episode_count,
               COUNT(DISTINCT r.id) AS release_count,
-              COUNT(DISTINCT ca.id) AS cloud_asset_count,
+              COUNT(DISTINCT ca.id) AS download_artifact_count,
               COUNT(DISTINCT la.id) AS local_asset_count
             FROM entries e
             JOIN library_entries le ON le.entry_id=e.id
             JOIN works w ON w.id=e.work_id
             LEFT JOIN episodes ep ON ep.entry_id=e.id
             LEFT JOIN releases r ON r.entry_id=e.id
-            LEFT JOIN cloud_assets ca ON ca.release_id=r.id
+            LEFT JOIN download_artifacts ca ON ca.release_id=r.id
             LEFT JOIN local_assets la ON la.release_id=r.id AND la.status='synced'
             WHERE COALESCE(e.hidden, 0)=0
             GROUP BY e.id
@@ -1328,12 +1328,12 @@ def dashboard_data() -> dict[str, Any]:
               COUNT(DISTINCT w.id) AS work_count,
               COUNT(DISTINCT e.id) AS entry_count,
               COUNT(DISTINCT CASE WHEN COALESCE(e.bangumi_id, '')='' THEN e.id END) AS unmatched_count,
-              COUNT(DISTINCT ca.id) AS cloud_asset_count,
+              COUNT(DISTINCT ca.id) AS download_artifact_count,
               COUNT(DISTINCT la.id) AS local_asset_count
             FROM entries e
             JOIN library_entries le ON le.entry_id=e.id
             JOIN works w ON w.id=e.work_id
-            LEFT JOIN cloud_assets ca ON ca.entry_id=e.id
+            LEFT JOIN download_artifacts ca ON ca.entry_id=e.id
             LEFT JOIN local_assets la ON la.entry_id=e.id AND la.status='synced'
             WHERE COALESCE(e.hidden, 0)=0
             """
@@ -1382,7 +1382,7 @@ def dashboard_data() -> dict[str, Any]:
               e.special_label,
               w.title_root AS work_title
             FROM local_assets la
-            JOIN cloud_assets ca ON ca.id=la.cloud_asset_id
+            JOIN download_artifacts ca ON ca.id=la.download_artifact_id
             JOIN releases r ON r.id=la.release_id
             JOIN entries e ON e.id=r.entry_id
             JOIN seasonal_entries se ON se.entry_id=e.id
@@ -1417,7 +1417,7 @@ def dashboard_data() -> dict[str, Any]:
             JOIN seasonal_entries se ON se.entry_id=e.id
             JOIN works w ON w.id=e.work_id
             JOIN sync_rules sr ON sr.entry_id=e.id AND sr.sync_enabled=1
-            LEFT JOIN cloud_assets ca ON ca.release_id=r.id
+            LEFT JOIN download_artifacts ca ON ca.release_id=r.id
             LEFT JOIN local_assets la ON la.release_id=r.id
             WHERE COALESCE(e.hidden, 0)=0
               AND la.status='synced'
@@ -1486,7 +1486,7 @@ def dashboard_data() -> dict[str, Any]:
             "work_count": int((library_summary_row["work_count"] if library_summary_row else 0) or 0),
             "entry_count": int((library_summary_row["entry_count"] if library_summary_row else 0) or 0),
             "unmatched_count": int((library_summary_row["unmatched_count"] if library_summary_row else 0) or 0),
-            "cloud_asset_count": int((library_summary_row["cloud_asset_count"] if library_summary_row else 0) or 0),
+            "download_artifact_count": int((library_summary_row["download_artifact_count"] if library_summary_row else 0) or 0),
             "local_asset_count": int((library_summary_row["local_asset_count"] if library_summary_row else 0) or 0),
             "failed_entry_count": int((library_failed_row["failed_entry_count"] if library_failed_row else 0) or 0),
         },
@@ -1595,7 +1595,7 @@ async def api_update_settings(payload: SettingsPayload) -> dict[str, Any]:
             "resolution_priority": "\n".join(payload.resolution_priority),
             "language_priority": "\n".join(payload.language_priority),
             "secondary_language_priority": "\n".join(payload.secondary_language_priority),
-            "cloud_transfer_backend": payload.cloud_transfer_backend,
+            "download_backend": payload.download_backend,
             "rclone_command": payload.rclone_command.strip() or "rclone",
             "rclone_config_path": payload.rclone_config_path.strip(),
             "rclone_remote": payload.rclone_remote.strip() or "pikpak",
@@ -1606,7 +1606,7 @@ async def api_update_settings(payload: SettingsPayload) -> dict[str, Any]:
             "pikpak_refresh_token": payload.pikpak_refresh_token.strip(),
             "pikpak_proxy": payload.pikpak_proxy.strip(),
             "library_root": payload.library_root.strip() or "/Anime",
-            "local_library_root": payload.local_library_root.strip() or "/media/pikpak-anime",
+            "local_library_root": payload.local_library_root.strip() or "/media/autoanime",
             "auto_sync_following": str(payload.auto_sync_following).lower(),
             "nfo_output_root": payload.nfo_output_root.strip(),
             "series_dir_template": payload.work_dir_template.strip(),
@@ -1740,23 +1740,23 @@ async def api_trigger_queue(queue_name: str) -> dict[str, str]:
 async def api_process_tasks(force: bool = Query(False)) -> dict[str, str]:
     async def run() -> str:
         trigger_queue("processor", delay=0)
-        return "已触发 Runtime 处理器；云盘提交、状态、资源登记与同步计划会按流水线自动推进"
+        return "已触发 Runtime 处理器；下载提交、状态、产物登记与本地整理会按流水线自动推进"
 
     operation_id = run_operation(
-        "云盘队列立即处理" if force else "云盘队列处理",
+        "下载队列立即处理" if force else "下载队列处理",
         run,
-        "正在立即提交 PikPak 云盘任务" if force else "正在提交 PikPak 云盘任务",
+        "正在立即提交下载任务" if force else "正在提交下载任务",
     )
-    return {"status": "started", "operation_id": str(operation_id), "message": "云盘队列已立即触发" if force else "队列处理已启动"}
+    return {"status": "started", "operation_id": str(operation_id), "message": "下载队列已立即触发" if force else "队列处理已启动"}
 
 
 @app.post("/api/tasks/poll")
 async def api_poll_tasks() -> dict[str, str]:
     async def run() -> str:
         trigger_queue("processor", delay=0)
-        return "已触发 Runtime 处理器；等待中的 PikPak 状态任务到期后会继续推进"
+        return "已触发 Runtime 处理器；等待中的下载状态任务到期后会继续推进"
 
-    operation_id = run_operation("刷新云盘状态", run, "正在刷新 PikPak 任务和同步状态")
+    operation_id = run_operation("刷新下载状态", run, "正在刷新下载任务和本地整理状态")
     return {"status": "started", "operation_id": str(operation_id), "message": "状态刷新已启动"}
 
 
@@ -1764,26 +1764,26 @@ async def api_poll_tasks() -> dict[str, str]:
 async def api_scan_cloud() -> dict[str, str]:
     async def run() -> str:
         settings = get_settings()
-        imported, skipped = await scan_cloud_library(settings)
-        log("info", f"云盘库扫描完成: 入库 {imported} 个，跳过 {skipped} 个")
+        imported, skipped = await scan_remote_library(settings)
+        log("info", f"远端资源扫描完成: 入库 {imported} 个，跳过 {skipped} 个")
         return f"入库 {imported} 个，跳过 {skipped} 个"
 
-    operation_id = run_operation("扫描云盘库", run, "正在扫描 PikPak 云盘库")
-    return {"status": "started", "operation_id": str(operation_id), "message": "云盘库扫描已启动"}
+    operation_id = run_operation("扫描远端资源", run, "正在扫描下载器远端资源")
+    return {"status": "started", "operation_id": str(operation_id), "message": "远端资源扫描已启动"}
 
 
 @app.post("/api/library/import")
 async def api_library_import(payload: LibraryImportPayload) -> dict[str, str]:
-    source_type = (payload.source_type or "").strip() or "cloud_scan"
-    if source_type == "cloud_scan":
+    source_type = (payload.source_type or "").strip() or "remote_scan"
+    if source_type == "remote_scan":
         async def run() -> str:
             settings = get_settings()
-            imported, skipped = await scan_cloud_library(settings)
-            log("info", f"番剧库导入完成: 云盘扫描入库 {imported} 个，跳过 {skipped} 个")
-            return f"云盘扫描入库 {imported} 个，跳过 {skipped} 个"
+            imported, skipped = await scan_remote_library(settings)
+            log("info", f"番剧库导入完成: 远端资源入库 {imported} 个，跳过 {skipped} 个")
+            return f"远端资源入库 {imported} 个，跳过 {skipped} 个"
 
-        operation_id = run_operation("番剧库导入", run, "正在扫描云盘并写入番剧库条目")
-        return {"status": "started", "operation_id": str(operation_id), "message": "番剧库云盘导入已启动"}
+        operation_id = run_operation("番剧库导入", run, "正在扫描远端资源并写入番剧库条目")
+        return {"status": "started", "operation_id": str(operation_id), "message": "番剧库远端资源导入已启动"}
     if source_type in {"search", "magnet", "manual"}:
         log("info", f"番剧库导入请求已记录: {source_type}")
         return {"status": "planned", "message": "番剧库导入入口已预留，搜索源与手动导入将在后续阶段接入"}
@@ -1823,7 +1823,7 @@ async def api_process_runtime_sync() -> dict[str, str]:
                 for row in conn.execute(
                     """
                     SELECT DISTINCT ca.entry_id
-                    FROM cloud_assets ca
+                    FROM download_artifacts ca
                     JOIN entries e ON e.id=ca.entry_id
                     LEFT JOIN sync_rules sr ON sr.entry_id=ca.entry_id
                     WHERE ca.status='available'
@@ -1837,7 +1837,7 @@ async def api_process_runtime_sync() -> dict[str, str]:
             queue_entry_sync(entry_id)
         return f"已启动同步流水线 {len(entry_ids)} 个；本地同步会按 Runtime 自动推进"
 
-    operation_id = run_operation("本地同步", run, "正在把云盘资源同步到本地")
+    operation_id = run_operation("本地整理", run, "正在把下载产物整理到本地媒体库")
     return {"status": "started", "operation_id": str(operation_id), "message": "本地同步处理已启动"}
 
 
@@ -1908,11 +1908,11 @@ async def api_download_release(release_id: int) -> dict[str, str]:
     run_id = start_pipeline(
         pipeline_key,
         trigger_source="manual",
-        first_step_key="cloud_presence",
+        first_step_key="download_presence",
         subject_type="release",
         subject_id=release_id,
         payload={"release_id": release_id, "entry_id": int(release["entry_id"]), "domain_kind": release["domain_kind"]},
-        message="手动发布入云盘",
+        message="手动发布下载",
     )
     trigger_queue("processor", delay=0)
     return {"status": "queued", "run_id": str(run_id)}
@@ -1974,4 +1974,6 @@ async def spa(full_path: str) -> FileResponse:
         return FileResponse(index_file)
     fallback = APP_DIR / "static" / "missing-frontend.html"
     return FileResponse(fallback)
+
+
 
