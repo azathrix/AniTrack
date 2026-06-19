@@ -54,6 +54,20 @@ def compact_payload(payload: dict[str, Any] | None) -> str:
     return f"keys={keys}" if keys else "-"
 
 
+def processor_concurrency_limits() -> dict[str, int]:
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT processor_key, MAX(max_concurrency) AS max_concurrency
+            FROM pipeline_steps
+            WHERE enabled=1
+            GROUP BY processor_key
+            """
+        ).fetchall()
+    limits = {str(row["processor_key"]): max(1, int(row["max_concurrency"] or 1)) for row in rows}
+    return limits or {"metadata": 4, "mikan_match": 4, "download_submit": 1, "local_sync": 2, "nfo": 1}
+
+
 def pipeline_step(pipeline_id: int, step_key: str) -> dict[str, Any]:
     with connect() as conn:
         row = conn.execute(
@@ -284,8 +298,8 @@ async def dispatch_result(task: RuntimeTask, payload: dict[str, Any], result: Pr
     return enqueued
 
 
-async def run_one_task(processor_key: str = "") -> bool:
-    task = await runtime_store.claim_task(processor_key)
+async def run_one_task(processor_key: str = "", processor_limits: dict[str, int] | None = None) -> bool:
+    task = await runtime_store.claim_task(processor_key, processor_limits)
     if not task:
         return False
     processor = get_processor(str(task.processor_key))
@@ -330,10 +344,13 @@ async def run_one_task(processor_key: str = "") -> bool:
 
 
 async def run_ready_tasks(limit: int = 20, processor_key: str = "") -> int:
-    count = 0
-    for _ in range(max(1, limit)):
-        if not await run_one_task(processor_key):
-            break
-        count += 1
-    return count
+    import asyncio
+
+    limits = processor_concurrency_limits()
+    if processor_key:
+        limit = min(max(1, int(limits.get(processor_key, 1))), max(1, limit))
+    else:
+        limit = min(max(1, limit), 8)
+    results = await asyncio.gather(*(run_one_task(processor_key, limits) for _ in range(limit)))
+    return sum(1 for item in results if item)
 

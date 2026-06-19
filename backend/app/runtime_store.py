@@ -243,14 +243,22 @@ class RuntimeStore:
         self.tasks[task_id] = RuntimeTask(id=task_id, queue_key=kwargs["processor_key"], **kwargs)
         return task_id
 
-    async def claim_task(self, processor_key: str = "") -> RuntimeTask | None:
+    async def claim_task(self, processor_key: str = "", processor_limits: dict[str, int] | None = None) -> RuntimeTask | None:
         async with self._lock:
+            running_counts: dict[str, int] = {}
+            for task in self.tasks.values():
+                if task.status == "running":
+                    running_counts[task.processor_key] = running_counts.get(task.processor_key, 0) + 1
             candidates = [
                 task
                 for task in self.tasks.values()
                 if task.status in {"pending", "waiting"}
                 and (not processor_key or task.processor_key == processor_key)
                 and due(task.retry_at)
+                and (
+                    not processor_limits
+                    or running_counts.get(task.processor_key, 0) < max(1, int(processor_limits.get(task.processor_key, 1)))
+                )
             ]
             candidates.sort(key=lambda task: (task.updated_at, task.id))
             if not candidates:

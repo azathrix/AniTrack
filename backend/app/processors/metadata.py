@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from ..database import connect
-from ..db import get_settings, now
+from ..db import get_settings, log, now
 from ..metadata import fetch_bangumi_metadata, refresh_entry_metadata
 from ..pipeline_models import ProcessorContext, ProcessorResult
 from ..scanner import candidate_to_parsed_release, task_retry_after, upsert_release
@@ -21,9 +21,15 @@ async def process_candidate_metadata(context: ProcessorContext, payload: dict) -
         return ProcessorResult.retryable("缺少 Bangumi ID", task_retry_after(settings, context.attempts + 1))
 
     try:
+        log("info", f"元数据刷新开始: candidate_id={candidate_id} bangumi_id={bangumi_id} title={row['title']}")
         metadata = await fetch_bangumi_metadata(bangumi_id, settings.get("rss_proxy", ""))
         release = candidate_to_parsed_release(row)
         series_id, entry_id, release_id = upsert_release(release, metadata)
+        log(
+            "info",
+            f"元数据刷新完成: candidate_id={candidate_id} bangumi_id={bangumi_id} "
+            f"entry_id={entry_id} release_id={release_id} title={metadata.get('title_cn') or row['series_title']}",
+        )
     except Exception as exc:
         error = str(exc)[:2000]
         with connect() as conn:

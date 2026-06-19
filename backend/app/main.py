@@ -1080,7 +1080,7 @@ def hydrate_queue_item_titles(details: dict[str, dict[str, Any]]) -> None:
         if release_ids:
             rows = conn.execute(
                 f"""
-                SELECT r.id, r.entry_id, r.release_title, r.episode_number,
+                SELECT r.id, r.entry_id, r.title AS release_title, r.episode_number,
                   e.display_title, e.title_cn, e.title_root, e.domain_kind
                 FROM releases r
                 JOIN entries e ON e.id=r.entry_id

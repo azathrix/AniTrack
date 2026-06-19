@@ -16,16 +16,19 @@ from .parser import clean_name
 
 BANGUMI_API = "https://api.bgm.tv"
 USER_AGENT = "AutoAnime/0.1 (private NAS media automation)"
+BANGUMI_TIMEOUT = httpx.Timeout(15.0, connect=5.0)
 
 
 async def fetch_bangumi_subject(subject_id: str, proxy: str = "") -> dict[str, Any]:
     async with httpx.AsyncClient(
         proxy=proxy or None,
-        timeout=30,
+        timeout=BANGUMI_TIMEOUT,
         headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
     ) as client:
+        log("info", f"Bangumi 元数据请求: subject_id={subject_id}")
         resp = await client.get(f"{BANGUMI_API}/v0/subjects/{subject_id}")
         resp.raise_for_status()
+        log("info", f"Bangumi 元数据响应: subject_id={subject_id} status={resp.status_code} bytes={len(resp.content)}")
         return resp.json()
 
 
@@ -45,7 +48,7 @@ async def search_bangumi(keyword: str, proxy: str = "") -> list[dict[str, Any]]:
     payload = {"keyword": keyword, "filter": {"type": [2]}}
     async with httpx.AsyncClient(
         proxy=proxy or None,
-        timeout=30,
+        timeout=BANGUMI_TIMEOUT,
         headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
     ) as client:
         resp = await client.post(f"{BANGUMI_API}/v0/search/subjects", json=payload)

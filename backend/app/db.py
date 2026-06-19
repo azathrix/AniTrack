@@ -170,6 +170,24 @@ def ensure_pipeline_runtime(conn: sqlite3.Connection) -> None:
             ("sync_plan", "sync_plan"),
         ],
     }
+    processor_concurrency = {
+        "rss_fetch": 1,
+        "rss_candidate_persist": 4,
+        "mikan_match": 4,
+        "metadata": 4,
+        "seasonal_merge": 2,
+        "library_merge": 2,
+        "backfill": 2,
+        "selection": 3,
+        "download_presence": 4,
+        "download_submit": 1,
+        "download_poll": 3,
+        "download_artifact_register": 3,
+        "sync_plan": 3,
+        "local_sync": 2,
+        "nfo": 1,
+        "local_presence": 2,
+    }
     for pipeline_key, steps in step_map.items():
         pipeline = conn.execute("SELECT id FROM pipelines WHERE key=?", (pipeline_key,)).fetchone()
         if not pipeline:
@@ -186,14 +204,15 @@ def ensure_pipeline_runtime(conn: sqlite3.Connection) -> None:
             conn.execute(
                 """
                 INSERT INTO pipeline_steps
-                  (pipeline_id, step_key, processor_key, sort_order, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                  (pipeline_id, step_key, processor_key, sort_order, max_concurrency, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(pipeline_id, step_key) DO UPDATE SET
                   processor_key=excluded.processor_key,
                   sort_order=excluded.sort_order,
+                  max_concurrency=excluded.max_concurrency,
                   updated_at=excluded.updated_at
                 """,
-                (pipeline_id, step_key, processor_key, order, ts, ts),
+                (pipeline_id, step_key, processor_key, order, processor_concurrency.get(processor_key, 1), ts, ts),
             )
             if order < len(steps):
                 next_step = steps[order][0]
