@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .backfill import process_backfill
 from .download import (
+    process_download,
     process_download_artifact_register,
     process_download_poll,
     process_download_presence,
@@ -27,6 +28,7 @@ def register_builtin_processors() -> None:
     register_processor("library_merge", process_entry_merge)
     register_processor("backfill", process_backfill)
     register_processor("selection", process_selection)
+    register_processor("download", process_download)
     register_processor("download_presence", process_download_presence)
     register_processor("download_submit", process_download_submit)
     register_processor("download_poll", process_download_poll)

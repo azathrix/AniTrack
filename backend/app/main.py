@@ -291,9 +291,7 @@ SEASONAL_STATUS_QUEUE_ORDER = [
     "metadata",
     "selection",
     "backfill",
-    "download_submit",
-    "download_poll",
-    "local_sync",
+    "download",
     "nfo",
     "local_presence",
 ]
@@ -303,9 +301,7 @@ SEASONAL_STATUS_QUEUE_NAMES = {
     "metadata": "元数据",
     "selection": "自动选集",
     "backfill": "整季补全",
-    "download_submit": "提交下载器",
-    "download_poll": "下载状态",
-    "local_sync": "本地整理",
+    "download": "下载到本地",
     "nfo": "NFO",
     "local_presence": "本地存在性检查",
 }
@@ -610,7 +606,7 @@ def queue_entry_download(entry_id: int) -> dict[str, str]:
         run_id = start_pipeline(
             pipeline_key,
             trigger_source="manual",
-            first_step_key="download_submit",
+            first_step_key="download",
             subject_type="release",
             subject_id=int(release_id),
             payload={"release_id": int(release_id), "entry_id": entry_id, "domain_kind": entry["domain_kind"]},
@@ -949,9 +945,7 @@ def queue_summary(settings: dict[str, str]) -> list[dict[str, Any]]:
         runtime_item("metadata", "元数据", "刷新 Bangumi/条目元数据"),
         runtime_item("selection", "自动选集", "根据全局优先级选择唯一发布"),
         runtime_item("backfill", "整季补全", "补抓当季历史条目"),
-        runtime_item("download_submit", "提交下载器", "提交磁链/种子到下载器"),
-        runtime_item("download_poll", "下载状态", "轮询下载器完成状态"),
-        runtime_item("local_sync", "本地整理", "整理到本地媒体库并写 local_assets"),
+        runtime_item("download", "下载到本地", "提交下载器、轮询完成并整理到本地媒体库"),
         runtime_item("nfo", "NFO", "本地整理完成后生成 NFO"),
         runtime_item("local_presence", "本地存在性检查", "检查本地最终文件状态"),
     ]
@@ -1162,9 +1156,7 @@ def console_sections() -> list[dict[str, Any]]:
         {"key": "queue:metadata", "name": "元数据", "kind": "queue", "queue_key": "metadata"},
         {"key": "queue:selection", "name": "自动选集", "kind": "queue", "queue_key": "selection"},
         {"key": "queue:backfill", "name": "整季补全", "kind": "queue", "queue_key": "backfill"},
-        {"key": "queue:download_submit", "name": "提交下载器", "kind": "queue", "queue_key": "download_submit"},
-        {"key": "queue:download_poll", "name": "下载状态", "kind": "queue", "queue_key": "download_poll"},
-        {"key": "queue:local_sync", "name": "本地整理", "kind": "queue", "queue_key": "local_sync"},
+        {"key": "queue:download", "name": "下载到本地", "kind": "queue", "queue_key": "download"},
         {"key": "queue:nfo", "name": "NFO", "kind": "queue", "queue_key": "nfo"},
         {"key": "queue:local_presence", "name": "本地存在性检查", "kind": "queue", "queue_key": "local_presence"},
         {"key": "queue:cleanup", "name": "清理", "kind": "queue", "queue_key": "cleanup"},
@@ -1755,7 +1747,7 @@ async def api_trigger_queue(queue_name: str) -> dict[str, str]:
 async def api_process_tasks(force: bool = Query(False)) -> dict[str, str]:
     async def run() -> str:
         trigger_queue("processor", delay=0)
-        return "已触发 Runtime 处理器；下载提交、状态、产物登记与本地整理会按流水线自动推进"
+        return "已触发 Runtime 处理器；下载器会负责提交、轮询并整理到本地"
 
     operation_id = run_operation(
         "下载队列立即处理" if force else "下载队列处理",
@@ -1769,9 +1761,9 @@ async def api_process_tasks(force: bool = Query(False)) -> dict[str, str]:
 async def api_poll_tasks() -> dict[str, str]:
     async def run() -> str:
         trigger_queue("processor", delay=0)
-        return "已触发 Runtime 处理器；等待中的下载状态任务到期后会继续推进"
+        return "已触发 Runtime 处理器；等待中的下载任务到期后会继续推进"
 
-    operation_id = run_operation("刷新下载状态", run, "正在刷新下载任务和本地整理状态")
+    operation_id = run_operation("刷新下载任务", run, "正在刷新下载器任务状态")
     return {"status": "started", "operation_id": str(operation_id), "message": "状态刷新已启动"}
 
 
@@ -1979,7 +1971,7 @@ async def api_download_release(release_id: int) -> dict[str, str]:
     run_id = start_pipeline(
         pipeline_key,
         trigger_source="manual",
-        first_step_key="download_submit",
+        first_step_key="download",
         subject_type="release",
         subject_id=release_id,
         payload={"release_id": release_id, "entry_id": int(release["entry_id"]), "domain_kind": release["domain_kind"]},

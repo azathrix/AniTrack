@@ -19,8 +19,11 @@ def _download_artifact_id(context: ProcessorContext, payload: dict) -> int:
     return int(payload.get("download_artifact_id") or 0)
 
 
-async def process_local_sync(context: ProcessorContext, payload: dict) -> ProcessorResult:
-    download_artifact_id = _download_artifact_id(context, payload)
+async def sync_download_artifact_to_local(
+    context: ProcessorContext,
+    payload: dict,
+    download_artifact_id: int,
+) -> ProcessorResult:
     if download_artifact_id <= 0:
         return ProcessorResult.terminal("本地整理处理器缺少 download_artifact_id")
     settings = get_settings()
@@ -117,6 +120,10 @@ async def process_local_sync(context: ProcessorContext, payload: dict) -> Proces
             "entry_id": int(row["entry_id"] or 0),
         },
     )
+
+
+async def process_local_sync(context: ProcessorContext, payload: dict) -> ProcessorResult:
+    return await sync_download_artifact_to_local(context, payload, _download_artifact_id(context, payload))
 
 
 async def process_local_presence(context: ProcessorContext, payload: dict) -> ProcessorResult:

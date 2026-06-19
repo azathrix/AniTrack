@@ -138,9 +138,7 @@ def ensure_pipeline_runtime(conn: sqlite3.Connection) -> None:
             ("seasonal_merge", "seasonal_merge"),
             ("season_backfill", "backfill"),
             ("release_selection", "selection"),
-            ("download_submit", "download_submit"),
-            ("download_poll", "download_poll"),
-            ("local_sync", "local_sync"),
+            ("download", "download"),
             ("nfo_generate", "nfo"),
             ("local_presence", "local_presence"),
         ],
@@ -150,9 +148,7 @@ def ensure_pipeline_runtime(conn: sqlite3.Connection) -> None:
             ("bangumi_metadata", "metadata"),
             ("library_merge", "library_merge"),
             ("release_selection", "selection"),
-            ("download_submit", "download_submit"),
-            ("download_poll", "download_poll"),
-            ("local_sync", "local_sync"),
+            ("download", "download"),
             ("nfo_generate", "nfo"),
         ],
         "media_import": [
@@ -173,11 +169,7 @@ def ensure_pipeline_runtime(conn: sqlite3.Connection) -> None:
         "library_merge": 2,
         "backfill": 2,
         "selection": 3,
-        "download_presence": 4,
-        "download_submit": 1,
-        "download_poll": 3,
-        "download_artifact_register": 3,
-        "sync_plan": 3,
+        "download": 2,
         "local_sync": 2,
         "nfo": 1,
         "local_presence": 2,
@@ -220,10 +212,7 @@ def ensure_pipeline_runtime(conn: sqlite3.Connection) -> None:
                     """,
                     (pipeline_id, step_key, next_step, ts, ts),
                 )
-        special_transitions = [
-            ("download_submit", "skipped", "local_sync"),
-            ("download_poll", "skipped", "local_sync"),
-        ]
+        special_transitions = []
         for from_step, result_status, to_step in special_transitions:
             step_keys = {step_key for step_key, _ in steps}
             if from_step not in step_keys or to_step not in step_keys:

@@ -357,6 +357,73 @@ async def process_download_submit(context: ProcessorContext, payload: dict) -> P
     )
 
 
+async def process_download(context: ProcessorContext, payload: dict) -> ProcessorResult:
+    release_id = _release_subject(context, payload)
+    if release_id <= 0:
+        return ProcessorResult.terminal("下载处理器缺少 release_id")
+    settings = get_settings()
+    release = _release_row(release_id)
+    if not release:
+        return ProcessorResult.terminal(f"发布不存在: {release_id}")
+
+    submission = _submission_for_release(release_id)
+    if not submission or str(submission["status"] or "") not in {"submitted", "running", "completed"}:
+        submit_result = await process_download_submit(context, payload)
+        if submit_result.status == "failed_retryable":
+            return submit_result
+        if submit_result.status in {"failed_terminal", "conflict"}:
+            return submit_result
+        asset_id = int(
+            (submit_result.next_payload or {}).get("download_artifact_id")
+            or submit_result.data.get("download_artifact_id")
+            or 0
+        )
+        if asset_id > 0:
+            return await _sync_completed_artifact(context, payload, asset_id)
+        retry_after = task_retry_after(settings, context.attempts + 1)
+        return ProcessorResult.retryable(
+            submit_result.message or "下载任务已提交，等待完成",
+            retry_after,
+            data=submit_result.data,
+        )
+
+    poll_result = await process_download_poll(context, payload)
+    if poll_result.status == "failed_retryable":
+        return poll_result
+    if poll_result.status in {"failed_terminal", "conflict"}:
+        return poll_result
+    asset_id = int(
+        (poll_result.next_payload or {}).get("download_artifact_id")
+        or poll_result.data.get("download_artifact_id")
+        or 0
+    )
+    if asset_id <= 0:
+        return ProcessorResult.retryable(
+            "下载任务已完成，但缺少下载产物记录，等待后重试",
+            task_retry_after(settings, context.attempts + 1),
+            data=poll_result.data,
+        )
+    return await _sync_completed_artifact(context, payload, asset_id)
+
+
+async def _sync_completed_artifact(context: ProcessorContext, payload: dict, download_artifact_id: int) -> ProcessorResult:
+    from .sync import sync_download_artifact_to_local
+
+    local_result = await sync_download_artifact_to_local(context, payload, download_artifact_id)
+    if local_result.status != "success":
+        return local_result
+    log(
+        "info",
+        f"下载处理器完成: download_artifact_id={download_artifact_id} "
+        f"local_asset_id={local_result.data.get('local_asset_id') or 0}",
+    )
+    return ProcessorResult.success(
+        "下载到本地完成",
+        data=local_result.data,
+        next_payload=local_result.next_payload,
+    )
+
+
 async def process_download_poll(context: ProcessorContext, payload: dict) -> ProcessorResult:
     release_id = _release_subject(context, payload)
     if release_id <= 0:
