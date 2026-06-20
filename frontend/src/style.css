@@ -287,6 +287,25 @@ h1 {
   overflow: hidden;
 }
 
+.card-header-row {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.card-header-row > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.card-header-row span {
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 500;
+}
+
 .console-workbench-card {
   min-height: 780px;
 }

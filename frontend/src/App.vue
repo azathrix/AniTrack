@@ -80,6 +80,37 @@
           </div>
         </el-card>
 
+        <el-card class="span-4 console-card episode-job-card">
+          <template #header>
+            <div class="card-header-row">
+              <div>
+                <strong>按集运行态</strong>
+                <span>以每一集为单位汇总元数据、选集、下载、本地整理和 NFO</span>
+              </div>
+              <el-tag type="info">{{ episodeJobRows.length }} 条</el-tag>
+            </div>
+          </template>
+          <el-table :data="episodeJobRows" height="300" empty-text="暂无集数任务">
+            <el-table-column prop="status" label="状态" width="110">
+              <template #default="{ row }"><el-tag :type="taskTag(row.status)">{{ taskStatusText(row) }}</el-tag></template>
+            </el-table-column>
+            <el-table-column prop="display_title" label="番剧" min-width="220" show-overflow-tooltip />
+            <el-table-column prop="episode_number" label="集" width="70" />
+            <el-table-column prop="stage_label" label="阶段" width="120" />
+            <el-table-column label="规格" width="190" show-overflow-tooltip>
+              <template #default="{ row }">
+                {{ [row.subtitle_group, row.resolution, row.language, subtitleFormatText(row.subtitle_format)].filter(Boolean).join(' · ') || '-' }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="reason" label="说明" min-width="260" show-overflow-tooltip />
+            <el-table-column label="操作" width="96">
+              <template #default="{ row }">
+                <el-button v-if="row.entry_id" size="small" plain @click="openQueueEntry(row)">打开</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-card>
+
         <el-card class="span-4 console-card console-workbench-card">
           <div class="console-workbench">
             <aside class="console-nav">
@@ -769,6 +800,7 @@ const dashboard = reactive({
   scheduled_jobs: [],
   scheduled_runs: [],
   server_logs: [],
+  episode_jobs: [],
   queue_summary: [],
   queue_details: {},
   console_sections: [],
@@ -811,6 +843,7 @@ const libraryScopeOptions = computed(() => {
 const activeDetailRows = computed(() => selectedEntryDomain.value === 'library' ? libraryRows.value : seasonalRows.value)
 const downloadArtifactTotal = computed(() => seasonalRows.value.reduce((sum, item) => sum + Number(item.download_artifact_count || 0), 0))
 const localAssetTotal = computed(() => seasonalRows.value.reduce((sum, item) => sum + Number(item.local_asset_count || 0), 0))
+const episodeJobRows = computed(() => (dashboard.episode_jobs || []).slice(0, 20))
 const seasonalCalendarCards = computed(() => dashboard.seasonal_sync_calendar || [])
 const weekStart = computed(() => startOfWeek(calendarWeek.value ? new Date(calendarWeek.value) : new Date()))
 const weekDays = computed(() => {

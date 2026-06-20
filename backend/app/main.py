@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 from .config import APP_DIR
 from .database import connect
 from .db import clear_runtime_data, diagnostics, get_runtime_generation, get_settings, init_db, log, merge_duplicate_series, now, save_settings
+from .episode_jobs import build_episode_jobs
 from .queue_bridge import register_queue_trigger
 from .runtime_store import runtime_store
 from .library import bool_setting
@@ -1470,6 +1471,7 @@ def dashboard_data() -> dict[str, Any]:
     scheduled_jobs = scheduled_jobs_summary()
     scheduled_runs = list(runtime_snapshot.get("scheduler_runs") or [])[-40:]
     server_logs = list(runtime_snapshot.get("logs") or [])[-160:]
+    episode_jobs = build_episode_jobs(runtime_snapshot, limit=240)
     operations_list = [
         dict(item)
         for item in runtime_snapshot.get("operations", [])
@@ -1502,6 +1504,7 @@ def dashboard_data() -> dict[str, Any]:
         "seasonal_sync_calendar": seasonal_calendar_rows,
         "seasonal_update_calendar": seasonal_update_rows,
         "recent_synced_seasonal_entries": recent_synced_rows,
+        "episode_jobs": episode_jobs,
         "sync_rules": rows_to_dicts(sync_rules),
         "operations": operations_list,
         "scheduled_jobs": scheduled_jobs,
@@ -1530,6 +1533,13 @@ async def cached_dashboard_data() -> dict[str, Any]:
 @app.get("/api/dashboard")
 async def api_dashboard() -> dict[str, Any]:
     return await cached_dashboard_data()
+
+
+@app.get("/api/episode-jobs")
+async def api_episode_jobs(domain_kind: str = Query("")) -> list[dict[str, Any]]:
+    return await run_in_threadpool(
+        lambda: build_episode_jobs(runtime_store.snapshot(), domain_kind=domain_kind, limit=500)
+    )
 
 
 @app.get("/api/dashboard/stream")

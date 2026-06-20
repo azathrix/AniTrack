@@ -1,2 +1,2 @@
 export const APP_VERSION = '0.1.0'
-export const APP_BUILD = '20260620-214120'
+export const APP_BUILD = '20260620-224717'
