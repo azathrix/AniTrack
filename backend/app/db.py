@@ -147,6 +147,7 @@ def ensure_pipeline_runtime(conn: sqlite3.Connection) -> None:
             ("candidate_persist", "rss_candidate_persist"),
             ("bangumi_metadata", "metadata"),
             ("library_merge", "library_merge"),
+            ("season_backfill", "backfill"),
             ("release_selection", "selection"),
             ("download", "download"),
             ("nfo_generate", "nfo"),

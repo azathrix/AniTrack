@@ -127,6 +127,35 @@ class EpisodeJobTests(unittest.TestCase):
         self.assertEqual(ready_job["stage"], "done")
         self.assertEqual(ready_job["status"], "completed")
 
+    def test_stale_runtime_task_does_not_move_episode_job_backwards(self) -> None:
+        _, entry_id, release_id = upsert_release(
+            release("job-stale-runtime", bangumi_id="100301"),
+            {"title_cn": "Test Anime", "year": 2026},
+        )
+        mark_selected_releases(entry_id, [release_id])
+        snapshot = {
+            "queue_details": {
+                "metadata": {
+                    "items": [
+                        {
+                            "id": 7001,
+                            "processor_key": "metadata",
+                            "status": "waiting",
+                            "entry_id": entry_id,
+                            "release_id": release_id,
+                            "episode_number": 1,
+                            "last_error": "temporary bangumi error",
+                        }
+                    ]
+                }
+            }
+        }
+
+        job = next(item for item in build_episode_jobs(snapshot) if item["release_id"] == release_id)
+        self.assertEqual(job["stage"], "download")
+        self.assertEqual(job["status"], "pending")
+        self.assertNotEqual(job.get("runtime_task_id"), 7001)
+
 
 if __name__ == "__main__":
     unittest.main()

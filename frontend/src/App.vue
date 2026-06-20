@@ -745,7 +745,7 @@
           <el-button type="primary" @click="saveCurrentEntry">保存</el-button>
           <el-button plain @click="runEntryAction('metadata')">刷新元数据</el-button>
           <el-button plain @click="runEntryAction('nfo')">生成 NFO</el-button>
-          <el-button v-if="selectedEntryDomain === 'library'" plain @click="runEntryAction('backfill')">补全条目</el-button>
+          <el-button plain @click="runEntryAction('backfill')">补全条目</el-button>
           <el-popconfirm title="只从列表隐藏这个误识别条目，保留关联记录。确定隐藏？" @confirm="deleteCurrentEntry">
             <template #reference>
               <el-button type="danger" plain>{{ selectedEntryDomain === 'library' ? '隐藏条目' : '隐藏误识别' }}</el-button>

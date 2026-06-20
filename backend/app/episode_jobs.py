@@ -29,6 +29,16 @@ PROCESSOR_STAGE = {
     "local_presence": "done",
 }
 
+STAGE_ORDER = {
+    "metadata": 10,
+    "select_release": 20,
+    "download": 30,
+    "localize": 40,
+    "nfo": 50,
+    "done": 60,
+    "failed": 90,
+}
+
 
 def build_episode_jobs(
     runtime_snapshot: dict[str, Any] | None = None,
@@ -203,6 +213,8 @@ def _overlay_runtime_state(jobs: list[dict[str, Any]], runtime_snapshot: dict[st
         status = str(task.get("status") or "")
         processor_key = str(task.get("processor_key") or task.get("queue_key") or "")
         stage = PROCESSOR_STAGE.get(processor_key, job.get("stage") or "")
+        if _runtime_task_is_stale(job, stage, status):
+            continue
         if status == "waiting" and due(str(task.get("retry_after") or "")):
             status = "pending"
         if status in {"failed", "running", "waiting", "pending"}:
@@ -212,3 +224,16 @@ def _overlay_runtime_state(jobs: list[dict[str, Any]], runtime_snapshot: dict[st
             job["reason"] = task.get("last_error") or task.get("progress_text") or task.get("message") or job.get("reason") or ""
             job["runtime_task_id"] = int(task.get("id") or 0)
             job["retry_after"] = task.get("retry_after") or job.get("retry_after") or ""
+
+
+def _runtime_task_is_stale(job: dict[str, Any], runtime_stage: str, runtime_status: str) -> bool:
+    """Ignore lower-stage Runtime tasks when durable facts already moved on."""
+
+    current_stage = str(job.get("stage") or "")
+    if current_stage == "done":
+        return True
+    if runtime_status == "failed":
+        return False
+    current_order = STAGE_ORDER.get(current_stage, 0)
+    runtime_order = STAGE_ORDER.get(runtime_stage, current_order)
+    return runtime_order < current_order

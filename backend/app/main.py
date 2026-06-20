@@ -25,7 +25,7 @@ from .import_service import preview_local_import, preview_torrent_import
 from .queue_bridge import register_queue_trigger
 from .runtime_store import runtime_store
 from .library import bool_setting
-from .metadata import generate_nfo_for_entry, refresh_entry_metadata
+from .metadata import generate_nfo_for_entry
 from .pipeline_orchestrator import run_ready_tasks, start_pipeline
 from .pipeline_runtime import finish_pipeline_run, pipeline_overview, start_pipeline_run, update_pipeline_run
 from .processors import register_builtin_processors
@@ -634,9 +634,45 @@ def queue_entry_download(entry_id: int) -> dict[str, str]:
 
 
 def start_entry_metadata_refresh(entry_id: int) -> dict[str, str]:
-    settings = get_settings()
-    asyncio.create_task(refresh_entry_metadata(entry_id, settings.get("rss_proxy", "")))
-    return {"status": "started"}
+    with connect() as conn:
+        entry = conn.execute("SELECT domain_kind FROM entries WHERE id=?", (entry_id,)).fetchone()
+    if not entry:
+        return {"status": "not_found", "message": "条目不存在"}
+    domain_kind = str(entry["domain_kind"] or "seasonal")
+    pipeline_key = "seasonal_mikan_tracking" if domain_kind == "seasonal" else "library_backfill"
+    run_id = start_pipeline(
+        pipeline_key,
+        trigger_source="manual",
+        first_step_key="bangumi_metadata",
+        subject_type="entry",
+        subject_id=entry_id,
+        payload={"entry_id": entry_id, "domain_kind": domain_kind},
+        message="手动刷新元数据",
+    )
+    trigger_queue("processor", delay=0)
+    return {"status": "queued", "run_id": str(run_id), "message": "元数据刷新已加入 Runtime 队列"}
+
+
+def queue_entry_backfill(entry_id: int) -> dict[str, str]:
+    with connect() as conn:
+        entry = conn.execute("SELECT domain_kind FROM entries WHERE id=?", (entry_id,)).fetchone()
+    if not entry:
+        return {"status": "not_found", "message": "条目不存在"}
+    domain_kind = str(entry["domain_kind"] or "seasonal")
+    pipeline_key = "seasonal_mikan_tracking" if domain_kind == "seasonal" else "library_backfill"
+    run_id = start_pipeline(
+        pipeline_key,
+        trigger_source="manual",
+        first_step_key="season_backfill",
+        subject_type="entry",
+        subject_id=entry_id,
+        payload={"entry_id": entry_id, "domain_kind": domain_kind},
+        message="手动补全条目发布",
+    )
+    trigger_queue("processor", delay=0)
+    if run_id <= 0:
+        return {"status": "invalid", "message": "当前流水线不支持补全"}
+    return {"status": "queued", "run_id": str(run_id), "message": "补全任务已加入 Runtime 队列"}
 
 
 def generate_entry_nfo(entry_id: int) -> dict[str, str]:
@@ -660,11 +696,10 @@ def queue_entry_sync(entry_id: int) -> dict[str, str]:
         return {"status": "not_found", "message": "条目不存在"}
     if not artifacts:
         return {"status": "skipped", "count": "0", "message": "暂无可整理的下载产物"}
-    pipeline_key = "seasonal_mikan_tracking" if entry["domain_kind"] == "seasonal" else "library_backfill"
     run_ids: list[int] = []
     for artifact in artifacts:
         run_id = start_pipeline(
-            pipeline_key,
+            "media_import",
             trigger_source="manual",
             first_step_key="local_sync",
             subject_type="download_artifact",
@@ -1907,26 +1942,12 @@ async def api_delete_media_library(library_id: int) -> dict[str, str]:
 
 @app.post("/api/library/{entry_id}/backfill")
 async def api_backfill_library_entry(entry_id: int) -> dict[str, str]:
-    with connect() as conn:
-        entry = conn.execute(
-            "SELECT id, domain_kind FROM entries WHERE id=?",
-            (entry_id,),
-        ).fetchone()
-        if not entry:
-            return {"status": "not_found", "message": "条目不存在"}
-        if entry["domain_kind"] != "library":
-            return {"status": "invalid_domain", "message": "该条目不属于番剧库"}
-    run_id = start_pipeline(
-        "library_backfill",
-        trigger_source="manual",
-        first_step_key="release_selection",
-        subject_type="entry",
-        subject_id=entry_id,
-        payload={"entry_id": entry_id, "domain_kind": "library"},
-        message="手动番剧库补全",
-    )
-    trigger_queue("processor", delay=0)
-    return {"status": "queued", "message": f"番剧库补全流水线已启动 run_id={run_id}"}
+    return queue_entry_backfill(entry_id)
+
+
+@app.post("/api/seasonal/{entry_id}/backfill")
+async def api_backfill_seasonal_entry(entry_id: int) -> dict[str, str]:
+    return queue_entry_backfill(entry_id)
 
 
 @app.post("/api/sync/tasks/process")

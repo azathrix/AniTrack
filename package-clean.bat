@@ -32,11 +32,12 @@ if not exist "%BUILD_DIR%" mkdir "%BUILD_DIR%"
 
 set "TARGET=%BUILD_DIR%\AutoAnime-clean"
 
+if exist "%TARGET%" rmdir /S /Q "%TARGET%"
 if not exist "%TARGET%" mkdir "%TARGET%"
 
 robocopy "%ROOT%" "%TARGET%" ^
   /MIR ^
-  /XD ".git" "build" "data" "test-data" "node_modules" ".vite" "__pycache__" ".tmp-smoke" ".tmp-smoke-download" ".tmp-smoke-download2" ".tmp-smoke-media" ".tmp-smoke-media2" ^
+  /XD ".git" "build" "data" "test-data" "node_modules" ".vite" "__pycache__" ".tmp-smoke*" ^
   /XF "*.zip" "*.log" "*.pyc" ".env" ^
   /R:2 /W:2 /NFL /NDL /NP
 
