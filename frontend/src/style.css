@@ -306,6 +306,14 @@ h1 {
   font-weight: 500;
 }
 
+.card-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .console-workbench-card {
   min-height: 780px;
 }
@@ -928,6 +936,20 @@ h1 {
   display: grid;
   gap: 10px;
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+}
+
+.import-commit-panel {
+  background: #f8fafc;
+  border: 1px solid #dfe7f3;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  padding: 12px;
+}
+
+.import-options-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
 }
 
 .toolbar {

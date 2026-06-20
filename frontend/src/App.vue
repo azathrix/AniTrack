@@ -518,7 +518,7 @@
             <div class="card-header-row">
               <div>
                 <strong>导入向导</strong>
-                <span>先解析资源候选，后续会接入匹配元数据、选择媒体库和正式入库</span>
+                <span>解析候选后写入番剧库，本地文件直接成为本地资源，磁链可立即进入下载器</span>
               </div>
             </div>
           </template>
@@ -544,11 +544,49 @@
             <div class="card-header-row">
               <div>
                 <strong>候选资源</strong>
-                <span>这里只做解析预览，不会写数据库</span>
+                <span>确认标题和媒体库后正式入库</span>
               </div>
-              <el-tag type="info">{{ importCandidates.length }} 条</el-tag>
+              <div class="card-actions">
+                <el-tag type="info">{{ importCandidates.length }} 条</el-tag>
+                <el-button type="primary" :disabled="!importCandidates.length" :loading="importLoading" @click="commitImport">正式导入</el-button>
+              </div>
             </div>
           </template>
+          <div class="import-commit-panel">
+            <el-form :model="importCommit" label-position="top">
+              <div class="import-form-grid">
+                <el-form-item label="入库标题">
+                  <el-input v-model="importCommit.title_cn" placeholder="留空则使用解析标题" />
+                </el-form-item>
+                <el-form-item label="媒体库">
+                  <el-select v-model="importCommit.target_library_id" placeholder="选择媒体库">
+                    <el-option
+                      v-for="library in dashboard.media_libraries"
+                      :key="library.id"
+                      :label="`${library.name} · ${library.root_path}`"
+                      :value="Number(library.id)"
+                    />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="年份">
+                  <el-input-number v-model="importCommit.year" :min="0" :max="2100" />
+                </el-form-item>
+                <el-form-item label="季">
+                  <el-input-number v-model="importCommit.season_number" :min="1" :max="99" />
+                </el-form-item>
+                <el-form-item label="Bangumi ID">
+                  <el-input v-model="importCommit.bangumi_id" placeholder="可选" />
+                </el-form-item>
+                <el-form-item label="TMDB ID">
+                  <el-input v-model="importCommit.tmdb_id" placeholder="可选" />
+                </el-form-item>
+              </div>
+              <div class="import-options-row">
+                <el-checkbox v-model="importCommit.generate_nfo">本地导入后生成 NFO</el-checkbox>
+                <el-checkbox v-model="importCommit.start_download">磁链导入后立即下载</el-checkbox>
+              </div>
+            </el-form>
+          </div>
           <el-table :data="importCandidates" height="520" empty-text="暂无候选，先选择一种导入方式预览">
             <el-table-column prop="source_type" label="来源" width="90" />
             <el-table-column prop="series_title" label="标题" min-width="220" show-overflow-tooltip />
@@ -844,6 +882,18 @@ const importTab = ref('local')
 const localImportPath = ref('')
 const importLoading = ref(false)
 const importCandidates = ref([])
+const importCommit = reactive({
+  title_cn: '',
+  bangumi_id: '',
+  tmdb_id: '',
+  year: 0,
+  season_number: 1,
+  media_type: 'anime',
+  region: 'jp',
+  target_library_id: 0,
+  start_download: true,
+  generate_nfo: true,
+})
 const torrentImport = reactive({
   title: '',
   magnet: '',
@@ -1339,11 +1389,26 @@ function shiftCalendarWeek(delta) {
 
 function applyDashboard(nextDashboard) {
   Object.assign(dashboard, nextDashboard || {})
+  ensureImportDefaults()
   const source = consoleNavMode.value === '定时任务' ? scheduledConsoleSections.value : queueListSections.value
   if (!source.some(item => item.key === selectedConsoleSection.value)) {
     const fallback = source[0] || queueListSections.value[0]
     selectedConsoleSection.value = fallback?.key || 'queue:mikan_match'
   }
+}
+
+function ensureImportDefaults() {
+  if (Number(importCommit.target_library_id || 0) > 0) return
+  const library = (dashboard.media_libraries || []).find(item => item.key === 'anime_library')
+    || (dashboard.media_libraries || []).find(item => item.media_type === 'anime')
+    || (dashboard.media_libraries || [])[0]
+  if (library) importCommit.target_library_id = Number(library.id || 0)
+}
+
+function applyImportCandidateDefaults() {
+  const first = importCandidates.value[0] || {}
+  if (!importCommit.title_cn && first.series_title) importCommit.title_cn = first.series_title
+  if (!Number(importCommit.year || 0) && Number(first.year || 0) > 0) importCommit.year = Number(first.year || 0)
 }
 
 async function previewLocalImport() {
@@ -1358,6 +1423,7 @@ async function previewLocalImport() {
       limit: 300
     })
     importCandidates.value = result.items || []
+    applyImportCandidateDefaults()
     if (result.status === 'not_found') {
       ElMessage.warning(result.message || '路径不存在')
     } else {
@@ -1380,11 +1446,50 @@ async function previewTorrentImport() {
       page_url: torrentImport.page_url
     })
     importCandidates.value = result.item && Object.keys(result.item).length ? [result.item] : []
+    applyImportCandidateDefaults()
     if (result.status === 'invalid') {
       ElMessage.warning(result.message || '资源链接无效')
     } else {
       ElMessage.success('解析完成')
     }
+  } catch (error) {
+    ElMessage.error(apiErrorMessage(error))
+  } finally {
+    importLoading.value = false
+  }
+}
+
+async function commitImport() {
+  if (!importCandidates.value.length) {
+    ElMessage.warning('没有可导入候选')
+    return
+  }
+  importLoading.value = true
+  try {
+    const first = importCandidates.value[0] || {}
+    const isTorrent = first.source_type === 'torrent'
+    const payload = {
+      items: importCandidates.value,
+      item: first,
+      title_cn: importCommit.title_cn,
+      bangumi_id: importCommit.bangumi_id,
+      tmdb_id: importCommit.tmdb_id,
+      year: Number(importCommit.year || 0),
+      season_number: Number(importCommit.season_number || 1),
+      media_type: importCommit.media_type,
+      region: importCommit.region,
+      target_library_id: Number(importCommit.target_library_id || 0),
+      start_download: Boolean(importCommit.start_download),
+      generate_nfo: Boolean(importCommit.generate_nfo),
+    }
+    const result = await postAction(isTorrent ? '/import/torrent/commit' : '/import/local/commit', payload)
+    if (result.status === 'invalid') {
+      ElMessage.warning(result.message || '导入参数无效')
+      return
+    }
+    const count = isTorrent ? 1 : Number(result.imported_count || 0)
+    ElMessage.success(`已导入 ${count} 条资源`)
+    await reload()
   } catch (error) {
     ElMessage.error(apiErrorMessage(error))
   } finally {

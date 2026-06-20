@@ -21,7 +21,7 @@ from .config import APP_DIR
 from .database import connect
 from .db import clear_runtime_data, diagnostics, get_runtime_generation, get_settings, init_db, log, merge_duplicate_series, now, save_settings
 from .episode_jobs import build_episode_jobs
-from .import_service import preview_local_import, preview_torrent_import
+from .import_service import commit_local_import, commit_torrent_import, preview_local_import, preview_torrent_import
 from .queue_bridge import register_queue_trigger
 from .runtime_store import runtime_store
 from .library import bool_setting
@@ -116,6 +116,21 @@ class TorrentImportPreviewPayload(BaseModel):
     magnet: str = ""
     torrent_url: str = ""
     page_url: str = ""
+
+
+class ImportCommitPayload(BaseModel):
+    items: list[dict[str, Any]] = Field(default_factory=list)
+    item: dict[str, Any] = Field(default_factory=dict)
+    title_cn: str = ""
+    bangumi_id: str = ""
+    tmdb_id: str = ""
+    year: int = 0
+    season_number: int = 1
+    media_type: str = "anime"
+    region: str = "jp"
+    target_library_id: int = 0
+    start_download: bool = True
+    generate_nfo: bool = True
 
 
 class MediaLibraryPayload(BaseModel):
@@ -1613,6 +1628,72 @@ async def api_import_torrent_preview(payload: TorrentImportPreviewPayload) -> di
     except ValueError as exc:
         return {"status": "invalid", "message": str(exc), "item": {}}
     return {"status": "completed", "item": item}
+
+
+def import_options(payload: ImportCommitPayload) -> dict[str, Any]:
+    return {
+        "title_cn": payload.title_cn.strip(),
+        "bangumi_id": payload.bangumi_id.strip(),
+        "tmdb_id": payload.tmdb_id.strip(),
+        "year": payload.year,
+        "season_number": payload.season_number,
+        "media_type": payload.media_type.strip() or "anime",
+        "region": payload.region.strip() or "jp",
+        "target_library_id": payload.target_library_id,
+    }
+
+
+@app.post("/api/import/local/commit")
+async def api_import_local_commit(payload: ImportCommitPayload) -> dict[str, Any]:
+    result = await run_in_threadpool(lambda: commit_local_import(payload.items, import_options(payload)))
+    queued = 0
+    if payload.generate_nfo:
+        for item in result.get("imported", []):
+            local_asset_id = int(item.get("local_asset_id") or 0)
+            entry_id = int(item.get("entry_id") or 0)
+            if local_asset_id <= 0 or entry_id <= 0:
+                continue
+            run_id = start_pipeline(
+                "media_import",
+                trigger_source="import",
+                first_step_key="nfo_generate",
+                subject_type="local_asset",
+                subject_id=local_asset_id,
+                payload={"local_asset_id": local_asset_id, "entry_id": entry_id, "domain_kind": "library"},
+                message="本地导入后生成 NFO",
+            )
+            if run_id > 0:
+                queued += 1
+        if queued:
+            trigger_queue("processor", delay=0)
+    log("info", f"本地导入完成: imported={result.get('imported_count', 0)} skipped={result.get('skipped_count', 0)} nfo_queued={queued}")
+    return {"status": "completed", "nfo_queued": queued, **result}
+
+
+@app.post("/api/import/torrent/commit")
+async def api_import_torrent_commit(payload: ImportCommitPayload) -> dict[str, Any]:
+    candidate = payload.item or (payload.items[0] if payload.items else {})
+    try:
+        imported = await run_in_threadpool(lambda: commit_torrent_import(candidate, import_options(payload)))
+    except ValueError as exc:
+        return {"status": "invalid", "message": str(exc), "imported": {}}
+    run_id = 0
+    if payload.start_download:
+        release_id = int(imported.get("release_id") or 0)
+        entry_id = int(imported.get("entry_id") or 0)
+        if release_id > 0:
+            run_id = start_pipeline(
+                "library_backfill",
+                trigger_source="import",
+                first_step_key="download",
+                subject_type="release",
+                subject_id=release_id,
+                payload={"release_id": release_id, "entry_id": entry_id, "domain_kind": "library"},
+                message="磁链导入后启动下载",
+            )
+            trigger_queue("processor", delay=0)
+    log("info", f"磁链导入完成: entry_id={imported.get('entry_id', 0)} release_id={imported.get('release_id', 0)} run_id={run_id}")
+    return {"status": "completed", "imported": imported, "run_id": run_id}
 
 
 @app.get("/api/dashboard/stream")
