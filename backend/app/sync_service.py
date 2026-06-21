@@ -7,7 +7,7 @@ from pathlib import Path
 from .database import connect
 from .downloader_service import download_to_local, list_remote_files, provider_key, remote_file_id
 from .db import log, now
-from .library import local_library_root, render_episode_name, render_season_dir, render_series_dir
+from .library import local_library_root, media_root_for_type, render_episode_name, render_season_dir, render_series_dir
 from .parser import normalize_title_key, parse_episode
 
 
@@ -40,11 +40,21 @@ def task_retry_after(settings: dict[str, str], attempts: int) -> str:
 
 def ensure_sync_rule(entry_id: int, settings: dict[str, str], enabled: bool | None = None) -> None:
     ts = now()
-    auto_sync = settings.get("auto_sync_following", "false").lower() == "true"
-    sync_enabled = auto_sync if enabled is None else enabled
-    explicit_enabled = enabled is not None
+    sync_enabled = True if enabled is None else enabled
     with connect() as conn:
         series_id = resolve_entry_series_id(conn, entry_id)
+        entry_row = conn.execute(
+            """
+            SELECT e.media_type, ml.root_path
+            FROM entries e
+            LEFT JOIN media_libraries ml ON ml.id=e.target_library_id AND ml.enabled=1
+            WHERE e.id=?
+            """,
+            (entry_id,),
+        ).fetchone()
+        local_root = media_root_for_type("anime")
+        if entry_row:
+            local_root = str(entry_row["root_path"] or "").strip() or media_root_for_type(str(entry_row["media_type"] or "anime"))
         conn.execute(
             """
             INSERT INTO sync_rules
@@ -52,23 +62,19 @@ def ensure_sync_rule(entry_id: int, settings: dict[str, str], enabled: bool | No
             VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(entry_id) DO UPDATE SET
               series_id=excluded.series_id,
-              sync_enabled=CASE
-                WHEN ?=1 THEN excluded.sync_enabled
-                ELSE sync_rules.sync_enabled
-              END,
+              sync_enabled=excluded.sync_enabled,
               auto_sync_following=excluded.auto_sync_following,
-              local_root=CASE WHEN sync_rules.local_root='' THEN excluded.local_root ELSE sync_rules.local_root END,
+              local_root=excluded.local_root,
               updated_at=excluded.updated_at
             """,
             (
                 series_id,
                 entry_id,
                 1 if sync_enabled else 0,
-                1 if auto_sync else 0,
-                settings.get("local_library_root") or "/media/autoanime",
+                1,
+                local_root,
                 ts,
                 ts,
-                1 if explicit_enabled else 0,
             ),
         )
 

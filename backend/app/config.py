@@ -7,6 +7,7 @@ from pathlib import Path
 APP_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("APP_DATA_DIR", "/data"))
 DB_PATH = DATA_DIR / "autoanime.db"
+MEDIA_ROOT = Path(os.environ.get("AUTOANIME_MEDIA_ROOT", "/media"))
 
 
 DEFAULT_SETTINGS = {
@@ -39,8 +40,8 @@ DEFAULT_SETTINGS = {
     "pikpak_encoded_token": "",
     "pikpak_proxy": "",
     "library_root": "/Anime",
-    "local_library_root": "/media/autoanime",
-    "auto_sync_following": "false",
+    "local_library_root": str(MEDIA_ROOT),
+    "auto_sync_following": "true",
     "migration_auto_sync_default_v2": "",
     "nfo_output_root": "",
     "series_dir_template": "{title_base} ({year}) [bangumi-{bangumi_id}]",

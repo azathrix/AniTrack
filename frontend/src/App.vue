@@ -1160,18 +1160,6 @@ const selectedEntryStats = computed(() => {
   const id = selectedEntry.value?.id
   return activeDetailRows.value.find(item => item.id === id) || {}
 })
-const selectedSyncRule = computed(() => {
-  const id = selectedEntry.value?.id
-  return dashboard.sync_rules.find(item => item.entry_id === id) || {}
-})
-const syncWanted = computed(() => Boolean(selectedSyncRule.value.sync_enabled))
-const syncSummary = computed(() => {
-  const stats = selectedEntryStats.value
-  if (Number(stats.local_asset_count || 0) > 0) return `本地可观看 ${stats.local_asset_count} 集`
-  if (syncWanted.value && Number(stats.download_artifact_count || 0) > 0) return '已加入本地下载整理队列'
-  if (syncWanted.value) return '已开启，下载完成后会整理到本地媒体库'
-  return '关闭后不会自动整理到本地媒体库'
-})
 const mediaWizardTitle = computed(() => {
   const action = mediaWizardMode.value === 'add' ? '添加' : '导入'
   return `${action}${currentMediaPageTitle.value}`
@@ -1881,20 +1869,6 @@ async function saveCurrentEntry() {
     await saveSeasonalItem(payload.id, payload)
   }
   ElMessage.success(selectedEntryDomain.value === 'library' ? '番剧库条目已保存' : '番剧设置已保存')
-  await reload()
-}
-
-async function toggleEntrySync(enabled) {
-  const base = selectedEntryDomain.value === 'library' ? '/library' : '/seasonal'
-  const action = enabled ? 'sync' : 'sync/cancel'
-  const entryId = selectedEntry.value?.id
-  if (!entryId) return
-  const result = await postAction(`${base}/${entryId}/${action}`)
-  if (result.status === 'skipped') {
-    ElMessage.warning(result.message || '没有可执行任务')
-  } else {
-    ElMessage.success(result.message || '同步状态已更新')
-  }
   await reload()
 }
 

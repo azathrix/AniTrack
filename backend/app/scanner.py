@@ -10,7 +10,7 @@ import feedparser
 
 from .database import connect
 from .db import get_settings, hide_orphan_series, log, merge_duplicate_series, now
-from .library import bool_setting, parse_entry_labels
+from .library import parse_entry_labels
 from .metadata import fetch_bangumi_metadata
 from .parser import ParsedRelease, fingerprint, normalize_title_key, parse_entry, parse_episode, parse_group, parse_language, parse_resolution, parse_series_title, parse_subtitle_format, parse_year, split_lines
 
@@ -259,11 +259,10 @@ def language_rank(value: str, primary: list[str], secondary: list[str]) -> tuple
 
 
 def release_priority_key(row: dict, settings: dict[str, str]) -> tuple:
-    use_priority = bool_setting(settings.get("auto_download_by_priority", "true"))
-    subtitle_priority = split_lines(settings.get("subtitle_priority", "")) if use_priority else []
-    resolution_priority = split_lines(settings.get("resolution_priority", "")) if use_priority else []
-    language_priority = split_lines(settings.get("language_priority", "")) if use_priority else []
-    secondary_language_priority = split_lines(settings.get("secondary_language_priority", "")) if use_priority else []
+    subtitle_priority = split_lines(settings.get("subtitle_priority", ""))
+    resolution_priority = split_lines(settings.get("resolution_priority", ""))
+    language_priority = split_lines(settings.get("language_priority", ""))
+    secondary_language_priority = split_lines(settings.get("secondary_language_priority", ""))
     language_first, language_second = language_rank(str(row.get("language") or ""), language_priority, secondary_language_priority)
     return (
         priority_rank(str(row.get("subtitle_group") or ""), subtitle_priority, "subtitle_group"),
@@ -840,12 +839,10 @@ def choose_episode_release(rows: list, settings: dict[str, str]) -> tuple[int | 
     candidates = list(rows)
     if not candidates:
         return None, info
-    use_priority = bool_setting(settings.get("auto_download_by_priority", "true"))
-
     candidates, selected_group, reason = filter_by_priority(
         candidates,
         "subtitle_group",
-        split_lines(settings.get("subtitle_priority", "")) if use_priority else [],
+        split_lines(settings.get("subtitle_priority", "")),
     )
     if selected_group:
         info["selected_group"] = selected_group
@@ -855,7 +852,7 @@ def choose_episode_release(rows: list, settings: dict[str, str]) -> tuple[int | 
     candidates, selected_resolution, reason = filter_by_priority(
         candidates,
         "resolution",
-        split_lines(settings.get("resolution_priority", "")) if use_priority else [],
+        split_lines(settings.get("resolution_priority", "")),
     )
     if selected_resolution:
         info["selected_resolution"] = selected_resolution
@@ -864,8 +861,8 @@ def choose_episode_release(rows: list, settings: dict[str, str]) -> tuple[int | 
 
     candidates, selected_language, reason = filter_by_language_priority(
         candidates,
-        split_lines(settings.get("language_priority", "")) if use_priority else [],
-        split_lines(settings.get("secondary_language_priority", "")) if use_priority else [],
+        split_lines(settings.get("language_priority", "")),
+        split_lines(settings.get("secondary_language_priority", "")),
     )
     if selected_language:
         info["selected_language"] = selected_language
@@ -878,8 +875,7 @@ def choose_episode_release(rows: list, settings: dict[str, str]) -> tuple[int | 
 
 
 def auto_download_enabled(entry, settings: dict[str, str]) -> bool:
-    value = entry["auto_download"]
-    return value == "on" or (value == "inherit" and bool_setting(settings.get("auto_download_unique", "true")))
+    return bool(entry)
 
 
 def resolve_entry_choice(entry_id: int, settings: dict[str, str]) -> tuple[list[int], dict[str, str]]:
@@ -911,10 +907,6 @@ def resolve_entry_choice(entry_id: int, settings: dict[str, str]) -> tuple[list[
     if not rows:
         info["reason"] = "没有可下载发布"
         return [], info
-    if not auto_download_enabled(entry, settings):
-        info["reason"] = "自动下载已关闭"
-        return [], info
-
     by_episode: dict[int, list] = {}
     for row in rows:
         by_episode.setdefault(row["episode_number"], []).append(row)

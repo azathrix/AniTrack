@@ -3,10 +3,11 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 from collections import deque
+from pathlib import Path
 from threading import Lock
 from typing import Any
 
-from .config import DATA_DIR, DB_PATH, DEFAULT_SETTINGS
+from .config import DATA_DIR, DB_PATH, DEFAULT_SETTINGS, MEDIA_ROOT
 from .database import connect, initialize_database
 
 
@@ -539,14 +540,21 @@ def init_db() -> None:
 
 def ensure_media_libraries(conn: sqlite3.Connection) -> None:
     ts = now()
-    local_root = DEFAULT_SETTINGS.get("local_library_root", "/media/autoanime").rstrip("/")
+    media_root = Path(MEDIA_ROOT)
+    anime_root = str(media_root / "anime")
+    movies_root = str(media_root / "movies")
+    tv_root = str(media_root / "tv")
     libraries = [
-        ("seasonal_anime", "新番库", "anime", f"{local_root}/Seasonal", "pikpak"),
-        ("anime_library", "番剧库", "anime", f"{local_root}/Library", "pikpak"),
-        ("movies", "电影库", "movie", "/media/movies", "pikpak"),
-        ("tv", "剧集库", "tv", "/media/tv", "pikpak"),
+        ("seasonal_anime", "新番库", "anime", anime_root, "download"),
+        ("anime_library", "番剧库", "anime", anime_root, "download"),
+        ("movies", "电影库", "movie", movies_root, "download"),
+        ("tv", "剧集库", "tv", tv_root, "download"),
     ]
     for key, name, media_type, root_path, download_strategy in libraries:
+        try:
+            Path(root_path).mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
         conn.execute(
             """
             INSERT INTO media_libraries
@@ -556,6 +564,10 @@ def ensure_media_libraries(conn: sqlite3.Connection) -> None:
             ON CONFLICT(key) DO UPDATE SET
               name=excluded.name,
               media_type=excluded.media_type,
+              root_path=excluded.root_path,
+              enabled=1,
+              download_strategy=excluded.download_strategy,
+              metadata_provider_priority=excluded.metadata_provider_priority,
               updated_at=excluded.updated_at
             """,
             (key, name, media_type, root_path, download_strategy, ts, ts),

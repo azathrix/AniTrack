@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from ..database import connect
 from ..db import get_settings, now
+from ..library import local_library_root
 from ..metadata import generate_nfo_for_entry
 from ..pipeline_models import ProcessorContext, ProcessorResult
 
@@ -18,7 +19,9 @@ async def process_nfo(context: ProcessorContext, payload: dict) -> ProcessorResu
     settings = get_settings()
     nfo_settings = dict(settings)
     if not nfo_settings.get("nfo_output_root"):
-        nfo_settings["nfo_output_root"] = settings.get("local_library_root") or "/media/autoanime"
+        with connect() as conn:
+            entry = conn.execute("SELECT * FROM entries WHERE id=?", (entry_id,)).fetchone()
+        nfo_settings["nfo_output_root"] = local_library_root(dict(entry), settings) if entry else ""
     generate_nfo_for_entry(entry_id, nfo_settings)
     if local_asset_id > 0:
         with connect() as conn:

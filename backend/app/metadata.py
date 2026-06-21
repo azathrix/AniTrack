@@ -7,10 +7,9 @@ from typing import Any
 
 import httpx
 
-from .config import DATA_DIR
 from .database import connect
 from .db import log, merge_duplicate_series, now
-from .library import render_episode_name, render_season_dir, render_series_dir, target_dir
+from .library import local_library_root, render_episode_name, render_season_dir, render_series_dir
 from .parser import clean_name
 
 
@@ -145,7 +144,7 @@ def generate_nfo_for_entry(entry_id: int, settings: dict[str, str]) -> None:
         return
 
     entry_dict = dict(entry)
-    output_root = settings.get("nfo_output_root") or str(DATA_DIR / "nfo")
+    output_root = settings.get("nfo_output_root") or local_library_root(entry_dict, settings)
     base = Path(output_root) / clean_name(render_series_dir(entry_dict, settings))
     tvshow = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <tvshow>

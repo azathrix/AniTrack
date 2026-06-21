@@ -4,6 +4,7 @@ import re
 import json
 from pathlib import Path
 
+from .config import MEDIA_ROOT
 from .database import connect
 from .parser import clean_name
 
@@ -160,6 +161,15 @@ def render_episode_name(series: dict, episode_number: int, episode_title: str, s
     )
 
 
+def media_root_for_type(media_type: str = "anime") -> str:
+    key = str(media_type or "anime").strip().lower()
+    if key in {"movie", "film"}:
+        return str(MEDIA_ROOT / "movies")
+    if key in {"tv", "series", "drama"}:
+        return str(MEDIA_ROOT / "tv")
+    return str(MEDIA_ROOT / "anime")
+
+
 def local_library_root(entry: dict, settings: dict[str, str]) -> str:
     library_id = int(entry.get("target_library_id") or 0)
     if library_id > 0:
@@ -170,7 +180,7 @@ def local_library_root(entry: dict, settings: dict[str, str]) -> str:
             ).fetchone()
         if row and str(row["root_path"] or "").strip():
             return str(row["root_path"]).strip()
-    return settings.get("local_library_root") or "/media/autoanime"
+    return media_root_for_type(str(entry.get("media_type") or "anime"))
 
 
 def local_series_path(entry: dict, settings: dict[str, str]) -> Path:

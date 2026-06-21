@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -17,7 +16,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .config import APP_DIR
+from .config import APP_DIR, MEDIA_ROOT
 from .database import connect
 from .db import clear_runtime_data, diagnostics, get_runtime_generation, get_settings, init_db, log, merge_duplicate_series, now, save_settings
 from .episode_jobs import build_episode_jobs
@@ -84,8 +83,8 @@ class SettingsPayload(BaseModel):
     pikpak_refresh_token: str = ""
     pikpak_proxy: str = ""
     library_root: str = "/Anime"
-    local_library_root: str = "/media/autoanime"
-    auto_sync_following: bool = False
+    local_library_root: str = str(MEDIA_ROOT)
+    auto_sync_following: bool = True
     nfo_output_root: str = ""
     work_dir_template: str = ""
     season_dir_template: str = ""
@@ -110,17 +109,6 @@ class EntryPayload(BaseModel):
     selected_group: str = ""
     selected_resolution: str = ""
     backfill_mode: str = "inherit"
-
-
-class MediaLibraryPayload(BaseModel):
-    key: str = ""
-    name: str = ""
-    media_type: str = "anime"
-    root_path: str = ""
-    download_strategy: str = "download"
-    metadata_provider_priority: str = "bangumi,tmdb,manual"
-    naming_template: str = ""
-    enabled: bool = True
 
 
 class RssSubscriptionPayload(BaseModel):
@@ -233,11 +221,6 @@ def split_setting(value: str) -> list[str]:
 
 def split_candidate_values(value: Any) -> list[str]:
     return [item.strip() for item in str(value or "").split(",") if item.strip()]
-
-
-def normalize_media_library_key(value: str) -> str:
-    key = re.sub(r"[^a-zA-Z0-9_]+", "_", (value or "").strip().lower()).strip("_")
-    return key[:64]
 
 
 def entry_scope_label(item: dict[str, Any]) -> str:
@@ -424,15 +407,6 @@ def summarize_seasonal_entry(
         result["status_summary"] = "缺少 Bangumi 关联，不能进入正式处理"
         return result
 
-    auto_download_enabled = result.get("auto_download") == "on" or (
-        result.get("auto_download") == "inherit" and bool_setting(settings.get("auto_download_unique", "true"))
-    )
-    if int(result.get("release_count") or 0) > 0 and not auto_download_enabled and int(result.get("download_artifact_count") or 0) <= 0:
-        result["status_category"] = "paused"
-        result["status_level"] = "info"
-        result["status_summary"] = "自动下载已关闭，等待手动启用或调整规则"
-        return result
-
     if int(result.get("local_asset_count") or 0) > 0:
         result["status_category"] = "ready_local"
         result["status_level"] = "success"
@@ -467,9 +441,9 @@ def settings_response() -> dict[str, Any]:
     result["auto_scan"] = bool_setting(settings.get("auto_scan", "false"))
     result["queue_dispatch_enabled"] = bool_setting(settings.get("queue_dispatch_enabled", "true"))
     result["queue_dispatch_interval_minutes"] = int(settings.get("queue_dispatch_interval_minutes") or 1)
-    result["auto_download_unique"] = bool_setting(settings.get("auto_download_unique", "true"))
-    result["auto_download_by_priority"] = bool_setting(settings.get("auto_download_by_priority", "true"))
-    result["auto_sync_following"] = bool_setting(settings.get("auto_sync_following", "false"))
+    result["auto_download_unique"] = True
+    result["auto_download_by_priority"] = True
+    result["auto_sync_following"] = True
     result["auto_generate_nfo"] = bool_setting(settings.get("auto_generate_nfo", "true"))
     result["backfill_current_season"] = bool_setting(settings.get("backfill_current_season", "false"))
     result["subtitle_priority"] = split_setting(settings.get("subtitle_priority", ""))
@@ -490,6 +464,8 @@ def settings_response() -> dict[str, Any]:
     result["tv_quality_priority"] = settings.get("tv_quality_priority", "")
     result["tv_source_priority"] = settings.get("tv_source_priority", "")
     result["tv_subtitle_priority"] = settings.get("tv_subtitle_priority", "")
+    result["local_library_root"] = str(MEDIA_ROOT)
+    result["nfo_output_root"] = ""
     return result
 
 
@@ -1804,8 +1780,8 @@ async def api_update_settings(payload: SettingsPayload) -> dict[str, Any]:
             "auto_scan": str(payload.auto_scan).lower(),
             "queue_dispatch_enabled": str(payload.queue_dispatch_enabled).lower(),
             "queue_dispatch_interval_minutes": payload.queue_dispatch_interval_minutes,
-            "auto_download_unique": str(payload.auto_download_unique).lower(),
-            "auto_download_by_priority": str(payload.auto_download_by_priority).lower(),
+            "auto_download_unique": "true",
+            "auto_download_by_priority": "true",
             "auto_generate_nfo": str(payload.auto_generate_nfo).lower(),
             "backfill_current_season": str(payload.backfill_current_season).lower(),
             "default_backfill": "season" if payload.backfill_current_season else payload.default_backfill,
@@ -1826,9 +1802,9 @@ async def api_update_settings(payload: SettingsPayload) -> dict[str, Any]:
             "pikpak_refresh_token": payload.pikpak_refresh_token.strip(),
             "pikpak_proxy": payload.pikpak_proxy.strip(),
             "library_root": payload.library_root.strip() or "/Anime",
-            "local_library_root": payload.local_library_root.strip() or "/media/autoanime",
-            "auto_sync_following": str(payload.auto_sync_following).lower(),
-            "nfo_output_root": payload.nfo_output_root.strip(),
+            "local_library_root": str(MEDIA_ROOT),
+            "auto_sync_following": "true",
+            "nfo_output_root": "",
             "series_dir_template": payload.work_dir_template.strip(),
             "season_dir_template": payload.season_dir_template.strip(),
             "episode_name_template": payload.episode_name_template.strip(),
@@ -2252,64 +2228,6 @@ async def api_scan_cloud() -> dict[str, str]:
 
     operation_id = run_operation("扫描远端资源", run, "正在扫描下载器远端资源")
     return {"status": "started", "operation_id": str(operation_id), "message": "远端资源扫描已启动"}
-
-
-@app.post("/api/media-libraries")
-async def api_create_media_library(payload: MediaLibraryPayload) -> dict[str, str]:
-    key = normalize_media_library_key(payload.key or payload.name)
-    name = payload.name.strip() or key
-    root_path = payload.root_path.strip()
-    if not key or not root_path:
-        return {"status": "invalid", "message": "媒体库名称和本地目录不能为空"}
-    ts = now()
-    with connect() as conn:
-        conn.execute(
-            """
-            INSERT INTO media_libraries
-              (key, name, media_type, root_path, enabled, download_strategy,
-               metadata_provider_priority, naming_template, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(key) DO UPDATE SET
-              name=excluded.name,
-              media_type=excluded.media_type,
-              root_path=excluded.root_path,
-              enabled=excluded.enabled,
-              download_strategy=excluded.download_strategy,
-              metadata_provider_priority=excluded.metadata_provider_priority,
-              naming_template=excluded.naming_template,
-              updated_at=excluded.updated_at
-            """,
-            (
-                key,
-                name,
-                payload.media_type.strip() or "anime",
-                root_path,
-                1 if payload.enabled else 0,
-                payload.download_strategy.strip() or "download",
-                payload.metadata_provider_priority.strip() or "bangumi,tmdb,manual",
-                payload.naming_template.strip(),
-                ts,
-                ts,
-            ),
-        )
-    log("info", f"媒体库已保存: key={key} name={name} root={root_path}")
-    return {"status": "saved", "message": "媒体库已保存"}
-
-
-@app.delete("/api/media-libraries/{library_id}")
-async def api_delete_media_library(library_id: int) -> dict[str, str]:
-    with connect() as conn:
-        row = conn.execute("SELECT * FROM media_libraries WHERE id=?", (library_id,)).fetchone()
-        if not row:
-            return {"status": "not_found", "message": "媒体库不存在"}
-        used = conn.execute("SELECT COUNT(*) AS total FROM entries WHERE target_library_id=?", (library_id,)).fetchone()
-        if int(used["total"] or 0) > 0:
-            conn.execute("UPDATE media_libraries SET enabled=0, updated_at=? WHERE id=?", (now(), library_id))
-            log("warn", f"媒体库已禁用: id={library_id} reason=仍有关联条目")
-            return {"status": "disabled", "message": "媒体库已有条目使用，已禁用但不删除"}
-        conn.execute("DELETE FROM media_libraries WHERE id=?", (library_id,))
-    log("info", f"媒体库已删除: id={library_id}")
-    return {"status": "deleted", "message": "媒体库已删除"}
 
 
 @app.post("/api/library/{entry_id}/backfill")
