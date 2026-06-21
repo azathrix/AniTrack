@@ -712,6 +712,21 @@ h1 {
   color: #b45309 !important;
 }
 
+.mini-tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.mini-tag-row span {
+  background: #eef2ff;
+  border-radius: 999px;
+  color: #3730a3;
+  font-size: 12px;
+  padding: 3px 8px;
+}
+
 .queue-detail-note {
   color: #64748b !important;
   font-size: 12px !important;
@@ -965,6 +980,47 @@ h1 {
 
 .toolbar .el-input {
   max-width: 420px;
+}
+
+.filter-board {
+  background: #fff;
+  border: 1px solid #dfe7f3;
+  border-radius: 10px;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+
+.filter-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 30px;
+}
+
+.filter-row > span {
+  color: #64748b;
+  flex: 0 0 52px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.filter-row button {
+  background: #f8fafc;
+  border: 1px solid #dfe7f3;
+  border-radius: 999px;
+  color: #334155;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 7px 11px;
+}
+
+.filter-row button.active {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
 }
 
 .anime-grid {

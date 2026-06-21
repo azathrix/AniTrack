@@ -446,10 +446,59 @@
           <el-select v-model="libraryYearFilter" clearable placeholder="年份" class="compact-select">
             <el-option v-for="year in libraryYearOptions" :key="year" :label="`${year} 年`" :value="year" />
           </el-select>
-          <el-select v-model="libraryScopeFilter" clearable placeholder="季度 / 篇章" class="scope-select">
-            <el-option v-for="scope in libraryScopeOptions" :key="scope" :label="scope" :value="scope" />
-          </el-select>
           <el-button plain @click="runAction('/library/import')">导入现有资源到番剧库</el-button>
+        </div>
+        <div class="filter-board">
+          <div class="filter-row">
+            <span>媒体库</span>
+            <button :class="{ active: !libraryLibraryFilter }" @click="libraryLibraryFilter = ''">全部</button>
+            <button
+              v-for="item in libraryLibraryOptions"
+              :key="item.id"
+              :class="{ active: Number(libraryLibraryFilter || 0) === Number(item.id) }"
+              @click="libraryLibraryFilter = Number(item.id)"
+            >{{ item.name }}</button>
+          </div>
+          <div class="filter-row">
+            <span>类型</span>
+            <button :class="{ active: !libraryMediaTypeFilter }" @click="libraryMediaTypeFilter = ''">全部</button>
+            <button
+              v-for="type in libraryMediaTypeOptions"
+              :key="type"
+              :class="{ active: libraryMediaTypeFilter === type }"
+              @click="libraryMediaTypeFilter = type"
+            >{{ mediaTypeLabel(type) }}</button>
+          </div>
+          <div class="filter-row">
+            <span>地区</span>
+            <button :class="{ active: !libraryRegionFilter }" @click="libraryRegionFilter = ''">全部</button>
+            <button
+              v-for="region in libraryRegionOptions"
+              :key="region"
+              :class="{ active: libraryRegionFilter === region }"
+              @click="libraryRegionFilter = region"
+            >{{ regionLabel(region) }}</button>
+          </div>
+          <div class="filter-row">
+            <span>季度</span>
+            <button :class="{ active: !libraryScopeFilter }" @click="libraryScopeFilter = ''">全部</button>
+            <button
+              v-for="scope in libraryScopeOptions"
+              :key="scope"
+              :class="{ active: libraryScopeFilter === scope }"
+              @click="libraryScopeFilter = scope"
+            >{{ scope }}</button>
+          </div>
+          <div class="filter-row">
+            <span>标签</span>
+            <button :class="{ active: !libraryTagFilters.length }" @click="libraryTagFilters = []">全部</button>
+            <button
+              v-for="tag in libraryTagOptions"
+              :key="tag"
+              :class="{ active: libraryTagFilters.includes(tag) }"
+              @click="toggleLibraryTag(tag)"
+            >{{ tag }}</button>
+          </div>
         </div>
         <div class="library-summary-grid">
           <div class="metric-card">
@@ -481,6 +530,8 @@
                 <p>{{ work.entry_count }} 个条目 · {{ work.year_label || '年份未知' }}</p>
                 <div class="tagline">
                   <el-tag size="small" :type="watchStatusTag(work)">{{ work.watch_status_label || '未缓存' }}</el-tag>
+                  <el-tag size="small">{{ work.media_type_label }}</el-tag>
+                  <el-tag size="small" type="info">{{ work.library_label }}</el-tag>
                   <el-tag size="small" type="info">{{ work.release_count }} 发布</el-tag>
                   <el-tag size="small" type="success">本地 {{ work.local_asset_count }}</el-tag>
                   <el-tag v-if="work.entry_count > 1" size="small">{{ isWorkExpanded(work.key) ? '收起合集' : '展开合集' }}</el-tag>
@@ -499,9 +550,14 @@
                   <p>{{ item.entry_scope_label || item.entry_secondary_title || 'Season 01' }} · Bangumi: {{ item.bangumi_id || '未关联' }}</p>
                   <div class="tagline">
                     <el-tag size="small" :type="runtimeTag(item)">{{ runtimeLabel(item) }}</el-tag>
+                    <el-tag size="small">{{ mediaTypeLabel(item.media_type) }}</el-tag>
+                    <el-tag size="small" type="info">{{ regionLabel(item.region) }}</el-tag>
                     <el-tag size="small" type="info">{{ item.release_count }} 发布</el-tag>
                     <el-tag size="small" type="success">本地 {{ item.local_asset_count || 0 }}</el-tag>
                     <el-tag size="small">{{ item.entry_badge_text || item.entry_kind || 'season' }}</el-tag>
+                  </div>
+                  <div v-if="entryTags(item).length" class="mini-tag-row">
+                    <span v-for="tag in entryTags(item).slice(0, 4)" :key="tag">{{ tag }}</span>
                   </div>
                   <p v-if="runtimeSummary(item)" class="queue-note">{{ runtimeSummary(item) }}</p>
                   <el-progress :percentage="runtimeProgress(item)" :show-text="false" />
@@ -566,6 +622,22 @@
                       :label="`${library.name} · ${library.root_path}`"
                       :value="Number(library.id)"
                     />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="类型">
+                  <el-select v-model="importCommit.media_type">
+                    <el-option label="动画" value="anime" />
+                    <el-option label="电影" value="movie" />
+                    <el-option label="剧集" value="tv" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="地区">
+                  <el-select v-model="importCommit.region">
+                    <el-option label="日本" value="jp" />
+                    <el-option label="中国" value="cn" />
+                    <el-option label="欧美" value="us" />
+                    <el-option label="韩国" value="kr" />
+                    <el-option label="其他" value="other" />
                   </el-select>
                 </el-form-item>
                 <el-form-item label="年份">
@@ -878,6 +950,10 @@ const keyword = ref('')
 const seriesFilter = ref('全部')
 const libraryYearFilter = ref('')
 const libraryScopeFilter = ref('')
+const libraryMediaTypeFilter = ref('')
+const libraryRegionFilter = ref('')
+const libraryLibraryFilter = ref('')
+const libraryTagFilters = ref([])
 const importTab = ref('local')
 const localImportPath = ref('')
 const importLoading = ref(false)
@@ -940,6 +1016,24 @@ const pageTitle = computed(() => ({
 
 const seasonalRows = computed(() => dashboard.seasonal_items || [])
 const libraryRows = computed(() => dashboard.library_items || [])
+const libraryLibraryOptions = computed(() => {
+  const used = new Set(libraryRows.value.map(item => Number(item.target_library_id || 0)).filter(Boolean))
+  return (dashboard.media_libraries || []).filter(item => used.has(Number(item.id || 0)))
+})
+const libraryMediaTypeOptions = computed(() => {
+  const values = new Set()
+  for (const item of libraryRows.value) {
+    if (item.media_type) values.add(item.media_type)
+  }
+  return Array.from(values).sort((a, b) => mediaTypeLabel(a).localeCompare(mediaTypeLabel(b)))
+})
+const libraryRegionOptions = computed(() => {
+  const values = new Set()
+  for (const item of libraryRows.value) {
+    if (item.region) values.add(item.region)
+  }
+  return Array.from(values).sort((a, b) => regionLabel(a).localeCompare(regionLabel(b)))
+})
 const libraryYearOptions = computed(() => {
   const values = new Set()
   for (const item of libraryRows.value) {
@@ -955,6 +1049,18 @@ const libraryScopeOptions = computed(() => {
     if (scope) values.add(scope)
   }
   return Array.from(values).sort((a, b) => String(a).localeCompare(String(b)))
+})
+const libraryTagOptions = computed(() => {
+  const counts = new Map()
+  for (const item of libraryRows.value) {
+    for (const tag of entryTags(item)) {
+      counts.set(tag, (counts.get(tag) || 0) + 1)
+    }
+  }
+  return Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 36)
+    .map(item => item[0])
 })
 const activeDetailRows = computed(() => selectedEntryDomain.value === 'library' ? libraryRows.value : seasonalRows.value)
 const downloadArtifactTotal = computed(() => seasonalRows.value.reduce((sum, item) => sum + Number(item.download_artifact_count || 0), 0))
@@ -1096,8 +1202,15 @@ const filteredSeries = computed(() => {
     const matched = !text || `${item.entry_display_title || item.display_title || item.title_cn} ${item.work_display_title || item.work_title || item.title_root || ''} ${item.entry_scope_label || ''} ${item.bangumi_id}`.toLowerCase().includes(text)
     if (!matched) return false
     if (view.value === 'library') {
+      if (libraryLibraryFilter.value && Number(item.target_library_id || 0) !== Number(libraryLibraryFilter.value)) return false
+      if (libraryMediaTypeFilter.value && String(item.media_type || '') !== String(libraryMediaTypeFilter.value)) return false
+      if (libraryRegionFilter.value && String(item.region || '') !== String(libraryRegionFilter.value)) return false
       if (libraryYearFilter.value && Number(item.year || 0) !== Number(libraryYearFilter.value)) return false
       if (libraryScopeFilter.value && String(item.entry_scope_label || item.entry_badge_text || '') !== String(libraryScopeFilter.value)) return false
+      if (libraryTagFilters.value.length) {
+        const tags = entryTags(item)
+        if (!libraryTagFilters.value.every(tag => tags.includes(tag))) return false
+      }
     }
     if (seriesFilter.value === '可观看') return runtime.ready_count > 0
     if (seriesFilter.value === '处理中') return ['running', 'pending', 'waiting'].includes(runtime.status) && runtime.ready_count <= 0
@@ -1118,6 +1231,11 @@ const libraryWorks = computed(() => {
         work_title: item.work_display_title || item.work_title || item.title_root || item.display_title || item.title_cn || '未命名作品',
         poster_url: item.poster_url || '',
         year_label: item.year ? `${item.year}` : '',
+        library_label: libraryName(item.target_library_id),
+        media_type_label: mediaTypeLabel(item.media_type),
+        regions: new Set(),
+        media_types: new Set(),
+        tags: new Set(),
         entry_count: 0,
         release_count: 0,
         download_artifact_count: 0,
@@ -1133,6 +1251,11 @@ const libraryWorks = computed(() => {
     group.release_count += Number(item.release_count || 0)
     group.download_artifact_count += Number(item.download_artifact_count || 0)
     group.local_asset_count += Math.max(Number(item.local_asset_count || 0), runtime.ready_count)
+    if (item.region) group.regions.add(item.region)
+    if (item.media_type) group.media_types.add(item.media_type)
+    for (const tag of entryTags(item)) group.tags.add(tag)
+    if (!group.library_label) group.library_label = libraryName(item.target_library_id)
+    group.media_type_label = Array.from(group.media_types).map(mediaTypeLabel).join(' / ') || group.media_type_label
     if (runtime.status === 'failed') {
       group.watch_status = 'warning'
       group.watch_status_label = '需处理'
@@ -1149,6 +1272,9 @@ const libraryWorks = computed(() => {
   }
   return Array.from(groups.values()).map(group => ({
     ...group,
+    regions: Array.from(group.regions),
+    media_types: Array.from(group.media_types),
+    tags: Array.from(group.tags).slice(0, 8),
     entries: group.entries.sort((a, b) => String(a.display_title || '').localeCompare(String(b.display_title || '')))
   }))
 })
@@ -1176,6 +1302,55 @@ function watchStatusTag(item) {
   if (status === 'warning') return 'danger'
   if (status === 'processing') return 'warning'
   return 'info'
+}
+
+function mediaTypeLabel(value) {
+  const key = String(value || 'anime')
+  return {
+    anime: '动画',
+    movie: '电影',
+    tv: '剧集',
+    ova: 'OVA',
+  }[key] || key
+}
+
+function regionLabel(value) {
+  const key = String(value || '')
+  return {
+    jp: '日本',
+    cn: '中国',
+    us: '欧美',
+    kr: '韩国',
+    other: '其他',
+  }[key] || key || '未知'
+}
+
+function libraryName(id) {
+  const row = (dashboard.media_libraries || []).find(item => Number(item.id || 0) === Number(id || 0))
+  return row?.name || ''
+}
+
+function parseJsonArray(value) {
+  if (!value) return []
+  if (Array.isArray(value)) return value.filter(Boolean).map(item => String(item))
+  try {
+    const parsed = JSON.parse(String(value))
+    return Array.isArray(parsed) ? parsed.filter(Boolean).map(item => String(item)) : []
+  } catch {
+    return []
+  }
+}
+
+function entryTags(item) {
+  const tags = [...parseJsonArray(item?.genres_json), ...parseJsonArray(item?.tags_json)]
+  return Array.from(new Set(tags.map(tag => tag.trim()).filter(Boolean)))
+}
+
+function toggleLibraryTag(tag) {
+  const next = new Set(libraryTagFilters.value)
+  if (next.has(tag)) next.delete(tag)
+  else next.add(tag)
+  libraryTagFilters.value = Array.from(next)
 }
 
 function entryRuntime(item) {
