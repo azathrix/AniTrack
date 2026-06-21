@@ -21,7 +21,6 @@ from .config import APP_DIR
 from .database import connect
 from .db import clear_runtime_data, diagnostics, get_runtime_generation, get_settings, init_db, log, merge_duplicate_series, now, save_settings
 from .episode_jobs import build_episode_jobs
-from .import_service import commit_local_import, commit_torrent_import, preview_local_import, preview_torrent_import
 from .queue_bridge import register_queue_trigger
 from .runtime_store import runtime_store
 from .library import bool_setting
@@ -98,40 +97,6 @@ class EntryPayload(BaseModel):
     selected_group: str = ""
     selected_resolution: str = ""
     backfill_mode: str = "inherit"
-
-
-class LibraryImportPayload(BaseModel):
-    source_type: str = "remote_scan"
-    query: str = ""
-    magnet: str = ""
-    source_ref: str = ""
-
-
-class LocalImportPreviewPayload(BaseModel):
-    root_path: str
-    limit: int = 200
-
-
-class TorrentImportPreviewPayload(BaseModel):
-    title: str = ""
-    magnet: str = ""
-    torrent_url: str = ""
-    page_url: str = ""
-
-
-class ImportCommitPayload(BaseModel):
-    items: list[dict[str, Any]] = Field(default_factory=list)
-    item: dict[str, Any] = Field(default_factory=dict)
-    title_cn: str = ""
-    bangumi_id: str = ""
-    tmdb_id: str = ""
-    year: int = 0
-    season_number: int = 1
-    media_type: str = "anime"
-    region: str = "jp"
-    target_library_id: int = 0
-    start_download: bool = True
-    generate_nfo: bool = True
 
 
 class MediaLibraryPayload(BaseModel):
@@ -1606,97 +1571,6 @@ async def api_episode_jobs(domain_kind: str = Query("")) -> list[dict[str, Any]]
     )
 
 
-@app.post("/api/import/local/preview")
-async def api_import_local_preview(payload: LocalImportPreviewPayload) -> dict[str, Any]:
-    try:
-        items = await run_in_threadpool(
-            lambda: preview_local_import(payload.root_path.strip(), limit=payload.limit)
-        )
-    except FileNotFoundError as exc:
-        return {"status": "not_found", "message": str(exc), "items": []}
-    return {"status": "completed", "count": len(items), "items": items}
-
-
-@app.post("/api/import/torrent/preview")
-async def api_import_torrent_preview(payload: TorrentImportPreviewPayload) -> dict[str, Any]:
-    try:
-        item = preview_torrent_import(
-            title=payload.title.strip(),
-            magnet=payload.magnet.strip(),
-            torrent_url=payload.torrent_url.strip(),
-            page_url=payload.page_url.strip(),
-        )
-    except ValueError as exc:
-        return {"status": "invalid", "message": str(exc), "item": {}}
-    return {"status": "completed", "item": item}
-
-
-def import_options(payload: ImportCommitPayload) -> dict[str, Any]:
-    return {
-        "title_cn": payload.title_cn.strip(),
-        "bangumi_id": payload.bangumi_id.strip(),
-        "tmdb_id": payload.tmdb_id.strip(),
-        "year": payload.year,
-        "season_number": payload.season_number,
-        "media_type": payload.media_type.strip() or "anime",
-        "region": payload.region.strip() or "jp",
-        "target_library_id": payload.target_library_id,
-    }
-
-
-@app.post("/api/import/local/commit")
-async def api_import_local_commit(payload: ImportCommitPayload) -> dict[str, Any]:
-    result = await run_in_threadpool(lambda: commit_local_import(payload.items, import_options(payload)))
-    queued = 0
-    if payload.generate_nfo:
-        for item in result.get("imported", []):
-            local_asset_id = int(item.get("local_asset_id") or 0)
-            entry_id = int(item.get("entry_id") or 0)
-            if local_asset_id <= 0 or entry_id <= 0:
-                continue
-            run_id = start_pipeline(
-                "media_import",
-                trigger_source="import",
-                first_step_key="nfo_generate",
-                subject_type="local_asset",
-                subject_id=local_asset_id,
-                payload={"local_asset_id": local_asset_id, "entry_id": entry_id, "domain_kind": "library"},
-                message="本地导入后生成 NFO",
-            )
-            if run_id > 0:
-                queued += 1
-        if queued:
-            trigger_queue("processor", delay=0)
-    log("info", f"本地导入完成: imported={result.get('imported_count', 0)} skipped={result.get('skipped_count', 0)} nfo_queued={queued}")
-    return {"status": "completed", "nfo_queued": queued, **result}
-
-
-@app.post("/api/import/torrent/commit")
-async def api_import_torrent_commit(payload: ImportCommitPayload) -> dict[str, Any]:
-    candidate = payload.item or (payload.items[0] if payload.items else {})
-    try:
-        imported = await run_in_threadpool(lambda: commit_torrent_import(candidate, import_options(payload)))
-    except ValueError as exc:
-        return {"status": "invalid", "message": str(exc), "imported": {}}
-    run_id = 0
-    if payload.start_download:
-        release_id = int(imported.get("release_id") or 0)
-        entry_id = int(imported.get("entry_id") or 0)
-        if release_id > 0:
-            run_id = start_pipeline(
-                "library_backfill",
-                trigger_source="import",
-                first_step_key="download",
-                subject_type="release",
-                subject_id=release_id,
-                payload={"release_id": release_id, "entry_id": entry_id, "domain_kind": "library"},
-                message="磁链导入后启动下载",
-            )
-            trigger_queue("processor", delay=0)
-    log("info", f"磁链导入完成: entry_id={imported.get('entry_id', 0)} release_id={imported.get('release_id', 0)} run_id={run_id}")
-    return {"status": "completed", "imported": imported, "run_id": run_id}
-
-
 @app.get("/api/dashboard/stream")
 async def api_dashboard_stream() -> StreamingResponse:
     async def event_stream():
@@ -1945,24 +1819,6 @@ async def api_scan_cloud() -> dict[str, str]:
 
     operation_id = run_operation("扫描远端资源", run, "正在扫描下载器远端资源")
     return {"status": "started", "operation_id": str(operation_id), "message": "远端资源扫描已启动"}
-
-
-@app.post("/api/library/import")
-async def api_library_import(payload: LibraryImportPayload) -> dict[str, str]:
-    source_type = (payload.source_type or "").strip() or "remote_scan"
-    if source_type == "remote_scan":
-        async def run() -> str:
-            settings = get_settings()
-            imported, skipped = await scan_remote_library(settings)
-            log("info", f"番剧库导入完成: 远端资源入库 {imported} 个，跳过 {skipped} 个")
-            return f"远端资源入库 {imported} 个，跳过 {skipped} 个"
-
-        operation_id = run_operation("番剧库导入", run, "正在扫描远端资源并写入番剧库条目")
-        return {"status": "started", "operation_id": str(operation_id), "message": "番剧库远端资源导入已启动"}
-    if source_type in {"search", "magnet", "manual"}:
-        log("info", f"番剧库导入请求已记录: {source_type}")
-        return {"status": "planned", "message": "番剧库导入入口已预留，搜索源与手动导入将在后续阶段接入"}
-    return {"status": "invalid", "message": "不支持的番剧库导入类型"}
 
 
 @app.post("/api/media-libraries")

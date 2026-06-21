@@ -14,7 +14,6 @@
         <button :class="{ active: view === 'seasonal' }" @click="view = 'seasonal'"><el-icon><Collection /></el-icon> 新番</button>
         <button :class="{ active: view === 'calendar' }" @click="view = 'calendar'"><el-icon><Calendar /></el-icon> 日历</button>
         <button :class="{ active: view === 'library' }" @click="view = 'library'"><el-icon><Collection /></el-icon> 番剧</button>
-        <button :class="{ active: view === 'import' }" @click="view = 'import'"><el-icon><Search /></el-icon> 导入</button>
         <div class="nav-caption">系统</div>
         <button :class="{ active: view === 'settings' }" @click="view = 'settings'"><el-icon><Setting /></el-icon> 设置</button>
       </nav>
@@ -446,7 +445,6 @@
           <el-select v-model="libraryYearFilter" clearable placeholder="年份" class="compact-select">
             <el-option v-for="year in libraryYearOptions" :key="year" :label="`${year} 年`" :value="year" />
           </el-select>
-          <el-button plain @click="runAction('/library/import')">导入现有资源到番剧库</el-button>
         </div>
         <div class="filter-board">
           <div class="filter-row">
@@ -566,112 +564,6 @@
             </div>
           </section>
         </div>
-      </section>
-
-      <section v-if="view === 'import'" class="import-page">
-        <el-card class="import-panel">
-          <template #header>
-            <div class="card-header-row">
-              <div>
-                <strong>导入向导</strong>
-                <span>解析候选后写入番剧库，本地文件直接成为本地资源，磁链可立即进入下载器</span>
-              </div>
-            </div>
-          </template>
-          <el-tabs v-model="importTab">
-            <el-tab-pane label="本地目录" name="local">
-              <div class="import-form-row">
-                <el-input v-model="localImportPath" placeholder="/volume1/media/anime 或 单个视频文件路径" />
-                <el-button type="primary" :loading="importLoading" @click="previewLocalImport">预览本地文件</el-button>
-              </div>
-            </el-tab-pane>
-            <el-tab-pane label="磁链 / 种子" name="torrent">
-              <div class="import-form-grid">
-                <el-input v-model="torrentImport.title" placeholder="发布标题，例如 [LoliHouse] Test - 01 [1080p][简繁内封字幕]" />
-                <el-input v-model="torrentImport.magnet" placeholder="magnet 链接" />
-                <el-input v-model="torrentImport.torrent_url" placeholder="torrent URL，可选" />
-                <el-button type="primary" :loading="importLoading" @click="previewTorrentImport">预览磁链</el-button>
-              </div>
-            </el-tab-pane>
-          </el-tabs>
-        </el-card>
-        <el-card class="import-panel">
-          <template #header>
-            <div class="card-header-row">
-              <div>
-                <strong>候选资源</strong>
-                <span>确认标题和媒体库后正式入库</span>
-              </div>
-              <div class="card-actions">
-                <el-tag type="info">{{ importCandidates.length }} 条</el-tag>
-                <el-button type="primary" :disabled="!importCandidates.length" :loading="importLoading" @click="commitImport">正式导入</el-button>
-              </div>
-            </div>
-          </template>
-          <div class="import-commit-panel">
-            <el-form :model="importCommit" label-position="top">
-              <div class="import-form-grid">
-                <el-form-item label="入库标题">
-                  <el-input v-model="importCommit.title_cn" placeholder="留空则使用解析标题" />
-                </el-form-item>
-                <el-form-item label="媒体库">
-                  <el-select v-model="importCommit.target_library_id" placeholder="选择媒体库">
-                    <el-option
-                      v-for="library in dashboard.media_libraries"
-                      :key="library.id"
-                      :label="`${library.name} · ${library.root_path}`"
-                      :value="Number(library.id)"
-                    />
-                  </el-select>
-                </el-form-item>
-                <el-form-item label="类型">
-                  <el-select v-model="importCommit.media_type">
-                    <el-option label="动画" value="anime" />
-                    <el-option label="电影" value="movie" />
-                    <el-option label="剧集" value="tv" />
-                  </el-select>
-                </el-form-item>
-                <el-form-item label="地区">
-                  <el-select v-model="importCommit.region">
-                    <el-option label="日本" value="jp" />
-                    <el-option label="中国" value="cn" />
-                    <el-option label="欧美" value="us" />
-                    <el-option label="韩国" value="kr" />
-                    <el-option label="其他" value="other" />
-                  </el-select>
-                </el-form-item>
-                <el-form-item label="年份">
-                  <el-input-number v-model="importCommit.year" :min="0" :max="2100" />
-                </el-form-item>
-                <el-form-item label="季">
-                  <el-input-number v-model="importCommit.season_number" :min="1" :max="99" />
-                </el-form-item>
-                <el-form-item label="Bangumi ID">
-                  <el-input v-model="importCommit.bangumi_id" placeholder="可选" />
-                </el-form-item>
-                <el-form-item label="TMDB ID">
-                  <el-input v-model="importCommit.tmdb_id" placeholder="可选" />
-                </el-form-item>
-              </div>
-              <div class="import-options-row">
-                <el-checkbox v-model="importCommit.generate_nfo">本地导入后生成 NFO</el-checkbox>
-                <el-checkbox v-model="importCommit.start_download">磁链导入后立即下载</el-checkbox>
-              </div>
-            </el-form>
-          </div>
-          <el-table :data="importCandidates" height="520" empty-text="暂无候选，先选择一种导入方式预览">
-            <el-table-column prop="source_type" label="来源" width="90" />
-            <el-table-column prop="series_title" label="标题" min-width="220" show-overflow-tooltip />
-            <el-table-column prop="episode_number" label="集" width="70" />
-            <el-table-column prop="subtitle_group" label="字幕组" width="130" show-overflow-tooltip />
-            <el-table-column prop="resolution" label="分辨率" width="100" />
-            <el-table-column prop="language" label="语言" width="90" />
-            <el-table-column label="字幕形式" width="100">
-              <template #default="{ row }">{{ subtitleFormatText(row.subtitle_format) }}</template>
-            </el-table-column>
-            <el-table-column prop="source_uri" label="路径 / 链接" min-width="300" show-overflow-tooltip />
-          </el-table>
-        </el-card>
       </section>
 
       <section v-if="view === 'settings'">
@@ -805,7 +697,6 @@
       <button :class="{ active: view === 'seasonal' }" @click="view = 'seasonal'"><el-icon><Collection /></el-icon><b>新番</b></button>
       <button :class="{ active: view === 'calendar' }" @click="view = 'calendar'"><el-icon><Calendar /></el-icon><b>日历</b></button>
       <button :class="{ active: view === 'library' }" @click="view = 'library'"><el-icon><Collection /></el-icon><b>番剧</b></button>
-      <button :class="{ active: view === 'import' }" @click="view = 'import'"><el-icon><Search /></el-icon><b>导入</b></button>
       <button :class="{ active: view === 'settings' }" @click="view = 'settings'"><el-icon><Setting /></el-icon><b>设置</b></button>
     </nav>
 
@@ -956,28 +847,6 @@ const libraryMediaTypeFilter = ref('')
 const libraryRegionFilter = ref('')
 const libraryLibraryFilter = ref('')
 const libraryTagFilters = ref([])
-const importTab = ref('local')
-const localImportPath = ref('')
-const importLoading = ref(false)
-const importCandidates = ref([])
-const importCommit = reactive({
-  title_cn: '',
-  bangumi_id: '',
-  tmdb_id: '',
-  year: 0,
-  season_number: 1,
-  media_type: 'anime',
-  region: 'jp',
-  target_library_id: 0,
-  start_download: true,
-  generate_nfo: true,
-})
-const torrentImport = reactive({
-  title: '',
-  magnet: '',
-  torrent_url: '',
-  page_url: ''
-})
 const entryDrawerOpen = ref(false)
 const selectedEntryDetail = ref(null)
 const selectedEntryDomain = ref('seasonal')
@@ -1012,7 +881,6 @@ const pageTitle = computed(() => ({
   seasonal: '新番',
   calendar: '日历',
   library: '番剧',
-  import: '导入',
   settings: '设置中心'
 }[view.value]))
 
@@ -1566,111 +1434,10 @@ function shiftCalendarWeek(delta) {
 
 function applyDashboard(nextDashboard) {
   Object.assign(dashboard, nextDashboard || {})
-  ensureImportDefaults()
   const source = consoleNavMode.value === '定时任务' ? scheduledConsoleSections.value : queueListSections.value
   if (!source.some(item => item.key === selectedConsoleSection.value)) {
     const fallback = source[0] || queueListSections.value[0]
     selectedConsoleSection.value = fallback?.key || 'queue:mikan_match'
-  }
-}
-
-function ensureImportDefaults() {
-  if (Number(importCommit.target_library_id || 0) > 0) return
-  const library = (dashboard.media_libraries || []).find(item => item.key === 'anime_library')
-    || (dashboard.media_libraries || []).find(item => item.media_type === 'anime')
-    || (dashboard.media_libraries || [])[0]
-  if (library) importCommit.target_library_id = Number(library.id || 0)
-}
-
-function applyImportCandidateDefaults() {
-  const first = importCandidates.value[0] || {}
-  if (!importCommit.title_cn && first.series_title) importCommit.title_cn = first.series_title
-  if (!Number(importCommit.year || 0) && Number(first.year || 0) > 0) importCommit.year = Number(first.year || 0)
-}
-
-async function previewLocalImport() {
-  if (!localImportPath.value.trim()) {
-    ElMessage.warning('请输入本地目录或文件路径')
-    return
-  }
-  importLoading.value = true
-  try {
-    const result = await postAction('/import/local/preview', {
-      root_path: localImportPath.value.trim(),
-      limit: 300
-    })
-    importCandidates.value = result.items || []
-    applyImportCandidateDefaults()
-    if (result.status === 'not_found') {
-      ElMessage.warning(result.message || '路径不存在')
-    } else {
-      ElMessage.success(`解析到 ${importCandidates.value.length} 个候选`)
-    }
-  } catch (error) {
-    ElMessage.error(apiErrorMessage(error))
-  } finally {
-    importLoading.value = false
-  }
-}
-
-async function previewTorrentImport() {
-  importLoading.value = true
-  try {
-    const result = await postAction('/import/torrent/preview', {
-      title: torrentImport.title,
-      magnet: torrentImport.magnet,
-      torrent_url: torrentImport.torrent_url,
-      page_url: torrentImport.page_url
-    })
-    importCandidates.value = result.item && Object.keys(result.item).length ? [result.item] : []
-    applyImportCandidateDefaults()
-    if (result.status === 'invalid') {
-      ElMessage.warning(result.message || '资源链接无效')
-    } else {
-      ElMessage.success('解析完成')
-    }
-  } catch (error) {
-    ElMessage.error(apiErrorMessage(error))
-  } finally {
-    importLoading.value = false
-  }
-}
-
-async function commitImport() {
-  if (!importCandidates.value.length) {
-    ElMessage.warning('没有可导入候选')
-    return
-  }
-  importLoading.value = true
-  try {
-    const first = importCandidates.value[0] || {}
-    const isTorrent = first.source_type === 'torrent'
-    const payload = {
-      items: importCandidates.value,
-      item: first,
-      title_cn: importCommit.title_cn,
-      bangumi_id: importCommit.bangumi_id,
-      tmdb_id: importCommit.tmdb_id,
-      year: Number(importCommit.year || 0),
-      season_number: Number(importCommit.season_number || 1),
-      media_type: importCommit.media_type,
-      region: importCommit.region,
-      target_library_id: Number(importCommit.target_library_id || 0),
-      start_download: Boolean(importCommit.start_download),
-      generate_nfo: Boolean(importCommit.generate_nfo),
-    }
-    const result = await postAction(isTorrent ? '/import/torrent/commit' : '/import/local/commit', payload)
-    if (result.status === 'invalid') {
-      ElMessage.warning(result.message || '导入参数无效')
-      return
-    }
-    const count = isTorrent ? 1 : Number(result.imported_count || 0)
-    ElMessage.success(`已导入 ${count} 条资源`)
-    await reload()
-  } catch (error) {
-    ElMessage.error(apiErrorMessage(error))
-  } finally {
-    importLoading.value = false
   }
 }
 

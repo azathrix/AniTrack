@@ -932,41 +932,6 @@ h1 {
   gap: 14px;
 }
 
-.import-page {
-  display: grid;
-  gap: 14px;
-}
-
-.import-panel {
-  min-width: 0;
-}
-
-.import-form-row {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: minmax(0, 1fr) auto;
-}
-
-.import-form-grid {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr) auto;
-}
-
-.import-commit-panel {
-  background: #f8fafc;
-  border: 1px solid #dfe7f3;
-  border-radius: 8px;
-  margin-bottom: 12px;
-  padding: 12px;
-}
-
-.import-options-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-}
-
 .toolbar {
   align-items: center;
   background: #fff;
@@ -1405,8 +1370,6 @@ h1 {
   .log-layout,
   .console-workbench,
   .dashboard-bottom-grid,
-  .import-form-row,
-  .import-form-grid,
   .library-entry-card-grid,
   .detail-summary-grid {
     grid-template-columns: 1fr;
