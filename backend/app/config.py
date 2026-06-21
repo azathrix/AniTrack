@@ -51,6 +51,12 @@ DEFAULT_SETTINGS = {
     "anime_selection_rules_json": "{}",
     "movie_selection_rules_json": "{}",
     "tv_selection_rules_json": "{}",
+    "movie_quality_priority": "2160p,1080p,720p",
+    "movie_source_priority": "BluRay,WEB-DL,WebRip",
+    "movie_subtitle_priority": "简体,繁体,双语",
+    "tv_quality_priority": "2160p,1080p,720p",
+    "tv_source_priority": "WEB-DL,WebRip,HDTV",
+    "tv_subtitle_priority": "简体,繁体,双语",
     "downloaders_json": "[]",
 }
 

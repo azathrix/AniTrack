@@ -34,7 +34,7 @@
         <div>
           <p class="eyebrow">Mikan · Downloader · Local</p>
           <h1>{{ pageTitle }}</h1>
-          <p class="hero-sub">RSS 扫描负责写入源头任务，后续处理由各队列自动推进。<span class="build-version">v{{ appVersion }} · {{ appBuild }}</span></p>
+          <p class="hero-sub">RSS 扫描写入源头任务，处理队列实时推进。<span class="build-version">v{{ appVersion }} · {{ appBuild }}</span></p>
         </div>
         <div class="hero-actions">
           <el-switch
@@ -569,10 +569,18 @@
                     </div>
                   </el-tab-pane>
                   <el-tab-pane label="电影">
-                    <el-alert type="info" :closable="false" show-icon title="电影自动选择规则预留：后续按画质、来源、字幕、版本标签扩展。" />
+                    <div class="selection-rule-grid">
+                      <el-form-item label="优先画质"><el-input v-model="settings.movie_quality_priority" placeholder="2160p, 1080p, 720p" /></el-form-item>
+                      <el-form-item label="优先来源"><el-input v-model="settings.movie_source_priority" placeholder="BluRay, WEB-DL, WebRip" /></el-form-item>
+                      <el-form-item label="优先字幕"><el-input v-model="settings.movie_subtitle_priority" placeholder="简体, 繁体, 双语" /></el-form-item>
+                    </div>
                   </el-tab-pane>
                   <el-tab-pane label="电视剧">
-                    <el-alert type="info" :closable="false" show-icon title="电视剧自动选择规则预留：后续按季、集、字幕和版本标签扩展。" />
+                    <div class="selection-rule-grid">
+                      <el-form-item label="优先画质"><el-input v-model="settings.tv_quality_priority" placeholder="2160p, 1080p, 720p" /></el-form-item>
+                      <el-form-item label="优先来源"><el-input v-model="settings.tv_source_priority" placeholder="WEB-DL, WebRip, HDTV" /></el-form-item>
+                      <el-form-item label="优先字幕"><el-input v-model="settings.tv_subtitle_priority" placeholder="简体, 繁体, 双语" /></el-form-item>
+                    </div>
                   </el-tab-pane>
                 </el-tabs>
               </el-tab-pane>
@@ -812,18 +820,36 @@
         <template v-if="mediaWizardStep === 0">
           <el-upload drag action="#" :auto-upload="false" multiple>
             <p>选择本地目录或文件</p>
-            <small>第一版按浏览器上传器设计，暂不要求填写 NAS 服务端路径。</small>
+            <small>选择要收录的媒体文件，系统按集数与字幕整理。</small>
           </el-upload>
           <el-input v-if="mediaWizardMode === 'add'" v-model="mediaWizardSeed" placeholder="Bangumi ID / TMDB ID / 作品名 / 磁力链接" />
         </template>
         <template v-else-if="mediaWizardStep === 1">
-          <el-empty description="匹配作品信息骨架：后续接 Bangumi / TMDB / 手动编辑" />
+          <div class="wizard-form-grid">
+            <el-input v-model="mediaWizardDraft.title" placeholder="作品标题" />
+            <el-input v-model="mediaWizardDraft.bangumi_id" placeholder="Bangumi ID" />
+            <el-input v-model="mediaWizardDraft.tmdb_id" placeholder="TMDB ID" />
+            <el-input-number v-model="mediaWizardDraft.year" :min="0" placeholder="年份" />
+          </div>
         </template>
         <template v-else-if="mediaWizardStep === 2">
-          <el-empty description="匹配集数与字幕骨架：后续显示资源、字幕文件和默认选择" />
+          <div class="wizard-form-grid">
+            <el-input-number v-model="mediaWizardDraft.episode_number" :min="0" placeholder="集数" />
+            <el-input v-model="mediaWizardDraft.resource_title" placeholder="资源标题 / 文件名" />
+            <el-input v-model="mediaWizardDraft.subtitle_group" placeholder="字幕组" />
+            <el-select v-model="mediaWizardDraft.subtitle_format" clearable placeholder="字幕类型">
+              <el-option label="内嵌" value="embedded" />
+              <el-option label="内封" value="muxed" />
+              <el-option label="外挂" value="external" />
+            </el-select>
+          </div>
         </template>
         <template v-else>
-          <el-empty description="收录确认骨架：后续写入统一媒体条目和集数资源" />
+          <div class="wizard-confirm-panel">
+            <strong>{{ mediaWizardDraft.title || currentMediaPageTitle }}</strong>
+            <span>{{ mediaTypeLabel(currentMediaType) }} · {{ mediaWizardDraft.year || '年份未知' }}</span>
+            <span>第 {{ mediaWizardDraft.episode_number || '?' }} 集 · {{ mediaWizardDraft.resource_title || '未填写资源' }}</span>
+          </div>
         </template>
       </div>
       <template #footer>
@@ -921,6 +947,16 @@ const episodeResourceForm = reactive({
   subtitle_format: '',
   subtitle_path: '',
   embedded: false,
+})
+const mediaWizardDraft = reactive({
+  title: '',
+  bangumi_id: '',
+  tmdb_id: '',
+  year: 0,
+  episode_number: 0,
+  resource_title: '',
+  subtitle_group: '',
+  subtitle_format: '',
 })
 const scheduledJobForm = reactive({
   enabled: true,
@@ -1615,7 +1651,7 @@ function queueState(queue) {
 
 function queuePendingHint(queue) {
   const key = String(queue?.key || '')
-  if (key === 'rss') return '这里只显示最近的 RSS 候选；后续 Mikan、元数据、选集、下载到本地都由任务链自动推进。'
+  if (key === 'rss') return '这里只显示最近的 RSS 候选；Mikan、元数据、选集、下载到本地由任务链推进。'
   if (key === 'download') return '待处理表示已选中发布，等待下载器提交、轮询完成并整理到本地媒体库。'
   if (key === 'local_sync') return '待处理表示已有下载产物，等待补整理到本地媒体库。'
   if (key === 'selection') return '待处理表示元数据已完成，等待按规则自动选择发布。'
@@ -1928,6 +1964,14 @@ function openMediaWizard(mode) {
   mediaWizardMode.value = mode
   mediaWizardStep.value = 0
   mediaWizardSeed.value = ''
+  mediaWizardDraft.title = ''
+  mediaWizardDraft.bangumi_id = ''
+  mediaWizardDraft.tmdb_id = ''
+  mediaWizardDraft.year = 0
+  mediaWizardDraft.episode_number = 0
+  mediaWizardDraft.resource_title = ''
+  mediaWizardDraft.subtitle_group = ''
+  mediaWizardDraft.subtitle_format = ''
   mediaWizardOpen.value = true
 }
 

@@ -92,6 +92,12 @@ class SettingsPayload(BaseModel):
     episode_name_template: str = ""
     movie_name_template: str = ""
     tv_name_template: str = ""
+    movie_quality_priority: str = ""
+    movie_source_priority: str = ""
+    movie_subtitle_priority: str = ""
+    tv_quality_priority: str = ""
+    tv_source_priority: str = ""
+    tv_subtitle_priority: str = ""
 
 
 class EntryPayload(BaseModel):
@@ -478,6 +484,12 @@ def settings_response() -> dict[str, Any]:
     result["downloaders"] = downloaders if isinstance(downloaders, list) else []
     result["movie_name_template"] = settings.get("movie_name_template", "")
     result["tv_name_template"] = settings.get("tv_name_template", "")
+    result["movie_quality_priority"] = settings.get("movie_quality_priority", "")
+    result["movie_source_priority"] = settings.get("movie_source_priority", "")
+    result["movie_subtitle_priority"] = settings.get("movie_subtitle_priority", "")
+    result["tv_quality_priority"] = settings.get("tv_quality_priority", "")
+    result["tv_source_priority"] = settings.get("tv_source_priority", "")
+    result["tv_subtitle_priority"] = settings.get("tv_subtitle_priority", "")
     return result
 
 
@@ -1822,6 +1834,12 @@ async def api_update_settings(payload: SettingsPayload) -> dict[str, Any]:
             "episode_name_template": payload.episode_name_template.strip(),
             "movie_name_template": payload.movie_name_template.strip(),
             "tv_name_template": payload.tv_name_template.strip(),
+            "movie_quality_priority": payload.movie_quality_priority.strip(),
+            "movie_source_priority": payload.movie_source_priority.strip(),
+            "movie_subtitle_priority": payload.movie_subtitle_priority.strip(),
+            "tv_quality_priority": payload.tv_quality_priority.strip(),
+            "tv_source_priority": payload.tv_source_priority.strip(),
+            "tv_subtitle_priority": payload.tv_subtitle_priority.strip(),
         }
     )
     current = get_settings()

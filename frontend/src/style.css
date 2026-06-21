@@ -1345,6 +1345,31 @@ h1 {
   font-weight: 800;
 }
 
+.selection-rule-grid,
+.wizard-form-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.wizard-confirm-panel {
+  background: #f8fafc;
+  border: 1px solid #dbe4ef;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+}
+
+.wizard-confirm-panel strong {
+  color: #0f172a;
+  font-size: 18px;
+}
+
+.wizard-confirm-panel span {
+  color: #64748b;
+}
+
 .drawer-actions {
   flex-wrap: wrap;
   margin-top: 8px;
@@ -1570,6 +1595,8 @@ h1 {
   .library-entry-card-grid,
   .downloader-row,
   .media-root-grid,
+  .selection-rule-grid,
+  .wizard-form-grid,
   .detail-summary-grid {
     grid-template-columns: 1fr;
   }
