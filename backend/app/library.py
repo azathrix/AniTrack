@@ -189,11 +189,21 @@ def local_series_path(entry: dict, settings: dict[str, str]) -> Path:
 
 def target_dir(series: dict, settings: dict[str, str]) -> str:
     root = settings.get("library_root") or "/Anime"
+    active_json = settings.get("_active_downloader_json") or ""
+    if active_json:
+        try:
+            active = json.loads(active_json)
+        except json.JSONDecodeError:
+            active = {}
+        if isinstance(active, dict):
+            remote_dir = str(active.get("remote_dir") or "").strip()
+            if remote_dir:
+                root = remote_dir
     try:
         downloaders = json.loads(settings.get("downloaders_json") or "[]")
     except json.JSONDecodeError:
         downloaders = []
-    if isinstance(downloaders, list):
+    if not active_json and isinstance(downloaders, list):
         for item in downloaders:
             if not isinstance(item, dict) or item.get("enabled") is False:
                 continue

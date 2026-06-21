@@ -19,6 +19,8 @@ SUPPORTED_DOWNLOADER_TYPES = {
     "api": "api",
     "local": "local",
 }
+ACTIVE_DOWNLOADER_KEY = "_active_downloader_json"
+DOWNLOAD_FAILOVER_ATTEMPTS = 3
 
 
 def configured_downloaders(settings: dict[str, str]) -> list[dict[str, Any]]:
@@ -46,6 +48,14 @@ def configured_downloaders(settings: dict[str, str]) -> list[dict[str, Any]]:
 
 
 def active_downloader(settings: dict[str, str]) -> dict[str, Any]:
+    active_json = settings.get(ACTIVE_DOWNLOADER_KEY) or ""
+    if active_json:
+        try:
+            active = json.loads(active_json)
+        except json.JSONDecodeError:
+            active = {}
+        if isinstance(active, dict) and active.get("_backend"):
+            return active
     rows = configured_downloaders(settings)
     if rows:
         return rows[0]
@@ -54,6 +64,36 @@ def active_downloader(settings: dict[str, str]) -> dict[str, Any]:
         "name": settings.get("download_backend") or "rclone",
         "_backend": (settings.get("download_backend") or "rclone").strip().lower() or "rclone",
     }
+
+
+def downloader_for_attempt(settings: dict[str, str], attempts: int) -> dict[str, Any]:
+    rows = configured_downloaders(settings)
+    if not rows:
+        return active_downloader(settings)
+    index = min(max(0, int(attempts or 0) // DOWNLOAD_FAILOVER_ATTEMPTS), len(rows) - 1)
+    return rows[index]
+
+
+def failover_exhausted(settings: dict[str, str], attempts: int) -> bool:
+    rows = configured_downloaders(settings)
+    return bool(rows) and int(attempts or 0) >= len(rows) * DOWNLOAD_FAILOVER_ATTEMPTS
+
+
+def bind_downloader(settings: dict[str, str], downloader: dict[str, Any]) -> dict[str, str]:
+    result = dict(settings)
+    active = dict(downloader)
+    result[ACTIVE_DOWNLOADER_KEY] = json.dumps(active, ensure_ascii=False)
+    backend = str(active.get("_backend") or "").strip().lower()
+    if backend:
+        result["download_backend"] = backend
+    remote_dir = str(active.get("remote_dir") or "").strip()
+    if remote_dir:
+        result["library_root"] = remote_dir
+    return result
+
+
+def settings_for_attempt(settings: dict[str, str], attempts: int) -> dict[str, str]:
+    return bind_downloader(settings, downloader_for_attempt(settings, attempts))
 
 
 def backend_key(settings: dict[str, str]) -> str:
@@ -65,12 +105,25 @@ def provider_key(settings: dict[str, str]) -> str:
     downloader = active_downloader(settings)
     provider_name = str(downloader.get("name") or downloader.get("type") or "").strip()
     if provider_name:
+        if "_priority" in downloader:
+            return f"{provider_name}#{int(downloader.get('_priority') or 0) + 1}"
         return provider_name
     if backend == "rclone":
         return (settings.get("rclone_remote") or "rclone").strip().rstrip(":") or "rclone"
     if backend == "local":
         return "local"
     return backend
+
+
+def settings_for_provider(settings: dict[str, str], provider: str) -> dict[str, str]:
+    wanted = str(provider or "").strip()
+    if not wanted:
+        return settings_for_attempt(settings, 0)
+    for downloader in configured_downloaders(settings):
+        candidate = bind_downloader(settings, downloader)
+        if provider_key(candidate) == wanted:
+            return candidate
+    return settings_for_attempt(settings, 0)
 
 
 def uses_remote_listing(settings: dict[str, str]) -> bool:

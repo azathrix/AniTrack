@@ -4,7 +4,15 @@ from pathlib import PurePosixPath
 
 from ..database import connect
 from ..db import get_settings, log, now
-from ..downloader_service import list_tasks, needs_poll, provider_key, submit_download
+from ..downloader_service import (
+    failover_exhausted,
+    list_tasks,
+    needs_poll,
+    provider_key,
+    settings_for_attempt,
+    settings_for_provider,
+    submit_download,
+)
 from ..library import render_episode_name, target_dir
 from ..pipeline_models import ProcessorContext, ProcessorResult
 from ..scanner import extract_file_id, extract_task_id, is_rate_limited_error, retry_after_time
@@ -45,6 +53,14 @@ def _submission_for_release(release_id: int):
             FROM download_jobs cs
             JOIN releases r ON r.entry_id=cs.entry_id AND r.episode_number=cs.episode_number
             WHERE r.id=?
+            ORDER BY CASE cs.status
+              WHEN 'completed' THEN 0
+              WHEN 'submitted' THEN 1
+              WHEN 'running' THEN 2
+              WHEN 'pending' THEN 3
+              WHEN 'failed' THEN 4
+              ELSE 5
+            END, cs.updated_at DESC, cs.id DESC
             LIMIT 1
             """,
             (release_id,),
@@ -53,6 +69,7 @@ def _submission_for_release(release_id: int):
 
 def _upsert_submission(
     *,
+    settings: dict,
     release,
     status: str,
     target_directory: str,
@@ -63,7 +80,7 @@ def _upsert_submission(
     last_error: str = "",
 ) -> None:
     ts = now()
-    provider = provider_key(get_settings())
+    provider = provider_key(settings)
     with connect() as conn:
         conn.execute(
             """
@@ -120,7 +137,7 @@ async def process_download_presence(context: ProcessorContext, payload: dict) ->
     release_id = _release_subject(context, payload)
     if release_id <= 0:
         return ProcessorResult.terminal("下载产物检查缺少 release_id")
-    settings = get_settings()
+    settings = settings_for_attempt(get_settings(), 0)
     release = _release_row(release_id)
     if not release:
         return ProcessorResult.terminal(f"发布不存在: {release_id}")
@@ -173,6 +190,7 @@ async def process_download_presence(context: ProcessorContext, payload: dict) ->
                 task_retry_after(settings, context.attempts + 1),
             )
         _upsert_submission(
+            settings=settings,
             release=release,
             status="completed",
             target_directory=remote_target,
@@ -218,7 +236,8 @@ async def process_download_submit(context: ProcessorContext, payload: dict) -> P
     release_id = _release_subject(context, payload)
     if release_id <= 0:
         return ProcessorResult.terminal("下载提交缺少 release_id")
-    settings = get_settings()
+    base_settings = get_settings()
+    settings = settings_for_attempt(base_settings, context.attempts)
     release = _release_row(release_id)
     if not release:
         return ProcessorResult.terminal(f"发布不存在: {release_id}")
@@ -229,6 +248,7 @@ async def process_download_submit(context: ProcessorContext, payload: dict) -> P
     if not source:
         retry_after = task_retry_after(settings, context.attempts + 1)
         _upsert_submission(
+            settings=settings,
             release=release,
             status="pending",
             target_directory=remote_target,
@@ -258,6 +278,7 @@ async def process_download_submit(context: ProcessorContext, payload: dict) -> P
                 task_retry_after(settings, context.attempts + 1),
             )
         _upsert_submission(
+            settings=settings,
             release=release,
             status="completed",
             target_directory=remote_target,
@@ -303,6 +324,7 @@ async def process_download_submit(context: ProcessorContext, payload: dict) -> P
         )
 
     _upsert_submission(
+        settings=settings,
         release=release,
         status="running",
         target_directory=remote_target,
@@ -313,24 +335,30 @@ async def process_download_submit(context: ProcessorContext, payload: dict) -> P
         task_id = extract_task_id(result) if isinstance(result, dict) else ""
         file_id = extract_file_id(result) if isinstance(result, dict) else ""
     except Exception as exc:
+        next_attempt = context.attempts + 1
         if is_rate_limited_error(exc):
             retry_after = retry_after_time(settings)
             message = f"PikPak 限流，等待后自动重试: {str(exc)[:1800]}"
         else:
-            retry_after = task_retry_after(settings, context.attempts + 1)
+            retry_after = task_retry_after(settings, next_attempt)
             message = f"提交失败，等待后自动重试: {str(exc)[:1800]}"
+        terminal = failover_exhausted(base_settings, next_attempt)
         _upsert_submission(
+            settings=settings,
             release=release,
-            status="pending",
+            status="failed" if terminal else "pending",
             target_directory=remote_target,
             normalized_name=remote_name,
-            retry_after=retry_after,
+            retry_after="" if terminal else retry_after,
             last_error=message,
         )
+        if terminal:
+            return ProcessorResult.terminal(f"{message}；已尝试所有可执行下载器，需要手动处理")
         return ProcessorResult.retryable(message, retry_after)
 
     status = "completed" if file_id and not task_id and not needs_poll(settings) else "submitted"
     _upsert_submission(
+        settings=settings,
         release=release,
         status=status,
         target_directory=remote_target,
@@ -426,11 +454,12 @@ async def process_download_poll(context: ProcessorContext, payload: dict) -> Pro
     release_id = _release_subject(context, payload)
     if release_id <= 0:
         return ProcessorResult.terminal("下载状态轮询缺少 release_id")
-    settings = get_settings()
+    base_settings = get_settings()
     release = _release_row(release_id)
     if not release:
         return ProcessorResult.terminal(f"发布不存在: {release_id}")
     submission = _submission_for_release(release_id)
+    settings = settings_for_provider(base_settings, str(submission["provider"] or "")) if submission else settings_for_attempt(base_settings, context.attempts)
     if not submission:
         return ProcessorResult.retryable("下载记录尚未生成，等待后重试", task_retry_after(settings, context.attempts + 1))
 
@@ -472,8 +501,9 @@ async def process_download_poll(context: ProcessorContext, payload: dict) -> Pro
     if status != "completed":
         retry_after = task_retry_after(settings, context.attempts + 1)
         _upsert_submission(
+            settings=settings,
             release=release,
-            status="submitted",
+            status="failed" if status == "failed" else "submitted",
             target_directory=remote_target,
             normalized_name=remote_name,
             submission_id=str(submission["submission_id"] or ""),
@@ -497,6 +527,7 @@ async def process_download_poll(context: ProcessorContext, payload: dict) -> Pro
         )
     actual_name = str(item.get("name") or remote_name)
     _upsert_submission(
+        settings=settings,
         release=release,
         status="completed",
         target_directory=remote_target,
@@ -527,11 +558,12 @@ async def process_download_artifact_register(context: ProcessorContext, payload:
     release_id = _release_subject(context, payload)
     if release_id <= 0:
         return ProcessorResult.terminal("下载产物登记缺少 release_id")
-    settings = get_settings()
+    base_settings = get_settings()
     release = _release_row(release_id)
     if not release:
         return ProcessorResult.terminal(f"发布不存在: {release_id}")
     submission = _submission_for_release(release_id)
+    settings = settings_for_provider(base_settings, str(submission["provider"] or "")) if submission else settings_for_attempt(base_settings, context.attempts)
     if not submission or submission["status"] != "completed":
         return ProcessorResult.retryable("下载尚未完成，等待后登记产物", task_retry_after(settings, context.attempts + 1))
     item = _asset_item(

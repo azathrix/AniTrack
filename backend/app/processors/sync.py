@@ -4,6 +4,7 @@ from pathlib import Path
 
 from ..database import connect
 from ..db import get_settings, log, now
+from ..downloader_service import settings_for_provider
 from ..pipeline_models import ProcessorContext, ProcessorResult
 from ..sync_service import (
     download_remote_file_to_local,
@@ -26,7 +27,7 @@ async def sync_download_artifact_to_local(
 ) -> ProcessorResult:
     if download_artifact_id <= 0:
         return ProcessorResult.terminal("本地整理处理器缺少 download_artifact_id")
-    settings = get_settings()
+    base_settings = get_settings()
     with connect() as conn:
         row = conn.execute(
             """
@@ -40,6 +41,7 @@ async def sync_download_artifact_to_local(
         ).fetchone()
     if not row:
         return ProcessorResult.terminal(f"下载产物不存在或不可用: {download_artifact_id}")
+    settings = settings_for_provider(base_settings, str(row["provider"] or ""))
 
     target = str(payload.get("target_path") or "").strip()
     if not target:
