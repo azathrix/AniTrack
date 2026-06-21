@@ -662,6 +662,51 @@ def hide_entry(entry_id: int, *, expected_domain: str | None = None, success_mes
     return {"status": "completed", "message": success_message}
 
 
+def archive_seasonal_entry(entry_id: int) -> dict[str, str]:
+    ts = now()
+    with connect() as conn:
+        entry = conn.execute(
+            "SELECT display_title, domain_kind FROM entries WHERE id=?",
+            (entry_id,),
+        ).fetchone()
+        if not entry:
+            return {"status": "not_found", "message": "番剧不存在"}
+        seasonal = conn.execute("SELECT id FROM seasonal_entries WHERE entry_id=?", (entry_id,)).fetchone()
+        if not seasonal:
+            return {"status": "invalid_domain", "message": "该条目不属于新番追番"}
+        conn.execute(
+            """
+            UPDATE seasonal_entries
+            SET following=0, archived=1, updated_at=?
+            WHERE entry_id=?
+            """,
+            (ts, entry_id),
+        )
+        conn.execute(
+            """
+            INSERT INTO library_entries (entry_id, source_type, source_ref, wanted, archived, created_at, updated_at)
+            VALUES (?, 'seasonal_archive', '', 1, 0, ?, ?)
+            ON CONFLICT(entry_id) DO UPDATE SET
+              wanted=1,
+              archived=0,
+              updated_at=excluded.updated_at
+            """,
+            (entry_id, ts, ts),
+        )
+        conn.execute(
+            """
+            UPDATE entries
+            SET domain_kind='library',
+                hidden=0,
+                updated_at=?
+            WHERE id=?
+            """,
+            (ts, entry_id),
+        )
+    log("info", f"新番已归档到番剧库: {entry['display_title']}")
+    return {"status": "completed", "message": "已归档到番剧库"}
+
+
 def queue_entry_download(entry_id: int) -> dict[str, str]:
     settings = get_settings()
     with connect() as conn:
@@ -1392,6 +1437,8 @@ def dashboard_data() -> dict[str, Any]:
             LEFT JOIN sync_rules sr ON sr.entry_id=e.id
             WHERE COALESCE(e.hidden, 0)=0
               AND e.bangumi_id != ''
+              AND COALESCE(se.following, 1)=1
+              AND COALESCE(se.archived, 0)=0
             GROUP BY e.id
             ORDER BY e.updated_at DESC
             """
@@ -1426,7 +1473,7 @@ def dashboard_data() -> dict[str, Any]:
               COUNT(DISTINCT ca.id) AS download_artifact_count,
               COUNT(DISTINCT la.id) AS local_asset_count
             FROM entries e
-            JOIN library_entries le ON le.entry_id=e.id
+            LEFT JOIN library_entries le ON le.entry_id=e.id
             JOIN works w ON w.id=e.work_id
             LEFT JOIN episodes ep ON ep.entry_id=e.id
             LEFT JOIN releases r ON r.entry_id=e.id
@@ -1446,7 +1493,7 @@ def dashboard_data() -> dict[str, Any]:
               COUNT(DISTINCT ca.id) AS download_artifact_count,
               COUNT(DISTINCT la.id) AS local_asset_count
             FROM entries e
-            JOIN library_entries le ON le.entry_id=e.id
+            LEFT JOIN library_entries le ON le.entry_id=e.id
             JOIN works w ON w.id=e.work_id
             LEFT JOIN download_artifacts ca ON ca.entry_id=e.id
             LEFT JOIN local_assets la ON la.entry_id=e.id AND la.status='synced'
@@ -1505,6 +1552,8 @@ def dashboard_data() -> dict[str, Any]:
             JOIN sync_rules sr ON sr.entry_id=e.id AND sr.sync_enabled=1
             WHERE la.status='synced'
               AND COALESCE(e.hidden, 0)=0
+              AND COALESCE(se.following, 1)=1
+              AND COALESCE(se.archived, 0)=0
               AND strftime('%s', la.updated_at) >= ?
             ORDER BY la.updated_at DESC
             LIMIT 120
@@ -1535,6 +1584,8 @@ def dashboard_data() -> dict[str, Any]:
             LEFT JOIN download_artifacts ca ON ca.release_id=r.id
             LEFT JOIN local_assets la ON la.release_id=r.id
             WHERE COALESCE(e.hidden, 0)=0
+              AND COALESCE(se.following, 1)=1
+              AND COALESCE(se.archived, 0)=0
               AND la.status='synced'
               AND strftime('%s', COALESCE(la.updated_at, ca.updated_at, r.updated_at, r.created_at)) >= ?
             GROUP BY e.id, r.episode_number
@@ -1564,6 +1615,8 @@ def dashboard_data() -> dict[str, Any]:
             JOIN works w ON w.id=e.work_id
             WHERE la.status='synced'
               AND COALESCE(e.hidden, 0)=0
+              AND COALESCE(se.following, 1)=1
+              AND COALESCE(se.archived, 0)=0
               AND strftime('%s', la.updated_at) >= ?
             GROUP BY e.id
             ORDER BY synced_at DESC
@@ -2047,12 +2100,7 @@ async def api_update_library_entry(entry_id: int, payload: EntryPayload) -> dict
 
 @app.delete("/api/seasonal/{entry_id}")
 async def api_delete_seasonal_entry(entry_id: int) -> dict[str, str]:
-    return hide_entry(
-        entry_id,
-        expected_domain="seasonal",
-        success_message="已隐藏误识别条目，关联记录已保留",
-        log_prefix="已隐藏新番条目",
-    )
+    return archive_seasonal_entry(entry_id)
 
 
 @app.delete("/api/library/{entry_id}")
