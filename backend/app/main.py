@@ -19,14 +19,15 @@ from pydantic import BaseModel, Field
 from .config import APP_DIR, MEDIA_ROOT
 from .database import connect
 from .db import clear_runtime_data, diagnostics, get_runtime_generation, get_settings, init_db, log, merge_duplicate_series, now, save_settings
+from .downloader_service import SUPPORTED_DOWNLOADER_TYPES
 from .queue_bridge import register_queue_trigger
 from .runtime_store import runtime_store
 from .library import bool_setting
 from .pipeline_orchestrator import run_ready_tasks, start_pipeline
 from .pipeline_runtime import finish_pipeline_run, pipeline_overview, start_pipeline_run, update_pipeline_run
 from .processors import register_builtin_processors
+from .parser import fingerprint
 from .scanner import language_tokens, priority_match, priority_pick
-from .sync_service import scan_remote_library
 
 
 scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
@@ -59,33 +60,13 @@ class SettingsPayload(BaseModel):
     auto_scan: bool = False
     queue_dispatch_enabled: bool = True
     queue_dispatch_interval_minutes: int = 1
-    auto_download_unique: bool = True
-    auto_download_by_priority: bool = True
     auto_generate_nfo: bool = True
     backfill_current_season: bool = False
-    default_backfill: str = "none"
     subtitle_priority: list[str] = Field(default_factory=list)
     resolution_priority: list[str] = Field(default_factory=list)
     language_priority: list[str] = Field(default_factory=list)
     secondary_language_priority: list[str] = Field(default_factory=list)
     downloaders: list[dict[str, Any]] = Field(default_factory=list)
-    download_backend: str = "rclone"
-    local_downloader_root: str = "/data/local-downloader"
-    rclone_command: str = "rclone"
-    rclone_config_path: str = "/data/rclone/rclone.conf"
-    rclone_remote: str = "pikpak"
-    pikpak_auth_mode: str = "token"
-    pikpak_username: str = ""
-    pikpak_password: str = ""
-    pikpak_access_token: str = ""
-    pikpak_refresh_token: str = ""
-    pikpak_proxy: str = ""
-    library_root: str = "/Anime"
-    local_library_root: str = str(MEDIA_ROOT)
-    auto_sync_following: bool = True
-    nfo_output_root: str = ""
-    work_dir_template: str = ""
-    season_dir_template: str = ""
     episode_name_template: str = ""
     movie_name_template: str = ""
     tv_name_template: str = ""
@@ -107,6 +88,23 @@ class EntryPayload(BaseModel):
     selected_group: str = ""
     selected_resolution: str = ""
     backfill_mode: str = "inherit"
+
+
+class MediaCreatePayload(BaseModel):
+    mode: str = "add"
+    title: str = ""
+    bangumi_id: str = ""
+    tmdb_id: str = ""
+    year: int = 0
+    season_number: int = 1
+    episode_number: int = 0
+    resource_title: str = ""
+    source_ref: str = ""
+    subtitle_group: str = ""
+    resolution: str = ""
+    language: str = ""
+    subtitle_format: str = ""
+    subtitle_path: str = ""
 
 
 class RssSubscriptionPayload(BaseModel):
@@ -215,6 +213,87 @@ def enrich_retry_rows(rows: list[Any]) -> list[dict[str, Any]]:
 
 def split_setting(value: str) -> list[str]:
     return [x.strip() for x in (value or "").splitlines() if x.strip()]
+
+
+def clean_downloader_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    cleaned: list[dict[str, Any]] = []
+    for index, item in enumerate(items or []):
+        if not isinstance(item, dict):
+            continue
+        item_type = str(item.get("type") or "").strip().lower()
+        if item_type not in SUPPORTED_DOWNLOADER_TYPES:
+            continue
+        try:
+            max_attempts = max(1, int(item.get("max_attempts") or 3))
+        except (TypeError, ValueError):
+            max_attempts = 3
+        enabled_value = item.get("enabled", True)
+        enabled = bool_setting(str(enabled_value).lower()) if isinstance(enabled_value, str) else bool(enabled_value)
+        row: dict[str, Any] = {
+            "id": str(item.get("id") or f"downloader-{index + 1}"),
+            "name": str(item.get("name") or item_type).strip() or item_type,
+            "type": item_type,
+            "remote_dir": str(item.get("remote_dir") or "/Temp").strip() or "/Temp",
+            "enabled": enabled,
+            "max_attempts": max_attempts,
+        }
+        for key in (
+            "rpc_url",
+            "url",
+            "token",
+            "secret",
+            "username",
+            "password",
+            "auth_mode",
+            "access_token",
+            "refresh_token",
+            "proxy",
+            "rclone_command",
+            "rclone_config_path",
+            "rclone_remote",
+        ):
+            if key in item:
+                row[key] = str(item.get(key) or "").strip()
+        cleaned.append(row)
+    return cleaned
+
+
+def first_enabled_downloader(downloaders: list[dict[str, Any]]) -> dict[str, Any]:
+    return next((item for item in downloaders if item.get("enabled", True)), downloaders[0] if downloaders else {})
+
+
+def legacy_downloader_settings(downloaders: list[dict[str, Any]], previous: dict[str, str]) -> dict[str, str]:
+    active = first_enabled_downloader(downloaders)
+    backend = SUPPORTED_DOWNLOADER_TYPES.get(str(active.get("type") or "").strip().lower(), previous.get("download_backend") or "rclone")
+    result = {
+        "downloaders_json": json.dumps(downloaders, ensure_ascii=False),
+        "download_backend": backend,
+        "library_root": str(active.get("remote_dir") or previous.get("library_root") or "/Temp").strip() or "/Temp",
+        "local_downloader_root": previous.get("local_downloader_root") or "/data/local-downloader",
+        "rclone_command": previous.get("rclone_command") or "rclone",
+        "rclone_config_path": previous.get("rclone_config_path") or "/data/rclone/rclone.conf",
+        "rclone_remote": previous.get("rclone_remote") or "pikpak",
+        "pikpak_auth_mode": previous.get("pikpak_auth_mode") or "token",
+        "pikpak_username": previous.get("pikpak_username") or "",
+        "pikpak_password": previous.get("pikpak_password") or "",
+        "pikpak_access_token": previous.get("pikpak_access_token") or "",
+        "pikpak_refresh_token": previous.get("pikpak_refresh_token") or "",
+        "pikpak_proxy": previous.get("pikpak_proxy") or "",
+    }
+    if backend == "rclone":
+        result["rclone_command"] = str(active.get("rclone_command") or result["rclone_command"]).strip() or "rclone"
+        result["rclone_config_path"] = str(active.get("rclone_config_path") or result["rclone_config_path"]).strip()
+        result["rclone_remote"] = str(active.get("rclone_remote") or result["rclone_remote"]).strip() or "pikpak"
+        result["pikpak_username"] = str(active.get("username") or result["pikpak_username"]).strip()
+        result["pikpak_password"] = str(active.get("password") or result["pikpak_password"])
+    if backend == "api":
+        result["pikpak_auth_mode"] = str(active.get("auth_mode") or result["pikpak_auth_mode"]).strip() or "token"
+        result["pikpak_username"] = str(active.get("username") or result["pikpak_username"]).strip()
+        result["pikpak_password"] = str(active.get("password") or result["pikpak_password"])
+        result["pikpak_access_token"] = str(active.get("access_token") or result["pikpak_access_token"]).strip()
+        result["pikpak_refresh_token"] = str(active.get("refresh_token") or result["pikpak_refresh_token"]).strip()
+        result["pikpak_proxy"] = str(active.get("proxy") or result["pikpak_proxy"]).strip()
+    return result
 
 
 def split_candidate_values(value: Any) -> list[str]:
@@ -434,37 +513,34 @@ def summarize_seasonal_entry(
 
 def settings_response() -> dict[str, Any]:
     settings = get_settings()
-    result: dict[str, Any] = dict(settings)
-    result["scan_interval_minutes"] = int(settings.get("scan_interval_minutes") or 60)
-    result["auto_scan"] = bool_setting(settings.get("auto_scan", "false"))
-    result["queue_dispatch_enabled"] = bool_setting(settings.get("queue_dispatch_enabled", "true"))
-    result["queue_dispatch_interval_minutes"] = int(settings.get("queue_dispatch_interval_minutes") or 1)
-    result["auto_download_unique"] = True
-    result["auto_download_by_priority"] = True
-    result["auto_sync_following"] = True
-    result["auto_generate_nfo"] = bool_setting(settings.get("auto_generate_nfo", "true"))
-    result["backfill_current_season"] = bool_setting(settings.get("backfill_current_season", "false"))
-    result["subtitle_priority"] = split_setting(settings.get("subtitle_priority", ""))
-    result["resolution_priority"] = split_setting(settings.get("resolution_priority", ""))
-    result["language_priority"] = split_setting(settings.get("language_priority", ""))
-    result["secondary_language_priority"] = split_setting(settings.get("secondary_language_priority", ""))
-    result["work_dir_template"] = settings.get("series_dir_template", "")
     try:
         downloaders = json.loads(settings.get("downloaders_json", "[]") or "[]")
     except json.JSONDecodeError:
         downloaders = []
-    result["downloaders"] = downloaders if isinstance(downloaders, list) else []
-    result["movie_name_template"] = settings.get("movie_name_template", "")
-    result["tv_name_template"] = settings.get("tv_name_template", "")
-    result["movie_quality_priority"] = settings.get("movie_quality_priority", "")
-    result["movie_source_priority"] = settings.get("movie_source_priority", "")
-    result["movie_subtitle_priority"] = settings.get("movie_subtitle_priority", "")
-    result["tv_quality_priority"] = settings.get("tv_quality_priority", "")
-    result["tv_source_priority"] = settings.get("tv_source_priority", "")
-    result["tv_subtitle_priority"] = settings.get("tv_subtitle_priority", "")
-    result["local_library_root"] = str(MEDIA_ROOT)
-    result["nfo_output_root"] = ""
-    return result
+    return {
+        "rss_url": settings.get("rss_url", ""),
+        "rss_proxy": settings.get("rss_proxy", ""),
+        "scan_interval_minutes": int(settings.get("scan_interval_minutes") or 60),
+        "auto_scan": bool_setting(settings.get("auto_scan", "false")),
+        "queue_dispatch_enabled": bool_setting(settings.get("queue_dispatch_enabled", "true")),
+        "queue_dispatch_interval_minutes": int(settings.get("queue_dispatch_interval_minutes") or 1),
+        "auto_generate_nfo": bool_setting(settings.get("auto_generate_nfo", "true")),
+        "backfill_current_season": bool_setting(settings.get("backfill_current_season", "false")),
+        "subtitle_priority": split_setting(settings.get("subtitle_priority", "")),
+        "resolution_priority": split_setting(settings.get("resolution_priority", "")),
+        "language_priority": split_setting(settings.get("language_priority", "")),
+        "secondary_language_priority": split_setting(settings.get("secondary_language_priority", "")),
+        "downloaders": clean_downloader_items(downloaders if isinstance(downloaders, list) else []),
+        "episode_name_template": settings.get("episode_name_template", ""),
+        "movie_name_template": settings.get("movie_name_template", ""),
+        "tv_name_template": settings.get("tv_name_template", ""),
+        "movie_quality_priority": settings.get("movie_quality_priority", ""),
+        "movie_source_priority": settings.get("movie_source_priority", ""),
+        "movie_subtitle_priority": settings.get("movie_subtitle_priority", ""),
+        "tv_quality_priority": settings.get("tv_quality_priority", ""),
+        "tv_source_priority": settings.get("tv_source_priority", ""),
+        "tv_subtitle_priority": settings.get("tv_subtitle_priority", ""),
+    }
 
 
 def normalize_api_media_type(value: str) -> str:
@@ -483,6 +559,176 @@ def media_items_response(media_type: str) -> dict[str, Any]:
         if str(item.get("media_type") or "anime").lower() == media_type
     ]
     return {"type": media_type, "items": items}
+
+
+def media_library_key(media_type: str) -> str:
+    return {
+        "anime": "anime_library",
+        "movie": "movies",
+        "tv": "tv",
+    }.get(media_type, "anime_library")
+
+
+def create_media_entry(media_type: str, payload: MediaCreatePayload) -> dict[str, Any]:
+    media_type = normalize_api_media_type(media_type)
+    title = payload.title.strip() or payload.resource_title.strip() or payload.source_ref.strip() or "未命名媒体"
+    bangumi_id = payload.bangumi_id.strip()
+    tmdb_id = payload.tmdb_id.strip()
+    season_number = max(1, int(payload.season_number or 1))
+    year = max(0, int(payload.year or 0))
+    source_ref = payload.source_ref.strip()
+    ts = now()
+    work_key = fingerprint(title, bangumi_id or tmdb_id)
+    entry_key = fingerprint(f"{media_type}:{bangumi_id or tmdb_id or title}:S{season_number}", "")
+    with connect() as conn:
+        target_library = conn.execute("SELECT id FROM media_libraries WHERE key=?", (media_library_key(media_type),)).fetchone()
+        target_library_id = int(target_library["id"] or 0) if target_library else 0
+        conn.execute(
+            """
+            INSERT INTO works
+              (root_key, title_root, title_root_raw, bangumi_id, metadata_source, hidden, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'manual', 0, ?, ?)
+            ON CONFLICT(root_key) DO UPDATE SET
+              title_root=excluded.title_root,
+              title_root_raw=excluded.title_root_raw,
+              bangumi_id=CASE WHEN works.bangumi_id='' THEN excluded.bangumi_id ELSE works.bangumi_id END,
+              updated_at=excluded.updated_at
+            """,
+            (work_key, title, title, bangumi_id, ts, ts),
+        )
+        work = conn.execute("SELECT id FROM works WHERE root_key=?", (work_key,)).fetchone()
+        work_id = int(work["id"] or 0)
+        conn.execute(
+            """
+            INSERT INTO entries
+              (work_id, fingerprint, domain_kind, media_type, region, source_provider, metadata_provider,
+               external_id, target_library_id, display_title, title_root, title_raw, title_cn,
+               bangumi_id, tmdb_id, year, season_number, created_at, updated_at)
+            VALUES (?, ?, 'library', ?, 'jp', ?, 'manual', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(fingerprint) DO UPDATE SET
+              media_type=excluded.media_type,
+              target_library_id=excluded.target_library_id,
+              display_title=excluded.display_title,
+              title_root=excluded.title_root,
+              title_cn=excluded.title_cn,
+              bangumi_id=CASE WHEN entries.bangumi_id='' THEN excluded.bangumi_id ELSE entries.bangumi_id END,
+              tmdb_id=CASE WHEN entries.tmdb_id='' THEN excluded.tmdb_id ELSE entries.tmdb_id END,
+              year=CASE WHEN excluded.year>0 THEN excluded.year ELSE entries.year END,
+              updated_at=excluded.updated_at
+            """,
+            (
+                work_id,
+                entry_key,
+                media_type,
+                payload.mode.strip() or "manual",
+                bangumi_id or tmdb_id,
+                target_library_id,
+                title,
+                title,
+                title,
+                title,
+                bangumi_id,
+                tmdb_id,
+                year,
+                season_number,
+                ts,
+                ts,
+            ),
+        )
+        entry = conn.execute("SELECT * FROM entries WHERE fingerprint=?", (entry_key,)).fetchone()
+        entry_id = int(entry["id"] or 0)
+        conn.execute(
+            """
+            INSERT INTO library_entries (entry_id, source_type, source_ref, wanted, archived, created_at, updated_at)
+            VALUES (?, ?, ?, 1, 0, ?, ?)
+            ON CONFLICT(entry_id) DO UPDATE SET
+              source_type=excluded.source_type,
+              source_ref=excluded.source_ref,
+              wanted=1,
+              archived=0,
+              updated_at=excluded.updated_at
+            """,
+            (entry_id, payload.mode.strip() or "manual", source_ref, ts, ts),
+        )
+        episode_number = max(0, int(payload.episode_number or 0))
+        if episode_number > 0 or payload.resource_title.strip() or source_ref:
+            episode_number = episode_number or 1
+            conn.execute(
+                """
+                INSERT INTO episodes (series_id, entry_id, episode_number, title, status, created_at, updated_at)
+                VALUES (?, ?, ?, '', 'configured', ?, ?)
+                ON CONFLICT(series_id, episode_number) DO UPDATE SET
+                  entry_id=excluded.entry_id,
+                  status=excluded.status,
+                  updated_at=excluded.updated_at
+                """,
+                (entry_id, entry_id, episode_number, ts, ts),
+            )
+            episode = conn.execute(
+                "SELECT id FROM episodes WHERE entry_id=? AND episode_number=? ORDER BY id DESC LIMIT 1",
+                (entry_id, episode_number),
+            ).fetchone()
+            episode_id = int(episode["id"] or 0) if episode else 0
+            resource_ref = source_ref or payload.resource_title.strip() or f"manual:{entry_id}:{episode_number}"
+            conn.execute(
+                """
+                INSERT INTO episode_resources
+                  (entry_id, episode_id, episode_number, source_type, source_ref, release_id, title,
+                   subtitle_group, resolution, language, subtitle_format, torrent_url, magnet,
+                   selected, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, 1, 'available', ?, ?)
+                ON CONFLICT(entry_id, episode_number, source_type, source_ref) DO UPDATE SET
+                  episode_id=excluded.episode_id,
+                  title=excluded.title,
+                  subtitle_group=excluded.subtitle_group,
+                  resolution=excluded.resolution,
+                  language=excluded.language,
+                  subtitle_format=excluded.subtitle_format,
+                  torrent_url=excluded.torrent_url,
+                  magnet=excluded.magnet,
+                  selected=1,
+                  status='available',
+                  updated_at=excluded.updated_at
+                """,
+                (
+                    entry_id,
+                    episode_id,
+                    episode_number,
+                    payload.mode.strip() or "manual",
+                    resource_ref,
+                    payload.resource_title.strip() or resource_ref,
+                    payload.subtitle_group.strip(),
+                    payload.resolution.strip(),
+                    payload.language.strip(),
+                    payload.subtitle_format.strip(),
+                    source_ref if source_ref.startswith("http") else "",
+                    source_ref if source_ref.startswith("magnet:") else "",
+                    ts,
+                    ts,
+                ),
+            )
+            if payload.subtitle_path.strip():
+                conn.execute(
+                    """
+                    INSERT INTO episode_subtitles
+                      (episode_id, episode_resource_id, entry_id, episode_number, language, subtitle_format,
+                       subtitle_path, embedded, selected, created_at, updated_at)
+                    VALUES (?, 0, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                    """,
+                    (
+                        episode_id,
+                        entry_id,
+                        episode_number,
+                        payload.language.strip(),
+                        payload.subtitle_format.strip(),
+                        payload.subtitle_path.strip(),
+                        1 if payload.subtitle_format.strip() in {"embedded", "muxed"} else 0,
+                        ts,
+                        ts,
+                    ),
+                )
+    log("info", f"媒体条目已收录: type={media_type} entry_id={entry_id} title={title}")
+    return build_entry_response(entry_id)
 
 
 def empty_entry_response() -> dict[str, Any]:
@@ -1288,8 +1534,7 @@ def dashboard_data() -> dict[str, Any]:
               GROUP_CONCAT(DISTINCT r.language) AS languages,
               COUNT(DISTINCT CASE WHEN cs.status IN ('submitted','running','completed') THEN cs.id END) AS downloaded_count,
               COUNT(DISTINCT ca.id) AS download_artifact_count,
-              COUNT(DISTINCT la.id) AS local_asset_count,
-              COALESCE(MAX(sr.sync_enabled), 0) AS sync_enabled
+              COUNT(DISTINCT la.id) AS local_asset_count
             FROM entries e
             JOIN seasonal_entries se ON se.entry_id=e.id
             JOIN works w ON w.id=e.work_id
@@ -1298,7 +1543,6 @@ def dashboard_data() -> dict[str, Any]:
             LEFT JOIN download_jobs cs ON cs.release_id=r.id
             LEFT JOIN download_artifacts ca ON ca.release_id=r.id
             LEFT JOIN local_assets la ON la.release_id=r.id AND la.status='synced'
-            LEFT JOIN sync_rules sr ON sr.entry_id=e.id
             WHERE COALESCE(e.hidden, 0)=0
               AND e.bangumi_id != ''
               AND COALESCE(se.following, 1)=1
@@ -1346,17 +1590,6 @@ def dashboard_data() -> dict[str, Any]:
             WHERE COALESCE(e.hidden, 0)=0
             GROUP BY e.id
             ORDER BY e.updated_at DESC
-            """
-        ).fetchall()
-        sync_rules = conn.execute(
-            """
-            SELECT sr.*, e.display_title AS title_cn
-            FROM sync_rules sr
-            JOIN entries e ON e.id=sr.entry_id
-            WHERE COALESCE(e.hidden, 0)=0
-              AND e.bangumi_id != ''
-            ORDER BY sr.updated_at DESC
-            LIMIT 200
             """
         ).fetchall()
         seasonal_sync_calendar = conn.execute(
@@ -1482,7 +1715,6 @@ def dashboard_data() -> dict[str, Any]:
         "seasonal_sync_calendar": seasonal_calendar_rows,
         "seasonal_update_calendar": seasonal_update_rows,
         "recent_synced_seasonal_entries": recent_synced_rows,
-        "sync_rules": rows_to_dicts(sync_rules),
         "operations": operations_list,
         "scheduled_jobs": scheduled_jobs,
         "scheduled_runs": scheduled_runs,
@@ -1571,6 +1803,8 @@ async def api_system_diagnostics() -> dict[str, Any]:
 @app.put("/api/settings")
 async def api_update_settings(payload: SettingsPayload) -> dict[str, Any]:
     previous = get_settings()
+    downloaders = clean_downloader_items(payload.downloaders)
+    derived_downloader_settings = legacy_downloader_settings(downloaders, previous)
     save_settings(
         {
             "rss_url": payload.rss_url.strip(),
@@ -1583,29 +1817,15 @@ async def api_update_settings(payload: SettingsPayload) -> dict[str, Any]:
             "auto_download_by_priority": "true",
             "auto_generate_nfo": str(payload.auto_generate_nfo).lower(),
             "backfill_current_season": str(payload.backfill_current_season).lower(),
-            "default_backfill": "season" if payload.backfill_current_season else payload.default_backfill,
+            "default_backfill": "season" if payload.backfill_current_season else "none",
             "subtitle_priority": "\n".join(payload.subtitle_priority),
             "resolution_priority": "\n".join(payload.resolution_priority),
             "language_priority": "\n".join(payload.language_priority),
             "secondary_language_priority": "\n".join(payload.secondary_language_priority),
-            "downloaders_json": json.dumps(payload.downloaders, ensure_ascii=False),
-            "download_backend": payload.download_backend,
-            "local_downloader_root": payload.local_downloader_root.strip() or "/data/local-downloader",
-            "rclone_command": payload.rclone_command.strip() or "rclone",
-            "rclone_config_path": payload.rclone_config_path.strip(),
-            "rclone_remote": payload.rclone_remote.strip() or "pikpak",
-            "pikpak_auth_mode": payload.pikpak_auth_mode,
-            "pikpak_username": payload.pikpak_username.strip(),
-            "pikpak_password": payload.pikpak_password,
-            "pikpak_access_token": payload.pikpak_access_token.strip(),
-            "pikpak_refresh_token": payload.pikpak_refresh_token.strip(),
-            "pikpak_proxy": payload.pikpak_proxy.strip(),
-            "library_root": payload.library_root.strip() or "/Anime",
+            **derived_downloader_settings,
             "local_library_root": str(MEDIA_ROOT),
             "auto_sync_following": "true",
             "nfo_output_root": "",
-            "series_dir_template": payload.work_dir_template.strip(),
-            "season_dir_template": payload.season_dir_template.strip(),
             "episode_name_template": payload.episode_name_template.strip(),
             "movie_name_template": payload.movie_name_template.strip(),
             "tv_name_template": payload.tv_name_template.strip(),
@@ -1627,8 +1847,6 @@ async def api_update_settings(payload: SettingsPayload) -> dict[str, Any]:
             "secondary_language_priority",
             "default_backfill",
             "backfill_current_season",
-            "series_dir_template",
-            "season_dir_template",
             "episode_name_template",
             "movie_name_template",
             "tv_name_template",
@@ -1768,6 +1986,11 @@ async def api_delete_rss_subscription(subscription_id: int) -> dict[str, str]:
 @app.get("/api/media/{media_type}")
 async def api_media_items(media_type: str) -> dict[str, Any]:
     return media_items_response(media_type)
+
+
+@app.post("/api/media/{media_type}")
+async def api_create_media_entry(media_type: str, payload: MediaCreatePayload) -> dict[str, Any]:
+    return create_media_entry(media_type, payload)
 
 
 @app.get("/api/media/{media_type}/{entry_id}")
@@ -2015,18 +2238,6 @@ async def api_poll_tasks() -> dict[str, str]:
 
     operation_id = run_operation("刷新下载任务", run, "正在刷新下载器任务状态")
     return {"status": "started", "operation_id": str(operation_id), "message": "状态刷新已启动"}
-
-
-@app.post("/api/cloud/scan")
-async def api_scan_cloud() -> dict[str, str]:
-    async def run() -> str:
-        settings = get_settings()
-        imported, skipped = await scan_remote_library(settings)
-        log("info", f"远端资源扫描完成: 入库 {imported} 个，跳过 {skipped} 个")
-        return f"入库 {imported} 个，跳过 {skipped} 个"
-
-    operation_id = run_operation("扫描远端资源", run, "正在扫描下载器远端资源")
-    return {"status": "started", "operation_id": str(operation_id), "message": "远端资源扫描已启动"}
 
 
 @app.post("/api/tasks/retry-failed")

@@ -569,29 +569,51 @@
                       <div class="downloader-row">
                         <span class="drag-handle">⋮⋮</span>
                         <span class="rank">{{ index + 1 }}</span>
-                        <el-select v-model="element.type" class="downloader-type">
-                          <el-option label="PikPak rclone" value="pikpak_rclone" />
-                          <el-option label="PikPak API" value="pikpak_api" />
-                          <el-option label="aria2" value="aria2" />
-                          <el-option label="qBittorrent" value="qb" />
-                        </el-select>
-                        <el-input v-model="element.name" placeholder="名称" />
-                        <el-input v-model="element.remote_dir" placeholder="远端目录 / 临时目录" />
-                        <el-input
-                          v-if="['aria2', 'qb'].includes(element.type)"
-                          v-model="element.rpc_url"
-                          placeholder="RPC / Web UI 地址"
-                        />
-                        <el-input
-                          v-if="element.type === 'aria2'"
-                          v-model="element.token"
-                          placeholder="aria2 token"
-                          show-password
-                        />
-                        <template v-if="element.type === 'qb'">
-                          <el-input v-model="element.username" placeholder="qB 用户名" />
-                          <el-input v-model="element.password" placeholder="qB 密码" show-password />
-                        </template>
+                        <div class="downloader-fields">
+                          <el-select v-model="element.type" class="downloader-type">
+                            <el-option label="PikPak rclone" value="pikpak_rclone" />
+                            <el-option label="PikPak API" value="pikpak_api" />
+                            <el-option label="aria2" value="aria2" />
+                            <el-option label="qBittorrent" value="qb" />
+                          </el-select>
+                          <el-input v-model="element.name" placeholder="名称" />
+                          <el-input v-model="element.remote_dir" placeholder="远端目录 / 临时目录" />
+                          <template v-if="element.type === 'pikpak_rclone'">
+                            <el-input v-model="element.rclone_remote" placeholder="rclone remote，例如 pikpak" />
+                            <el-input v-model="element.rclone_config_path" placeholder="rclone.conf 路径" />
+                            <el-input v-model="element.rclone_command" placeholder="rclone 命令" />
+                            <el-input v-model="element.username" placeholder="PikPak 用户名，可用于初始化 rclone" />
+                            <el-input v-model="element.password" placeholder="PikPak 密码" show-password />
+                          </template>
+                          <template v-if="element.type === 'pikpak_api'">
+                            <el-select v-model="element.auth_mode" placeholder="认证方式">
+                              <el-option label="Token" value="token" />
+                              <el-option label="账号密码" value="password" />
+                            </el-select>
+                            <template v-if="element.auth_mode === 'password'">
+                              <el-input v-model="element.username" placeholder="PikPak 用户名" />
+                              <el-input v-model="element.password" placeholder="PikPak 密码" show-password />
+                            </template>
+                            <template v-else>
+                              <el-input v-model="element.access_token" placeholder="access token" show-password />
+                              <el-input v-model="element.refresh_token" placeholder="refresh token" show-password />
+                            </template>
+                            <el-input v-model="element.proxy" placeholder="代理，可选" />
+                          </template>
+                          <template v-if="['aria2', 'qb'].includes(element.type)">
+                            <el-input v-model="element.rpc_url" placeholder="RPC / Web UI 地址" />
+                          </template>
+                          <el-input
+                            v-if="element.type === 'aria2'"
+                            v-model="element.token"
+                            placeholder="aria2 token"
+                            show-password
+                          />
+                          <template v-if="element.type === 'qb'">
+                            <el-input v-model="element.username" placeholder="qB 用户名" />
+                            <el-input v-model="element.password" placeholder="qB 密码" show-password />
+                          </template>
+                        </div>
                         <el-switch v-model="element.enabled" />
                         <el-button type="danger" link @click="removeDownloader(index)">删除</el-button>
                       </div>
@@ -823,18 +845,23 @@
             <el-input v-model="mediaWizardDraft.bangumi_id" placeholder="Bangumi ID" />
             <el-input v-model="mediaWizardDraft.tmdb_id" placeholder="TMDB ID" />
             <el-input-number v-model="mediaWizardDraft.year" :min="0" placeholder="年份" />
+            <el-input-number v-model="mediaWizardDraft.season_number" :min="1" placeholder="季" />
           </div>
         </template>
         <template v-else-if="mediaWizardStep === 2">
           <div class="wizard-form-grid">
             <el-input-number v-model="mediaWizardDraft.episode_number" :min="0" placeholder="集数" />
             <el-input v-model="mediaWizardDraft.resource_title" placeholder="资源标题 / 文件名" />
+            <el-input v-model="mediaWizardDraft.source_ref" placeholder="磁力链接 / 下载链接 / 文件标识" />
             <el-input v-model="mediaWizardDraft.subtitle_group" placeholder="字幕组" />
+            <el-input v-model="mediaWizardDraft.resolution" placeholder="分辨率" />
+            <el-input v-model="mediaWizardDraft.language" placeholder="语言" />
             <el-select v-model="mediaWizardDraft.subtitle_format" clearable placeholder="字幕类型">
               <el-option label="内嵌" value="embedded" />
               <el-option label="内封" value="muxed" />
               <el-option label="外挂" value="external" />
             </el-select>
+            <el-input v-model="mediaWizardDraft.subtitle_path" placeholder="外挂字幕路径，可选" />
           </div>
         </template>
         <template v-else>
@@ -848,7 +875,8 @@
       <template #footer>
         <el-button @click="mediaWizardOpen = false">关闭</el-button>
         <el-button :disabled="mediaWizardStep <= 0" @click="mediaWizardStep -= 1">上一步</el-button>
-        <el-button type="primary" :disabled="mediaWizardStep >= 3" @click="mediaWizardStep += 1">下一步</el-button>
+        <el-button v-if="mediaWizardStep < 3" type="primary" @click="mediaWizardStep += 1">下一步</el-button>
+        <el-button v-else type="primary" :loading="mediaWizardSaving" @click="commitMediaWizard">收录</el-button>
       </template>
     </el-dialog>
   </div>
@@ -881,6 +909,7 @@ const mediaWizardOpen = ref(false)
 const mediaWizardMode = ref('import')
 const mediaWizardStep = ref(0)
 const mediaWizardSeed = ref('')
+const mediaWizardSaving = ref(false)
 const episodeResourceDialogOpen = ref(false)
 let refreshTimer = null
 let dashboardStream = null
@@ -899,7 +928,6 @@ const dashboard = reactive({
   library_items: [],
   seasonal_sync_calendar: [],
   seasonal_update_calendar: [],
-  sync_rules: [],
   operations: [],
   scheduled_jobs: [],
   scheduled_runs: [],
@@ -936,10 +964,15 @@ const mediaWizardDraft = reactive({
   bangumi_id: '',
   tmdb_id: '',
   year: 0,
+  season_number: 1,
   episode_number: 0,
   resource_title: '',
+  source_ref: '',
   subtitle_group: '',
+  resolution: '',
+  language: '',
   subtitle_format: '',
+  subtitle_path: '',
 })
 const scheduledJobForm = reactive({
   enabled: true,
@@ -1225,6 +1258,10 @@ function queueTag(queue) {
   if (queue.queue_state === 'debouncing' || queue.queue_state === 'cooldown' || Number(queue.waiting || 0) > 0) return 'info'
   if (Number(queue.pending || 0) > 0) return 'primary'
   return 'success'
+}
+
+function errorMessage(error) {
+  return error?.response?.data?.detail || error?.response?.data?.message || error?.message || '请求失败'
 }
 
 function mediaTypeLabel(value) {
@@ -1684,11 +1721,54 @@ function openMediaWizard(mode) {
   mediaWizardDraft.bangumi_id = ''
   mediaWizardDraft.tmdb_id = ''
   mediaWizardDraft.year = 0
+  mediaWizardDraft.season_number = 1
   mediaWizardDraft.episode_number = 0
   mediaWizardDraft.resource_title = ''
+  mediaWizardDraft.source_ref = ''
   mediaWizardDraft.subtitle_group = ''
+  mediaWizardDraft.resolution = ''
+  mediaWizardDraft.language = ''
   mediaWizardDraft.subtitle_format = ''
+  mediaWizardDraft.subtitle_path = ''
   mediaWizardOpen.value = true
+}
+
+async function commitMediaWizard() {
+  const title = String(mediaWizardDraft.title || '').trim()
+  if (!title) {
+    ElMessage.warning('作品标题不能为空')
+    mediaWizardStep.value = 1
+    return
+  }
+  mediaWizardSaving.value = true
+  try {
+    const sourceRef = String(mediaWizardDraft.source_ref || mediaWizardSeed.value || '').trim()
+    const result = await postAction(`/media/${currentMediaType.value}`, {
+      mode: mediaWizardMode.value,
+      title,
+      bangumi_id: mediaWizardDraft.bangumi_id,
+      tmdb_id: mediaWizardDraft.tmdb_id,
+      year: mediaWizardDraft.year,
+      season_number: mediaWizardDraft.season_number || 1,
+      episode_number: mediaWizardDraft.episode_number || 0,
+      resource_title: mediaWizardDraft.resource_title,
+      source_ref: sourceRef,
+      subtitle_group: mediaWizardDraft.subtitle_group,
+      resolution: mediaWizardDraft.resolution,
+      language: mediaWizardDraft.language,
+      subtitle_format: mediaWizardDraft.subtitle_format,
+      subtitle_path: mediaWizardDraft.subtitle_path,
+    })
+    ElMessage.success('媒体条目已收录')
+    mediaWizardOpen.value = false
+    await reload()
+    const entryId = result?.entry?.id
+    if (entryId) await openEntry(entryId, 'library')
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    mediaWizardSaving.value = false
+  }
 }
 
 function exportLogs() {
@@ -1770,10 +1850,17 @@ function addDownloader() {
       name: 'PikPak',
       type: 'pikpak_rclone',
       remote_dir: '/Temp',
+      rclone_remote: 'pikpak',
+      rclone_config_path: '/data/rclone/rclone.conf',
+      rclone_command: 'rclone',
       rpc_url: '',
       token: '',
+      auth_mode: 'token',
       username: '',
       password: '',
+      access_token: '',
+      refresh_token: '',
+      proxy: '',
       enabled: true,
       max_attempts: 3,
     },

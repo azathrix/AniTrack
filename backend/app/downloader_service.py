@@ -94,6 +94,19 @@ def bind_downloader(settings: dict[str, str], downloader: dict[str, Any]) -> dic
     remote_dir = str(active.get("remote_dir") or "").strip()
     if remote_dir:
         result["library_root"] = remote_dir
+    if backend == "rclone":
+        result["rclone_command"] = str(active.get("rclone_command") or settings.get("rclone_command") or "rclone")
+        result["rclone_config_path"] = str(active.get("rclone_config_path") or settings.get("rclone_config_path") or "")
+        result["rclone_remote"] = str(active.get("rclone_remote") or settings.get("rclone_remote") or "pikpak")
+        result["pikpak_username"] = str(active.get("username") or settings.get("pikpak_username") or "")
+        result["pikpak_password"] = str(active.get("password") or settings.get("pikpak_password") or "")
+    if backend == "api":
+        result["pikpak_auth_mode"] = str(active.get("auth_mode") or settings.get("pikpak_auth_mode") or "token")
+        result["pikpak_username"] = str(active.get("username") or settings.get("pikpak_username") or "")
+        result["pikpak_password"] = str(active.get("password") or settings.get("pikpak_password") or "")
+        result["pikpak_access_token"] = str(active.get("access_token") or settings.get("pikpak_access_token") or "")
+        result["pikpak_refresh_token"] = str(active.get("refresh_token") or settings.get("pikpak_refresh_token") or "")
+        result["pikpak_proxy"] = str(active.get("proxy") or settings.get("pikpak_proxy") or "")
     return result
 
 
