@@ -222,8 +222,6 @@ async def process_download_submit(context: ProcessorContext, payload: dict) -> P
     release = _release_row(release_id)
     if not release:
         return ProcessorResult.terminal(f"发布不存在: {release_id}")
-    if not str(release["bangumi_id"] or ""):
-        return ProcessorResult.terminal(f"条目缺少 Bangumi ID: release_id={release_id}")
 
     source = str(release["magnet"] or release["torrent_url"] or "")
     remote_target = target_dir(dict(release), settings)

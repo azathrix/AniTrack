@@ -69,6 +69,7 @@ class SettingsPayload(BaseModel):
     language_priority: list[str] = []
     secondary_language_priority: list[str] = []
     download_backend: str = "rclone"
+    local_downloader_root: str = "/data/local-downloader"
     rclone_command: str = "rclone"
     rclone_config_path: str = "/data/rclone/rclone.conf"
     rclone_remote: str = "pikpak"
@@ -1769,6 +1770,7 @@ async def api_update_settings(payload: SettingsPayload) -> dict[str, Any]:
             "language_priority": "\n".join(payload.language_priority),
             "secondary_language_priority": "\n".join(payload.secondary_language_priority),
             "download_backend": payload.download_backend,
+            "local_downloader_root": payload.local_downloader_root.strip() or "/data/local-downloader",
             "rclone_command": payload.rclone_command.strip() or "rclone",
             "rclone_config_path": payload.rclone_config_path.strip(),
             "rclone_remote": payload.rclone_remote.strip() or "pikpak",

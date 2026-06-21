@@ -122,6 +122,189 @@ library（番剧库域）
 - 篇章与季度在“具体可管理条目”维度上同级，不能因为归一化目录名而直接合并成一条。
 - UI 可以做“作品 -> 季度/篇章条目”的二层展开，但任务执行仍以具体条目为单位。
 
+### Pipeline + Processor 重构目标
+
+当前队列已经拆成多张任务表，但任务之间的流向仍写死在处理器和 `main.py` 的 handler 里。下一阶段要把“处理器做什么”和“处理完去哪”拆开：
+
+```txt
+pipeline
+  定义业务流程、领域、步骤顺序、分支规则
+
+processor
+  只处理一种任务，不关心上层业务目标
+
+task table
+  保存某个 processor 的待处理、运行中、失败、完成状态
+
+transition
+  根据 processor result 决定写入哪些后续任务表
+```
+
+目标原则：
+
+- 任务处理器只做单一动作，例如拉 RSS、解析 Mikan、刷新元数据、选资源、提交云盘、轮询云盘、登记云盘资产、生成同步计划、本地同步、生成 NFO。
+- 流水线负责定义“这个任务成功/跳过/冲突/失败后进入哪个步骤”，处理器内部不再写死下一步。
+- 每个任务都必须带 `pipeline_id` 和 `run_id`，同一个处理器可以被多个流水线复用。
+- 新番流水线、补番流水线、云盘导入流水线可以并行运行，并共享后半段处理器。
+- 分支要由配置驱动，而不是写在 if/else 里。例如：
+  - `success -> metadata`
+  - `conflict -> manual_resolution`
+  - `skipped_existing_cloud -> sync_plan`
+  - `failed_retryable -> same_step_after_retry`
+  - `failed_terminal -> issue_queue`
+- 处理器执行完成后返回结构化结果：`status / reason / stats / next_payloads / retry_after / events`。
+- UI 不再把“队列”和“定时任务、日志、维护”混在一起；控制台主视图应以流水线 tab + processor 列表为主。
+
+建议新增核心表：
+
+- `pipelines`
+  - `id`
+  - `key`
+  - `name`
+  - `domain_kind`：`seasonal` / `library` / `cloud_import` / `maintenance`
+  - `enabled`
+  - `created_at`
+  - `updated_at`
+- `pipeline_steps`
+  - `id`
+  - `pipeline_id`
+  - `step_key`
+  - `processor_key`
+  - `sort_order`
+  - `enabled`
+  - `max_concurrency`
+  - `debounce_seconds`
+  - `retry_policy_json`
+  - `config_json`
+- `pipeline_transitions`
+  - `id`
+  - `pipeline_id`
+  - `from_step_key`
+  - `result_status`
+  - `to_step_key`
+  - `condition_json`
+  - `payload_map_json`
+- `pipeline_runs`
+  - `id`
+  - `pipeline_id`
+  - `trigger_source`
+  - `status`
+  - `progress`
+  - `message`
+  - `stats_json`
+  - `started_at`
+  - `finished_at`
+- `processor_tasks`
+  - `id`
+  - `pipeline_id`
+  - `run_id`
+  - `step_id`
+  - `processor_key`
+  - `domain_kind`
+  - `subject_type`
+  - `subject_id`
+  - `payload_json`
+  - `status`
+  - `attempts`
+  - `retry_after`
+  - `progress`
+  - `progress_text`
+  - `last_error`
+  - `created_at`
+  - `updated_at`
+- `processor_events`
+  - `id`
+  - `task_id`
+  - `level`
+  - `event_key`
+  - `message`
+  - `data_json`
+  - `created_at`
+
+第一阶段可以先保留现有专用任务表，但要新增一层 pipeline runtime 适配器：
+
+- 旧表仍作为实际状态表，避免一次性大迁移。
+- 新增 `pipeline_runs / processor_events` 用于可观测性。
+- 每个现有 handler 先包装成 processor adapter，统一返回结构化结果。
+- 后续再把多个旧任务表迁移为通用 `processor_tasks`，或保留高频任务的专用表作为性能优化。
+
+新番流水线建议：
+
+```txt
+seasonal_mikan_tracking
+-> rss_fetch
+-> rss_candidate_persist
+-> mikan_match
+-> bangumi_metadata
+-> seasonal_merge
+-> release_selection
+-> season_backfill
+-> cloud_presence
+-> cloud_submit
+-> cloud_poll
+-> cloud_asset_register
+-> sync_plan
+-> local_sync
+-> nfo_generate
+-> local_presence
+```
+
+补番流水线建议：
+
+```txt
+library_backfill
+-> source_search
+-> candidate_persist
+-> bangumi_metadata
+-> library_merge
+-> release_selection
+-> cloud_presence
+-> cloud_submit
+-> cloud_poll
+-> cloud_asset_register
+-> sync_plan
+-> local_sync
+-> nfo_generate
+```
+
+云盘导入流水线建议：
+
+```txt
+cloud_import
+-> cloud_scan
+-> cloud_identity_match
+-> bangumi_metadata
+-> library_merge
+-> cloud_asset_register
+-> sync_plan
+```
+
+日志和事件策略：
+
+- 任务状态以 `processor_tasks` 或专用任务表为准。
+- 日志只做补充审计，不再作为判断系统是否卡住的主要来源。
+- 每个任务 item 必须有 `progress_text / reason / last_error / retry_after`。
+- `operations` 只用于手动动作或 pipeline run 的总状态，不再代表所有后台队列。
+- 服务器文件日志保留，前端日志页只负责搜索、清空、下载或查看最近错误。
+
+性能策略：
+
+- 当前单容器 NAS 部署优先使用 SQLite WAL + 短事务 + 索引 + 批量 claim，不优先引入 Redis。
+- Redis 适合后续多 worker、多容器、实时推送、短期锁、任务 broker，但不应该保存正式业务状态。
+- 任务表压力主要来自已完成任务、事件和日志，必须通过 `cleanup` 做保留策略：
+  - completed 任务保留短窗口或固定数量
+  - failed 任务长期保留直到用户处理或自动恢复
+  - processor_events 按时间裁剪
+  - 大批量源候选按 pipeline run 归档
+- 所有任务表必须至少有索引：
+  - `(status, retry_after, updated_at)`
+  - `(pipeline_id, status)`
+  - `(run_id)`
+  - 业务幂等键，例如 `candidate_id / release_id / cloud_asset_id`
+- worker claim 必须短事务完成：先 `UPDATE ... SET status='running' ... WHERE status in (...) LIMIT N`，提交后再做网络 IO。
+- 网络 IO、rclone 调用、文件复制不能持有数据库连接。
+- 日志写入和任务状态更新不能嵌在一个长事务里。
+
 ### 队列表规则
 
 自动流程必须按阶段表单向流转，不能把未完成数据直接写入正式库。
@@ -217,6 +400,56 @@ library（番剧库域）
 - 旧架构残留已开始剔除：
   - `series_state_tasks` 已不再参与当前运行链路
   - 现阶段保留旧表本身只为兼容已有数据库文件，不再作为主架构的一部分
+- 队列触发桥已调整为事件循环下一拍触发：
+  - `request_queue_trigger()` 不再在当前写库流程中立即写调度状态。
+  - 这样 RSS 候选写入、任务入队等事务提交后，再触发后续 worker，降低同一时刻抢写 `scheduled_jobs` 的概率。
+- 扫描入口已补更细的状态回写：
+  - 请求 RSS 源
+  - RSS 获取完成
+  - 写入候选 `N/X`
+  - 补排 Mikan 匹配任务
+  - 这些状态通过 `operations.message` 暴露给控制台进度条，不再只显示“正在扫描 RSS 源”。
+
+### 当前阶段已落地
+
+- SQLite 连接已补 `WAL + busy_timeout`，降低扫描与后台队列并发时的 `database is locked` 风险。
+- 已新增 Pipeline/Processor 第一阶段数据底座：
+  - `pipelines`
+  - `pipeline_steps`
+  - `pipeline_transitions`
+  - `pipeline_runs`
+  - `processor_tasks`
+  - `processor_events`
+- 已 seed 首批 3 条流水线：
+  - `seasonal_mikan_tracking`
+  - `library_backfill`
+  - `cloud_import`
+- 已给现有正式任务表补 `pipeline_id / run_id / processor_key` 字段和常用索引，后续可逐个处理器迁移。
+- 手动“扫描全部”现在会创建 `seasonal_mikan_tracking` 的 `pipeline_run`，并同步记录进度和完成/失败结果。
+- `/api/dashboard` 与 `/api/pipelines` 已开始暴露流水线总览，供后续控制台按流水线 tab 展示。
+- 已补旧库任务表唯一索引迁移，修复 `metadata_tasks(candidate_id)` 等表在旧结构下触发 `ON CONFLICT` 报错的问题。
+- “清除所有数据”现在会先取消运行中的 operation 与队列防抖任务，再清库并重置运行代际与调度状态，避免清空后立刻被旧任务回写。
+- 控制台已支持“活跃 / 全部”队列视图；默认可只看有待处理、运行中、失败、等待重试的队列。
+- 左侧导航已补“最近同步新番”独立栏位，用于快速打开最近 7 天有本地同步记录的新番条目。
+- 打包脚本已修复版本文件写入问题，后续每次打包都会更新 `frontend/src/version.js` 并同步到 `build/AutoAnime-clean`。
+- 数据库访问层已开始收口到 `backend/app/database.py`：
+  - 统一由 SQLAlchemy engine 建连
+  - 业务模块不再直接各自 `sqlite3.connect`
+  - 现阶段先保留原生 SQL，后续再逐步把高频读写迁到更明确的 session/repository 边界
+- 控制台去掉顶部重复队列卡片和内嵌 4 周日历，只保留主队列工作台作为日常观察入口。
+- 新增独立“更新日历”页面：
+  - 左侧导航提供入口。
+  - 只展示新番域更新。
+  - 顶部使用周选择器，只能按周查看。
+  - 主体为 7 列周视图，每天展示更新卡片，卡片显示作品、条目、集数和已更新/已同步状态。
+
+### 当前阶段待继续
+
+- 新番页与番剧库页继续分层：
+  - 新番页恢复以“追番条目”为主的卡片视图
+  - 番剧库页继续做“作品 -> 季度/篇章条目”二层卡片/展开布局
+- 最近更新日历继续只服务新番域，不混入番剧库；已从控制台侧栏独立为“更新日历”页面。
+- 后续继续补队列详情里的失败重试入口、任务说明优化、番剧库归档与导入入口。
 
 反对继续使用的旧模式：
 
@@ -827,6 +1060,44 @@ bangumi:{id} > title:{normalized_title}
 
 ## 7. 设计约束
 
+### 当前项目体检结论
+
+本次检查确认当前代码的主要瓶颈不是单个接口缺失，而是职责边界过宽：
+
+- `backend/app/main.py` 约 110 KB，同时承担 API 路由、队列注册、调度、dashboard 读模型、手动操作入口。
+- `backend/app/scanner.py` 约 91 KB，同时承担 RSS 解析、Mikan 匹配、元数据入库、选择、补全、云盘提交前置逻辑。
+- `backend/app/sync_service.py` 约 57 KB，同时承担云盘登记、本地同步、NFO、本地存在性检查。
+- `backend/app/db.py` 约 58 KB，同时承担 schema、迁移、设置、日志、operation、诊断、清理。
+- `frontend/src/App.vue` 约 55 KB，控制台、新番、番剧库、设置、日历、详情抽屉混在一个组件里。
+
+直接后果：
+
+- 任务推进路径分散在多个函数里，很难判断一个任务完成后会触发哪里。
+- 同一业务动作可能同时写任务表、日志表、operation、scheduled_jobs，容易制造 SQLite 写锁竞争。
+- 页面状态依赖多个兼容聚合字段，导致“看起来卡住”和“实际已完成”经常不一致。
+- 日志既承担审计又承担状态说明，但日志本身不是结构化任务状态，排障效率低。
+- 清空数据只清表，不能修复旧库 schema 约束缺失；因此可能出现 `ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint`。
+
+当前必须先修的阻断问题：
+
+- `metadata_tasks` 旧库可能缺少 `candidate_id` 唯一约束，导致元数据队列写入失败。
+- 类似风险还存在于其他使用 `ON CONFLICT(...)` 的任务表，迁移必须补唯一索引，不能只依赖 `CREATE TABLE IF NOT EXISTS`。
+- `database is locked` 的根因是多个后台任务、日志写入和 dashboard/operation 更新并发写 SQLite；短期要减少长事务，长期要用 repository + worker claim 统一写入边界。
+- 网络 IO、rclone 调用、HTML 抓取、文件复制期间不能持有数据库连接。
+- `scheduled_jobs` 目前同时表达定时任务和队列防抖状态，语义混乱，应拆成调度表和队列运行时状态。
+
+Redis 取舍：
+
+- 现阶段不建议立刻引入 Redis 作为必要依赖。
+- SQLite 继续保存正式业务状态、任务状态和失败原因，保证 NAS 单容器重启后可恢复。
+- Redis 可以作为后续增强：
+  - 多进程 worker 的轻量 broker
+  - 短期分布式锁
+  - websocket 推送缓存
+  - 高并发队列通知
+- 即使引入 Redis，也不能把任务最终状态只放 Redis；任务状态仍必须落库。
+- 当前优先级是：索引、短事务、批量 claim、事件表裁剪、后台任务不持连接做 IO。
+
 1. “下载”和“同步”必须分开。
    - 下载：把资源放入云盘长期库。
    - 同步：把云盘资源复制到 NAS 本地观看缓存。
@@ -853,8 +1124,9 @@ bangumi:{id} > title:{normalized_title}
    - 语言优先级，例如 `简体 > 繁体 > 日语`
 
 6. 元数据应尽早匹配。
-   - Mikan RSS 的 `bangumiId` 是 Bangumi.tv subject ID，应优先使用。
-   - RSS 扫描后先按稳定 ID 归并，再尝试 Bangumi 匹配。
+   - Mikan RSS 的 `bangumiId` 是 Mikan 自己的番组 ID，不是 Bangumi.tv subject ID。
+   - RSS 扫描后先通过 Mikan 条目页反查 `/Home/Bangumi/{mikan_id}`，再从 Mikan 番组页解析 `https://bgm.tv/subject/{bangumi_id}`。
+   - 拿到 Bangumi.tv subject ID 后，才允许按稳定 ID 归并和刷新 Bangumi 元数据。
    - 根据元数据 ID 合并重复条目。
    - 手动确认的元数据优先级最高。
 
@@ -899,6 +1171,16 @@ access_token + refresh_token
 
 ### 高优先级
 
+- 当前 `metadata` 队列报错 `ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint`，原因是旧库表结构没有补出 `metadata_tasks(candidate_id)` 唯一约束。已在迁移中补唯一索引；后续所有使用 `ON CONFLICT` 的任务表都必须有迁移级约束校验。
+- 当前 `database is locked` 不能靠全局 Python 锁硬压；需要通过任务 claim 短事务、日志异步化、operation 降频、dashboard 只读化解决。
+- `main.py/scanner.py/sync_service.py/db.py/App.vue` 都已经过大，后续大改必须先拆模块：
+  - `backend/app/api/routes/*`
+  - `backend/app/services/pipeline_runtime.py`
+  - `backend/app/services/processors/*`
+  - `backend/app/repositories/*`
+  - `backend/app/schemas/*`
+  - `frontend/src/views/*`
+  - `frontend/src/components/*`
 - 现有 `download_tasks` 仍是旧云盘下载任务表，已经补充 `cloud_assets`，但还没有完全重命名为 `cloud_tasks`。
 - 扫描阶段仍会生成一份旧 NFO，后续应彻底移除扫描后生成 NFO 的行为，只保留同步完成后本地 NFO。
 - 已建立 `rss_candidates`、`mikan_match_tasks`、`metadata_tasks` 三段入库前队列；后续还需要继续把云盘状态、本地状态、NFO 等拆成更细任务表。

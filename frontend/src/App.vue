@@ -718,6 +718,7 @@
                   <el-radio-group v-model="settings.download_backend">
                     <el-radio-button label="rclone">rclone 命令</el-radio-button>
                     <el-radio-button label="api">PikPak API</el-radio-button>
+                    <el-radio-button label="local">本地测试</el-radio-button>
                   </el-radio-group>
                 </el-form-item>
                 <div class="form-row" v-if="settings.download_backend === 'rclone'">
@@ -725,6 +726,7 @@
                   <el-form-item label="rclone remote"><el-input v-model="settings.rclone_remote" placeholder="pikpak" /></el-form-item>
                 </div>
                 <el-form-item v-if="settings.download_backend === 'rclone'" label="rclone 配置文件"><el-input v-model="settings.rclone_config_path" placeholder="/data/rclone/rclone.conf" /></el-form-item>
+                <el-form-item v-if="settings.download_backend === 'local'" label="本地测试下载器目录"><el-input v-model="settings.local_downloader_root" placeholder="/data/local-downloader" /></el-form-item>
                 <el-form-item label="认证方式">
                   <el-radio-group v-model="settings.pikpak_auth_mode">
                     <el-radio-button label="token">Access + Refresh Token</el-radio-button>

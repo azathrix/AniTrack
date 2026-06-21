@@ -924,6 +924,7 @@ def extract_task_id(result: dict) -> str:
 def extract_file_id(result: dict) -> str:
     for path in [
         ("file", "id"),
+        ("file_id",),
         ("files", 0, "id"),
         ("task", "file_id"),
         ("reference_resource", "id"),

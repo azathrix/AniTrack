@@ -6,6 +6,7 @@ from typing import Any
 
 import httpx
 
+from . import local_downloader_service
 from . import rclone_service
 from .pikpak_service import build_client, get_cloud_download_url, list_offline_tasks, submit_offline_download
 
@@ -15,13 +16,16 @@ def backend_key(settings: dict[str, str]) -> str:
 
 
 def provider_key(settings: dict[str, str]) -> str:
-    if backend_key(settings) == "rclone":
+    backend = backend_key(settings)
+    if backend == "rclone":
         return (settings.get("rclone_remote") or "rclone").strip().rstrip(":") or "rclone"
-    return backend_key(settings)
+    if backend == "local":
+        return "local"
+    return backend
 
 
 def uses_remote_listing(settings: dict[str, str]) -> bool:
-    return backend_key(settings) == "rclone"
+    return backend_key(settings) in {"rclone", "local"}
 
 
 def needs_poll(settings: dict[str, str]) -> bool:
@@ -33,11 +37,15 @@ def remote_file_id(item: dict[str, Any]) -> str:
 
 
 async def submit_download(settings: dict[str, str], source: str, target_dir: str, name: str = "") -> dict[str, Any]:
+    if backend_key(settings) == "rclone":
+        return await rclone_service.add_url(settings, source, target_dir, name)
+    if backend_key(settings) == "local":
+        return await local_downloader_service.submit(settings, source, target_dir, name)
     return await submit_offline_download(settings, source, target_dir, name)
 
 
 async def list_tasks(settings: dict[str, str]) -> list[dict[str, Any]]:
-    if backend_key(settings) == "rclone":
+    if backend_key(settings) in {"rclone", "local"}:
         return []
     return await list_offline_tasks(settings)
 
@@ -52,6 +60,8 @@ async def list_remote_files(
 ) -> list[dict[str, Any]]:
     if backend_key(settings) == "rclone":
         return await rclone_service.list_files(settings, root_path, recursive=recursive)
+    if backend_key(settings) == "local":
+        return await local_downloader_service.list_files(settings, root_path, recursive=recursive)
     api = build_client(settings)
     if settings.get("pikpak_auth_mode") == "password":
         await api.login()
@@ -101,6 +111,10 @@ async def download_to_local(
 ) -> None:
     target_path = Path(target)
     target_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if backend_key(settings) == "local":
+        await local_downloader_service.copy_to_local(settings, source, target, progress_cb=progress_cb)
+        return
 
     if backend_key(settings) == "rclone" and source:
         await rclone_service.copy_to_local(settings, source, target, progress_cb=progress_cb)
