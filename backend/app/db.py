@@ -416,6 +416,8 @@ def init_db() -> None:
                 language TEXT NOT NULL DEFAULT '',
                 subtitle_format TEXT NOT NULL DEFAULT '',
                 subtitle_path TEXT NOT NULL DEFAULT '',
+                subtitle_url TEXT NOT NULL DEFAULT '',
+                file_name TEXT NOT NULL DEFAULT '',
                 embedded INTEGER NOT NULL DEFAULT 0,
                 selected INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
@@ -736,6 +738,17 @@ def migrate(conn: sqlite3.Connection) -> None:
     for column, ddl in entry_additions.items():
         if column not in entry_columns:
             conn.execute(f"ALTER TABLE entries ADD COLUMN {column} {ddl}")
+    subtitle_columns = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(episode_subtitles)").fetchall()
+    }
+    subtitle_additions = {
+        "subtitle_url": "TEXT NOT NULL DEFAULT ''",
+        "file_name": "TEXT NOT NULL DEFAULT ''",
+    }
+    for column, ddl in subtitle_additions.items():
+        if column not in subtitle_columns:
+            conn.execute(f"ALTER TABLE episode_subtitles ADD COLUMN {column} {ddl}")
     seasonal_library = conn.execute("SELECT id FROM media_libraries WHERE key='seasonal_anime'").fetchone()
     archive_library = conn.execute("SELECT id FROM media_libraries WHERE key='anime_library'").fetchone()
     if seasonal_library:
@@ -865,6 +878,8 @@ def migrate(conn: sqlite3.Connection) -> None:
             language TEXT NOT NULL DEFAULT '',
             subtitle_format TEXT NOT NULL DEFAULT '',
             subtitle_path TEXT NOT NULL DEFAULT '',
+            subtitle_url TEXT NOT NULL DEFAULT '',
+            file_name TEXT NOT NULL DEFAULT '',
             embedded INTEGER NOT NULL DEFAULT 0,
             selected INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL,

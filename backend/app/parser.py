@@ -148,9 +148,11 @@ def parse_language(title: str) -> str:
 
 def parse_subtitle_format(title: str) -> str:
     value = title.lower()
-    if re.search(r"(外挂|外掛|外挂字幕|外掛字幕|softsub|soft\s*sub|\bsrt\b|\bass\b)", value, re.I):
+    if re.search(r"(外挂|外掛|外挂字幕|外掛字幕|\bsrt\b|\bass\b)", value, re.I):
         return "external"
-    if re.search(r"(内嵌|內嵌|内封|內封|内挂|內掛|内置|內置|硬字幕|hardsub|hard\s*sub|embedded)", value, re.I):
+    if re.search(r"(内封|內封|内挂|內掛|内置|內置|内封字幕|內封字幕|muxed|internal|softsub|soft\s*sub)", value, re.I):
+        return "muxed"
+    if re.search(r"(内嵌|內嵌|硬字幕|hardsub|hard\s*sub|embedded)", value, re.I):
         return "embedded"
     return ""
 

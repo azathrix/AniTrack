@@ -119,6 +119,8 @@ class MediaCreatePayload(BaseModel):
     language: str = ""
     subtitle_format: str = ""
     subtitle_path: str = ""
+    subtitle_url: str = ""
+    subtitle_file_name: str = ""
 
 
 class RssSubscriptionPayload(BaseModel):
@@ -143,7 +145,8 @@ class EpisodeSubtitlePayload(BaseModel):
     language: str = ""
     subtitle_format: str = ""
     subtitle_path: str = ""
-    embedded: bool = False
+    subtitle_url: str = ""
+    file_name: str = ""
     selected: bool = True
 
 
@@ -177,6 +180,10 @@ def normalize_json_list_text(value: str) -> str:
         pass
     items = [item.strip() for item in raw.replace(",", "\n").splitlines() if item.strip()]
     return json.dumps(items, ensure_ascii=False)
+
+
+def subtitle_embedded_value(format_value: str) -> int:
+    return 1 if str(format_value or "").strip().lower() in {"embedded", "hardsub", "burned", "muxed", "softsub", "internal"} else 0
 
 
 def rows_to_dicts(rows: list[Any]) -> list[dict[str, Any]]:
@@ -668,22 +675,33 @@ def create_media_entry(media_type: str, payload: MediaCreatePayload) -> dict[str
                     ts,
                 ),
             )
-            if payload.subtitle_path.strip():
+            resource_row = conn.execute(
+                """
+                SELECT id FROM episode_resources
+                WHERE entry_id=? AND episode_number=? AND source_type=? AND source_ref=?
+                """,
+                (entry_id, episode_number, payload.mode.strip() or "manual", resource_ref),
+            ).fetchone()
+            episode_resource_id = int(resource_row["id"] or 0) if resource_row else 0
+            if payload.subtitle_path.strip() or payload.subtitle_url.strip() or payload.subtitle_file_name.strip():
                 conn.execute(
                     """
                     INSERT INTO episode_subtitles
                       (episode_id, episode_resource_id, entry_id, episode_number, language, subtitle_format,
-                       subtitle_path, embedded, selected, created_at, updated_at)
-                    VALUES (?, 0, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                       subtitle_path, subtitle_url, file_name, embedded, selected, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
                     """,
                     (
                         episode_id,
+                        episode_resource_id,
                         entry_id,
                         episode_number,
                         payload.language.strip(),
                         payload.subtitle_format.strip(),
                         payload.subtitle_path.strip(),
-                        1 if payload.subtitle_format.strip() in {"embedded", "muxed"} else 0,
+                        payload.subtitle_url.strip(),
+                        payload.subtitle_file_name.strip(),
+                        subtitle_embedded_value(payload.subtitle_format),
                         ts,
                         ts,
                     ),
@@ -2122,14 +2140,23 @@ async def api_update_episode_subtitle(episode_id: int, payload: EpisodeSubtitleP
             conn.execute(
                 """
                 UPDATE episode_subtitles
-                SET language=?, subtitle_format=?, subtitle_path=?, embedded=?, selected=?, updated_at=?
+                SET language=?,
+                    subtitle_format=?,
+                    subtitle_path=?,
+                    subtitle_url=?,
+                    file_name=?,
+                    embedded=?,
+                    selected=?,
+                    updated_at=?
                 WHERE id=? AND entry_id=?
                 """,
                 (
                     payload.language.strip(),
                     payload.subtitle_format.strip(),
                     payload.subtitle_path.strip(),
-                    int(payload.embedded),
+                    payload.subtitle_url.strip(),
+                    payload.file_name.strip(),
+                    subtitle_embedded_value(payload.subtitle_format),
                     int(payload.selected),
                     ts,
                     payload.subtitle_id,
@@ -2142,8 +2169,8 @@ async def api_update_episode_subtitle(episode_id: int, payload: EpisodeSubtitleP
                 """
                 INSERT INTO episode_subtitles
                   (episode_id, episode_resource_id, entry_id, episode_number, language,
-                   subtitle_format, subtitle_path, embedded, selected, created_at, updated_at)
-                VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   subtitle_format, subtitle_path, subtitle_url, file_name, embedded, selected, created_at, updated_at)
+                VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     episode_id,
@@ -2152,7 +2179,9 @@ async def api_update_episode_subtitle(episode_id: int, payload: EpisodeSubtitleP
                     payload.language.strip(),
                     payload.subtitle_format.strip(),
                     payload.subtitle_path.strip(),
-                    int(payload.embedded),
+                    payload.subtitle_url.strip(),
+                    payload.file_name.strip(),
+                    subtitle_embedded_value(payload.subtitle_format),
                     int(payload.selected),
                     ts,
                     ts,

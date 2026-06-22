@@ -708,23 +708,33 @@
             </div>
           </el-tab-pane>
           <el-tab-pane label="集数资源">
-            <el-table :data="entryResourceRows" height="520" empty-text="暂无集数资源">
-              <el-table-column prop="episode_number" label="集" width="70" />
-              <el-table-column prop="resource_title" label="当前选中资源" min-width="260" show-overflow-tooltip />
-              <el-table-column prop="subtitle_group" label="字幕组" width="140" show-overflow-tooltip />
+            <el-table :data="entryResourceRows" height="620" class="episode-resource-table" empty-text="暂无集数资源">
+              <el-table-column type="expand" width="44">
+                <template #default="{ row }">
+                  <div class="resource-expand">
+                    <div><span>资源链接</span><code>{{ row.source_ref || row.magnet || row.torrent_url || '-' }}</code></div>
+                    <div><span>字幕链接</span><code>{{ row.subtitle_url || '-' }}</code></div>
+                    <div><span>上传字幕</span><code>{{ row.subtitle_file_name || '-' }}</code></div>
+                    <div><span>字幕文件路径</span><code>{{ row.subtitle_file || '-' }}</code></div>
+                    <div><span>本地文件路径</span><code>{{ row.local_path || '-' }}</code></div>
+                    <div><span>资源状态</span><code>{{ row.status || '-' }}</code></div>
+                  </div>
+                </template>
+              </el-table-column>
+              <el-table-column prop="episode_number" label="集" width="72" />
+              <el-table-column prop="resource_title" label="当前选中资源" min-width="340" show-overflow-tooltip />
+              <el-table-column prop="subtitle_group" label="字幕组" min-width="150" show-overflow-tooltip />
               <el-table-column prop="resolution" label="分辨率" width="100" />
               <el-table-column prop="language" label="语言" width="100" />
-              <el-table-column label="字幕类型" width="110">
+              <el-table-column label="字幕" width="110">
                 <template #default="{ row }">{{ subtitleFormatText(row.subtitle_format) }}</template>
               </el-table-column>
-              <el-table-column prop="subtitle_file" label="字幕文件" min-width="180" show-overflow-tooltip />
               <el-table-column label="已下载" width="90">
                 <template #default="{ row }">
                   <el-tag :type="row.downloaded ? 'success' : 'info'" size="small">{{ row.downloaded ? '是' : '否' }}</el-tag>
                 </template>
               </el-table-column>
-              <el-table-column prop="local_path" label="本地文件路径" min-width="260" show-overflow-tooltip />
-              <el-table-column label="操作" width="110" fixed="right">
+              <el-table-column label="操作" width="120" fixed="right">
                 <template #default="{ row }">
                   <el-button size="small" plain @click="openEpisodeResourceEditor(row)">配置</el-button>
                 </template>
@@ -782,7 +792,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="episodeResourceDialogOpen" title="配置集数资源" width="620px">
+    <el-dialog v-model="episodeResourceDialogOpen" title="配置集数资源" width="760px">
       <el-form :model="episodeResourceForm" label-position="top">
         <div class="form-row">
           <el-form-item label="集数"><el-input v-model="episodeResourceForm.episode_number" disabled /></el-form-item>
@@ -796,14 +806,29 @@
         <div class="form-row">
           <el-form-item label="字幕类型">
             <el-select v-model="episodeResourceForm.subtitle_format" clearable>
-              <el-option label="内嵌" value="embedded" />
-              <el-option label="内封" value="muxed" />
+              <el-option label="无字幕 / 未配置" value="" />
+              <el-option label="内嵌（硬字幕）" value="embedded" />
+              <el-option label="内封（软字幕）" value="muxed" />
               <el-option label="外挂" value="external" />
             </el-select>
           </el-form-item>
-          <el-form-item label="是否内嵌"><el-switch v-model="episodeResourceForm.embedded" /></el-form-item>
+          <el-form-item label="字幕链接">
+            <el-input v-model="episodeResourceForm.subtitle_url" placeholder="https://... / magnet:? / 其它字幕下载地址" />
+          </el-form-item>
         </div>
-        <el-form-item label="外挂字幕文件"><el-input v-model="episodeResourceForm.subtitle_path" placeholder="留空表示无外挂字幕" /></el-form-item>
+        <div class="form-row">
+          <el-form-item label="上传本地字幕">
+            <el-upload action="#" :auto-upload="false" :limit="1" :on-change="handleSubtitleFilePicked">
+              <el-button plain>选择字幕文件</el-button>
+              <template #tip>
+                <div class="el-upload__tip">{{ episodeResourceForm.subtitle_file_name || '支持先记录文件名；真实上传后续接入导入器。' }}</div>
+              </template>
+            </el-upload>
+          </el-form-item>
+          <el-form-item label="本地字幕路径">
+            <el-input v-model="episodeResourceForm.subtitle_path" placeholder="可选，已存在的字幕路径" />
+          </el-form-item>
+        </div>
       </el-form>
       <template #footer>
         <el-button @click="episodeResourceDialogOpen = false">取消</el-button>
@@ -985,7 +1010,8 @@ const episodeResourceForm = reactive({
   language: '',
   subtitle_format: '',
   subtitle_path: '',
-  embedded: false,
+  subtitle_url: '',
+  subtitle_file_name: '',
 })
 const entryEditForm = reactive({
   title_cn: '',
@@ -1213,13 +1239,19 @@ const entryResourceRows = computed(() => {
       episode_number: episode || '-',
       release_id: resource.release_id || 0,
       resource_title: resource.title || resource.source_ref || '-',
+      source_ref: resource.source_ref || '',
+      torrent_url: resource.torrent_url || '',
+      magnet: resource.magnet || '',
       subtitle_group: resource.subtitle_group || '-',
       resolution: resource.resolution || '-',
       language: resource.language || '-',
       subtitle_format: resource.subtitle_format || '',
       subtitle_file: '-',
+      subtitle_url: '',
+      subtitle_file_name: '',
       downloaded: Boolean(resource.downloaded) || Boolean(resource.local_path),
       local_path: resource.local_path || '',
+      status: resource.status || '',
       selected: Boolean(resource.selected),
     })
   }
@@ -1230,6 +1262,8 @@ const entryResourceRows = computed(() => {
     if (!row) continue
     row.subtitle_id = Number(subtitle.id || 0)
     row.subtitle_file = subtitle.subtitle_path || row.subtitle_file
+    row.subtitle_url = subtitle.subtitle_url || row.subtitle_url
+    row.subtitle_file_name = subtitle.file_name || row.subtitle_file_name
     row.subtitle_format = subtitle.subtitle_format || row.subtitle_format
     row.language = subtitle.language || row.language
   }
@@ -1447,6 +1481,11 @@ function subtitleFormatText(value) {
   if (key === 'muxed' || key === 'softsub' || key === 'internal') return '内封'
   if (key === 'external' || key === 'sidecar') return '外挂'
   return '-'
+}
+
+function handleSubtitleFilePicked(file) {
+  episodeResourceForm.subtitle_file_name = file?.name || file?.raw?.name || ''
+  if (!episodeResourceForm.subtitle_format) episodeResourceForm.subtitle_format = 'external'
 }
 
 function formatCountdown(seconds) {
@@ -1690,7 +1729,8 @@ function openEpisodeResourceEditor(row) {
   episodeResourceForm.language = row.language === '-' ? '' : String(row.language || '')
   episodeResourceForm.subtitle_format = String(row.subtitle_format || '')
   episodeResourceForm.subtitle_path = row.subtitle_file === '-' ? '' : String(row.subtitle_file || '')
-  episodeResourceForm.embedded = ['embedded', 'hardsub', 'burned'].includes(String(row.subtitle_format || '').toLowerCase())
+  episodeResourceForm.subtitle_url = row.subtitle_url === '-' ? '' : String(row.subtitle_url || '')
+  episodeResourceForm.subtitle_file_name = row.subtitle_file_name === '-' ? '' : String(row.subtitle_file_name || '')
   episodeResourceDialogOpen.value = true
 }
 
@@ -1710,13 +1750,14 @@ async function saveEpisodeResource() {
       subtitle_format: episodeResourceForm.subtitle_format,
       selected: true,
     })
-    if (episodeResourceForm.subtitle_path || episodeResourceForm.subtitle_id) {
+    if (episodeResourceForm.subtitle_path || episodeResourceForm.subtitle_url || episodeResourceForm.subtitle_file_name || episodeResourceForm.subtitle_id) {
       await putAction(`/episodes/${episodeId}/subtitle`, {
         subtitle_id: episodeResourceForm.subtitle_id,
         language: episodeResourceForm.language,
         subtitle_format: episodeResourceForm.subtitle_format,
         subtitle_path: episodeResourceForm.subtitle_path,
-        embedded: episodeResourceForm.embedded,
+        subtitle_url: episodeResourceForm.subtitle_url,
+        file_name: episodeResourceForm.subtitle_file_name,
         selected: true,
       })
     }
