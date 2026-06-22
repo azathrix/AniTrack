@@ -14,6 +14,7 @@ sys.path.insert(0, str(BACKEND))
 os.environ.setdefault("APP_DATA_DIR", tempfile.mkdtemp(prefix="autoanime-media-contract-test-"))
 
 from app.db import init_db, save_settings
+from app.database import connect
 from app.main import MediaCreatePayload, create_media_entry, settings_response
 
 
@@ -81,7 +82,17 @@ class MediaContractTests(unittest.TestCase):
         self.assertEqual(detail["entry"]["media_type"], "movie")
         self.assertEqual(len(detail["episode_resources"]), 1)
         self.assertEqual(detail["episode_resources"][0]["selected"], 1)
+        self.assertGreater(int(detail["episode_resources"][0]["release_id"]), 0)
         self.assertEqual(detail["episode_resources"][0]["magnet"], "magnet:?xt=urn:btih:contractmovie")
+        self.assertGreater(int(detail["download_run_id"]), 0)
+        with connect() as conn:
+            release = conn.execute(
+                "SELECT selected, magnet FROM releases WHERE id=?",
+                (int(detail["episode_resources"][0]["release_id"]),),
+            ).fetchone()
+        self.assertIsNotNone(release)
+        self.assertEqual(release["selected"], 1)
+        self.assertEqual(release["magnet"], "magnet:?xt=urn:btih:contractmovie")
         self.assertNotIn("releases", detail)
         self.assertNotIn("download_artifacts", detail)
         self.assertNotIn("local_assets", detail)

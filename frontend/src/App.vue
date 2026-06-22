@@ -1759,7 +1759,7 @@ async function commitMediaWizard() {
       subtitle_format: mediaWizardDraft.subtitle_format,
       subtitle_path: mediaWizardDraft.subtitle_path,
     })
-    ElMessage.success('媒体条目已收录')
+    ElMessage.success(result?.download_run_id ? '媒体条目已收录，并已加入下载队列' : '媒体条目已收录')
     mediaWizardOpen.value = false
     await reload()
     const entryId = result?.entry?.id

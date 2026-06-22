@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import time
 from collections.abc import Awaitable, Callable
@@ -580,6 +581,7 @@ def create_media_entry(media_type: str, payload: MediaCreatePayload) -> dict[str
     ts = now()
     work_key = fingerprint(title, bangumi_id or tmdb_id)
     entry_key = fingerprint(f"{media_type}:{bangumi_id or tmdb_id or title}:S{season_number}", "")
+    release_id = 0
     with connect() as conn:
         target_library = conn.execute("SELECT id FROM media_libraries WHERE key=?", (media_library_key(media_type),)).fetchone()
         target_library_id = int(target_library["id"] or 0) if target_library else 0
@@ -670,15 +672,68 @@ def create_media_entry(media_type: str, payload: MediaCreatePayload) -> dict[str
             ).fetchone()
             episode_id = int(episode["id"] or 0) if episode else 0
             resource_ref = source_ref or payload.resource_title.strip() or f"manual:{entry_id}:{episode_number}"
+            torrent_url = source_ref if source_ref.startswith("http") else ""
+            magnet = source_ref if source_ref.startswith("magnet:") else ""
+            if torrent_url or magnet:
+                digest = hashlib.sha1(resource_ref.encode("utf-8", errors="ignore")).hexdigest()[:20]
+                guid = f"manual:{entry_id}:{episode_number}:{digest}"
+                conn.execute(
+                    "UPDATE releases SET selected=0 WHERE entry_id=? AND episode_number=?",
+                    (entry_id, episode_number),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO releases
+                      (series_id, entry_id, episode_number, guid, title, subtitle_group, resolution,
+                       language, subtitle_format, torrent_url, magnet, published_at, selected, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                    ON CONFLICT(guid) DO UPDATE SET
+                      series_id=excluded.series_id,
+                      entry_id=excluded.entry_id,
+                      episode_number=excluded.episode_number,
+                      title=excluded.title,
+                      subtitle_group=excluded.subtitle_group,
+                      resolution=excluded.resolution,
+                      language=excluded.language,
+                      subtitle_format=excluded.subtitle_format,
+                      torrent_url=excluded.torrent_url,
+                      magnet=excluded.magnet,
+                      selected=1,
+                      updated_at=excluded.updated_at
+                    """,
+                    (
+                        entry_id,
+                        entry_id,
+                        episode_number,
+                        guid,
+                        payload.resource_title.strip() or resource_ref,
+                        payload.subtitle_group.strip(),
+                        payload.resolution.strip(),
+                        payload.language.strip(),
+                        payload.subtitle_format.strip(),
+                        torrent_url,
+                        magnet,
+                        ts,
+                        ts,
+                        ts,
+                    ),
+                )
+                release = conn.execute("SELECT id FROM releases WHERE guid=?", (guid,)).fetchone()
+                release_id = int(release["id"] or 0) if release else 0
+                conn.execute(
+                    "UPDATE episode_resources SET selected=0 WHERE entry_id=? AND episode_number=?",
+                    (entry_id, episode_number),
+                )
             conn.execute(
                 """
                 INSERT INTO episode_resources
                   (entry_id, episode_id, episode_number, source_type, source_ref, release_id, title,
                    subtitle_group, resolution, language, subtitle_format, torrent_url, magnet,
                    selected, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, 1, 'available', ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'available', ?, ?)
                 ON CONFLICT(entry_id, episode_number, source_type, source_ref) DO UPDATE SET
                   episode_id=excluded.episode_id,
+                  release_id=excluded.release_id,
                   title=excluded.title,
                   subtitle_group=excluded.subtitle_group,
                   resolution=excluded.resolution,
@@ -696,13 +751,14 @@ def create_media_entry(media_type: str, payload: MediaCreatePayload) -> dict[str
                     episode_number,
                     payload.mode.strip() or "manual",
                     resource_ref,
+                    release_id,
                     payload.resource_title.strip() or resource_ref,
                     payload.subtitle_group.strip(),
                     payload.resolution.strip(),
                     payload.language.strip(),
                     payload.subtitle_format.strip(),
-                    source_ref if source_ref.startswith("http") else "",
-                    source_ref if source_ref.startswith("magnet:") else "",
+                    torrent_url,
+                    magnet,
                     ts,
                     ts,
                 ),
@@ -727,8 +783,21 @@ def create_media_entry(media_type: str, payload: MediaCreatePayload) -> dict[str
                         ts,
                     ),
                 )
-    log("info", f"媒体条目已收录: type={media_type} entry_id={entry_id} title={title}")
-    return build_entry_response(entry_id)
+    run_id = 0
+    if release_id > 0:
+        run_id = start_pipeline(
+            "library_backfill",
+            trigger_source="media_wizard",
+            first_step_key="download",
+            subject_type="release",
+            subject_id=release_id,
+            payload={"entry_id": entry_id, "release_id": release_id, "domain_kind": "library"},
+            message=f"媒体向导收录后下载: {title}",
+        )
+    log("info", f"媒体条目已收录: type={media_type} entry_id={entry_id} release_id={release_id} title={title}")
+    detail = build_entry_response(entry_id)
+    detail["download_run_id"] = run_id
+    return detail
 
 
 def empty_entry_response() -> dict[str, Any]:
