@@ -1,4 +1,4 @@
-# AutoAnime 页面与媒体模型优化计划
+# AniTrack 页面与媒体模型优化计划
 
 ## Summary
 

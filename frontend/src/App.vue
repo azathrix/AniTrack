@@ -2,10 +2,10 @@
   <div class="app-shell">
     <aside class="sidebar">
       <div class="brand">
-        <img class="brand-mark" src="/logo.svg" alt="AutoAnime" />
+        <img class="brand-mark" src="/anitrack-logo.png" alt="AniTrack" />
         <div>
-          <strong class="brand-wordmark">Auto<span>Anime</span></strong>
-          <span>Media automation</span>
+          <strong class="brand-wordmark">Ani<span>Track</span></strong>
+          <span>Anime tracking</span>
         </div>
       </div>
       <nav>
@@ -2018,7 +2018,7 @@ function exportLogs() {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  link.download = `autoanime-log-${timestamp}.txt`
+  link.download = `anitrack-log-${timestamp}.txt`
   document.body.appendChild(link)
   link.click()
   link.remove()

@@ -44,7 +44,7 @@ async def submit(settings: dict[str, str], source: str, target_dir: str, name: s
     if source_path.exists() and source_path.is_file():
         shutil.copy2(source_path, target)
     elif not target.exists():
-        target.write_text(f"AutoAnime local downloader placeholder\nsource={source}\n", encoding="utf-8")
+        target.write_text(f"AniTrack local downloader placeholder\nsource={source}\n", encoding="utf-8")
     return {
         "file": {"id": file_id(remote_path)},
         "file_id": file_id(remote_path),

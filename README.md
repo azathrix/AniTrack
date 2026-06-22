@@ -1,6 +1,6 @@
-# AutoAnime
+# AniTrack
 
-AutoAnime 是面向 NAS 的新番追更和本地媒体库整理工具。当前主线是把 RSS 发布解析成标准集数资源，按规则自动选择资源，交给下载器下载，完成后整理到本地 `media` 目录并生成 Jellyfin/Plex 可识别的文件与 NFO。
+AniTrack 是面向 NAS 的新番追更和本地媒体库整理工具。当前主线是把 RSS 发布解析成标准集数资源，按规则自动选择资源，交给下载器下载，完成后整理到本地 `media` 目录并生成 Jellyfin/Plex 可识别的文件与 NFO。
 
 ```txt
 RSS 订阅 -> Mikan/Bangumi 匹配 -> 条目入库 -> 自动选集
@@ -49,6 +49,8 @@ Jellyfin/Plex 只需要扫描 NAS 本地真实目录。
 
 ## Docker 部署
 
+当前部署脚本和默认容器目录仍沿用历史名称 `autoanime`，避免已有 NAS 路径和容器名被强制迁移；后续发布 Docker Hub 镜像时可以再统一调整镜像名。
+
 先在本机生成干净源码目录：
 
 ```bat
@@ -58,7 +60,7 @@ package-clean.bat
 产物目录：
 
 ```txt
-build\AutoAnime-clean
+build\AniTrack-clean
 ```
 
 上传干净目录内容到 NAS：
@@ -99,7 +101,7 @@ http://NAS_IP:32888
 
 ## 上传包规则
 
-需要上传的是 `build\AutoAnime-clean` 目录内容。不要手动上传开发环境目录：
+需要上传的是 `build\AniTrack-clean` 目录内容。不要手动上传开发环境目录：
 
 ```txt
 frontend/node_modules

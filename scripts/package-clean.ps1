@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
 $buildDir = Join-Path $root "build"
-$target = Join-Path $buildDir "AutoAnime-clean"
+$target = Join-Path $buildDir "AniTrack-clean"
 $frontendDir = Join-Path $root "frontend"
 $versionFile = Join-Path $frontendDir "src\version.js"
 

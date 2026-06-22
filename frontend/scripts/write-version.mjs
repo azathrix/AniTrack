@@ -22,4 +22,4 @@ writeFileSync(
   'utf8',
 )
 
-console.log(`AutoAnime frontend build ${version} · ${build}`)
+console.log(`AniTrack frontend build ${version} · ${build}`)

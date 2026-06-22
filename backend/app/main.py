@@ -1476,7 +1476,7 @@ async def lifespan(_: FastAPI):
     scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="AutoAnime", lifespan=lifespan)
+app = FastAPI(title="AniTrack", lifespan=lifespan)
 
 
 def run_operation(name: str, coro_factory, start_message: str = "") -> int:

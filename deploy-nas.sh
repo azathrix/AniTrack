@@ -17,11 +17,11 @@ if [ "${AUTOANIME_ALL_PROXY:-}" != "" ]; then
   echo "Using all proxy: ${AUTOANIME_ALL_PROXY}"
 fi
 
-echo "Stopping existing AutoAnime container..."
+echo "Stopping existing AniTrack container..."
 docker compose down --remove-orphans || true
 docker rm -f autoanime >/dev/null 2>&1 || true
 
-echo "Building and starting AutoAnime..."
+echo "Building and starting AniTrack..."
 docker compose up -d --build --force-recreate --remove-orphans
 
 echo "Checking container status..."
@@ -41,4 +41,4 @@ else
   exit 1
 fi
 
-echo "AutoAnime deployed: http://NAS_IP:32888"
+echo "AniTrack deployed: http://NAS_IP:32888"

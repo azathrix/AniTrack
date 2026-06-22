@@ -12,7 +12,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-set "SOURCE=%ROOT%\build\AutoAnime-clean"
+set "SOURCE=%ROOT%\build\AniTrack-clean"
 if not exist "%TARGET%" mkdir "%TARGET%"
 
 robocopy "%SOURCE%" "%TARGET%" ^
@@ -31,4 +31,3 @@ echo Uploaded clean package to %TARGET%
 echo Deploy command on NAS:
 echo cd /volume1/docker/autoanime ^&^& ./deploy-nas.sh
 exit /b 0
-

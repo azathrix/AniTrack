@@ -14,7 +14,7 @@ from .parser import clean_name
 
 
 BANGUMI_API = "https://api.bgm.tv"
-USER_AGENT = "AutoAnime/0.1 (private NAS media automation)"
+USER_AGENT = "AniTrack/0.1 (private NAS media automation)"
 BANGUMI_TIMEOUT = httpx.Timeout(15.0, connect=5.0)
 
 
