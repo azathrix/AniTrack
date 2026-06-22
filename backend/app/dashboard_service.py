@@ -10,6 +10,7 @@ from fastapi.concurrency import run_in_threadpool
 from .database import connect
 from .db import get_settings
 from .library import bool_setting
+from .pipeline_runtime import pipeline_overview
 from .runtime_service import canonical_queue_key, queue_job_key, QUEUE_KEY_ALIASES
 from .runtime_store import runtime_store
 from .utils import enrich_catalog_entry, int_setting, rows_to_dicts, seconds_until, summarize_seasonal_entry
