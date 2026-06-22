@@ -376,17 +376,14 @@
           <article v-for="item in filteredSeries" :key="item.id" class="anime-card catalog-card" @click="openEntry(item.id, 'seasonal')">
             <div class="cover poster-cover">
               <img v-if="item.poster_url" :src="item.poster_url" />
-              <span v-else>{{ item.display_title?.slice(0, 2) || item.title_cn?.slice(0, 2) || 'AN' }}</span>
+              <span v-else>{{ cardInitials(item) }}</span>
             </div>
             <div class="anime-body">
               <h3>{{ entryTitle(item) }}</h3>
-              <p>{{ item.entry_scope_label || item.entry_secondary_title || item.bangumi_id || 'Season 01' }}</p>
+              <p>{{ cardSubtitle(item) }}</p>
               <div class="tagline">
                 <el-tag size="small" type="success">可观看 {{ watchableCount(item) }} 集</el-tag>
                 <el-tag v-if="hasRecentUpdate(item)" size="small" type="primary">已更新</el-tag>
-              </div>
-              <div v-if="entryTags(item).length" class="mini-tag-row">
-                <span v-for="tag in entryTags(item).slice(0, 3)" :key="tag">{{ tag }}</span>
               </div>
             </div>
           </article>
@@ -500,17 +497,14 @@
           </div>
         </div>
         <div class="anime-grid catalog-card-grid">
-          <article v-for="item in filteredSeries" :key="item.id" class="anime-card catalog-card" @click="openEntry(item.id, 'library')">
+          <article v-for="item in filteredSeries" :key="item.id" class="anime-card catalog-card" @click="openEntry(item.id, 'library', entryMediaType(item))">
             <div class="cover poster-cover">
               <img v-if="item.poster_url" :src="item.poster_url" />
-              <span v-else>{{ entryTitle(item).slice(0, 2) || 'AN' }}</span>
+              <span v-else>{{ cardInitials(item) }}</span>
             </div>
             <div class="anime-body">
               <h3>{{ entryTitle(item) }}</h3>
-              <p>{{ item.entry_scope_label || item.entry_secondary_title || item.bangumi_id || 'Season 01' }}</p>
-              <div v-if="entryTags(item).length" class="mini-tag-row">
-                <span v-for="tag in entryTags(item).slice(0, 3)" :key="tag">{{ tag }}</span>
-              </div>
+              <p>{{ cardSubtitle(item) }}</p>
             </div>
           </article>
           <el-empty v-if="!filteredSeries.length" :description="`没有匹配的${currentMediaPageTitle}`" />
@@ -887,7 +881,7 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import draggable from 'vuedraggable'
 import { ElMessage } from 'element-plus'
 import { Calendar, Collection, DataBoard, Document, Refresh, Search, Setting } from '@element-plus/icons-vue'
-import { deleteAction, getAction, getDashboard, getDiagnostics, getLibraryItem, getSeasonalItem, getSettings, postAction, putAction, saveLibraryItem, saveSeasonalItem, saveSettings } from './api'
+import { deleteAction, getAction, getDashboard, getDiagnostics, getMediaItem, getSettings, postAction, putAction, saveMediaItem, saveSettings } from './api'
 import { APP_BUILD, APP_VERSION } from './version'
 
 const view = ref('dashboard')
@@ -923,6 +917,7 @@ const libraryTagFilters = ref([])
 const entryDrawerOpen = ref(false)
 const selectedEntryDetail = ref(null)
 const selectedEntryDomain = ref('seasonal')
+const selectedEntryMediaType = ref('anime')
 const dashboard = reactive({
   seasonal_items: [],
   library_items: [],
@@ -1308,6 +1303,19 @@ function entryTitle(item) {
     || item.work_title
     || item.title_root
     || '未命名条目'
+}
+
+function cardSubtitle(item) {
+  if (!item) return 'Season 01'
+  return item.entry_scope_label
+    || item.entry_secondary_title
+    || item.bangumi_id
+    || item.tmdb_id
+    || 'Season 01'
+}
+
+function cardInitials(item) {
+  return entryTitle(item).slice(0, 2) || 'AN'
 }
 
 function watchableCount(item) {
@@ -1706,7 +1714,7 @@ async function saveEpisodeResource() {
     ElMessage.success('集数资源已保存')
     episodeResourceDialogOpen.value = false
     if (selectedEntry.value?.id) {
-      await openEntry(selectedEntry.value.id, selectedEntryDomain.value)
+      await openEntry(selectedEntry.value.id, selectedEntryDomain.value, selectedEntryMediaType.value)
     }
   } catch (error) {
     ElMessage.error(apiErrorMessage(error))
@@ -1763,7 +1771,7 @@ async function commitMediaWizard() {
     mediaWizardOpen.value = false
     await reload()
     const entryId = result?.entry?.id
-    if (entryId) await openEntry(entryId, 'library')
+    if (entryId) await openEntry(entryId, 'library', currentMediaType.value)
   } catch (error) {
     ElMessage.error(errorMessage(error))
   } finally {
@@ -1807,9 +1815,11 @@ function apiErrorMessage(error) {
   return error?.response?.data?.detail || error?.response?.data?.message || error?.message || '请求失败'
 }
 
-async function openEntry(id, domain = 'seasonal') {
+async function openEntry(id, domain = 'seasonal', mediaType = '') {
+  const type = mediaType || (domain === 'seasonal' ? 'anime' : currentMediaType.value)
   selectedEntryDomain.value = domain
-  selectedEntryDetail.value = domain === 'library' ? await getLibraryItem(id) : await getSeasonalItem(id)
+  selectedEntryMediaType.value = type
+  selectedEntryDetail.value = await getMediaItem(type, id)
   entryDrawerOpen.value = true
 }
 
@@ -1817,17 +1827,13 @@ async function openQueueEntry(row) {
   const entryId = Number(row?.entry_id || 0)
   if (!entryId) return
   const domain = row?.domain_kind === 'library' ? 'library' : 'seasonal'
-  await openEntry(entryId, domain)
+  await openEntry(entryId, domain, row?.media_type || (domain === 'seasonal' ? 'anime' : currentMediaType.value))
 }
 
 async function saveCurrentEntry() {
   const payload = selectedEntry.value
   if (!payload) return
-  if (selectedEntryDomain.value === 'library') {
-    await saveLibraryItem(payload.id, payload)
-  } else {
-    await saveSeasonalItem(payload.id, payload)
-  }
+  await saveMediaItem(selectedEntryMediaType.value || entryMediaType(payload), payload.id, payload)
   ElMessage.success(selectedEntryDomain.value === 'library' ? '番剧库条目已保存' : '番剧设置已保存')
   await reload()
 }

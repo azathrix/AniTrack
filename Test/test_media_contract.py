@@ -15,7 +15,9 @@ os.environ.setdefault("APP_DATA_DIR", tempfile.mkdtemp(prefix="autoanime-media-c
 
 from app.db import init_db, save_settings
 from app.database import connect
-from app.main import MediaCreatePayload, create_media_entry, settings_response
+from fastapi.testclient import TestClient
+
+from app.main import MediaCreatePayload, app, create_media_entry, dashboard_data, settings_response
 
 
 class MediaContractTests(unittest.TestCase):
@@ -97,6 +99,41 @@ class MediaContractTests(unittest.TestCase):
         self.assertNotIn("download_artifacts", detail)
         self.assertNotIn("local_assets", detail)
         self.assertNotIn("tasks", detail)
+
+    def test_media_lists_do_not_expose_card_status_summaries(self) -> None:
+        detail = create_media_entry(
+            "movie",
+            MediaCreatePayload(
+                mode="add",
+                title="Slim Card Movie",
+                tmdb_id="tmdb-slim-card",
+                year=2026,
+                episode_number=1,
+                resource_title="Slim Card Movie 2026 1080p",
+                source_ref="",
+            ),
+        )
+
+        payload = dashboard_data()
+        row = next(item for item in payload["library_items"] if int(item["id"]) == int(detail["entry"]["id"]))
+        for key in [
+            "watch_status",
+            "watch_status_label",
+            "status_summary",
+            "status_category",
+            "status_level",
+            "needs_attention",
+            "has_failed_task",
+        ]:
+            self.assertNotIn(key, row)
+
+    def test_legacy_entry_detail_routes_are_removed(self) -> None:
+        client = TestClient(app)
+
+        self.assertEqual(client.get("/api/seasonal/1").status_code, 404)
+        self.assertEqual(client.put("/api/seasonal/1", json={}).status_code, 404)
+        self.assertEqual(client.get("/api/library/1").status_code, 404)
+        self.assertEqual(client.put("/api/library/1", json={}).status_code, 404)
 
 
 if __name__ == "__main__":

@@ -25,36 +25,12 @@ export async function saveSettings(payload) {
   return (await api.put('/settings', payload)).data
 }
 
-export async function getSeasonalEntry(id) {
-  return (await api.get(`/seasonal/${id}`)).data
+export async function getMediaItem(type, id) {
+  return (await api.get(`/media/${type}/${id}`)).data
 }
 
-export async function saveSeasonalEntry(id, payload) {
-  return (await api.put(`/seasonal/${id}`, payload)).data
-}
-
-export async function getLibraryEntry(id) {
-  return (await api.get(`/library/${id}`)).data
-}
-
-export async function saveLibraryEntry(id, payload) {
-  return (await api.put(`/library/${id}`, payload)).data
-}
-
-export async function getSeasonalItem(id) {
-  return (await api.get(`/seasonal/${id}`)).data
-}
-
-export async function saveSeasonalItem(id, payload) {
-  return (await api.put(`/seasonal/${id}`, payload)).data
-}
-
-export async function getLibraryItem(id) {
-  return (await api.get(`/library/${id}`)).data
-}
-
-export async function saveLibraryItem(id, payload) {
-  return (await api.put(`/library/${id}`, payload)).data
+export async function saveMediaItem(type, id, payload) {
+  return (await api.put(`/media/${type}/${id}`, payload)).data
 }
 
 export async function postAction(path, payload = undefined) {

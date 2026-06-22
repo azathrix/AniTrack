@@ -330,26 +330,11 @@ def enrich_catalog_entry(item: dict[str, Any]) -> dict[str, Any]:
     result = dict(item)
     work_display_title = str(result.get("work_title") or result.get("title_root") or result.get("display_title") or result.get("title_cn") or "").strip()
     scope_label = entry_scope_label(result)
-    local_count = int(result.get("local_asset_count") or 0)
-    release_count = int(result.get("release_count") or 0)
-    cloud_count = int(result.get("download_artifact_count") or 0)
     result["work_display_title"] = work_display_title
     result["entry_scope_label"] = scope_label
     result["entry_badge_text"] = entry_badge_text(result)
     result["entry_display_title"] = str(result.get("display_title") or result.get("title_cn") or work_display_title).strip()
     result["entry_secondary_title"] = scope_label or work_display_title
-    if local_count > 0:
-        result["watch_status"] = "ready"
-        result["watch_status_label"] = f"可观看 {local_count} 集"
-    elif result.get("has_failed_task"):
-        result["watch_status"] = "warning"
-        result["watch_status_label"] = "需要处理"
-    elif release_count > 0 or cloud_count > 0:
-        result["watch_status"] = "processing"
-        result["watch_status_label"] = "处理中"
-    else:
-        result["watch_status"] = "unavailable"
-        result["watch_status_label"] = "未缓存"
     return result
 
 
@@ -386,130 +371,8 @@ def pick_subtitle_language(values: list[str], primary: list[str], secondary: lis
     return ""
 
 
-SEASONAL_STATUS_QUEUE_ORDER = [
-    "mikan_match",
-    "metadata",
-    "selection",
-    "backfill",
-    "download",
-    "nfo",
-    "local_presence",
-]
-
-SEASONAL_STATUS_QUEUE_NAMES = {
-    "mikan_match": "Mikan 匹配",
-    "metadata": "元数据",
-    "selection": "自动选集",
-    "backfill": "整季补全",
-    "download": "下载到本地",
-    "nfo": "NFO",
-    "local_presence": "本地存在性检查",
-}
-
-
-def build_entry_queue_index(queue_details: dict[str, dict[str, Any]]) -> dict[int, list[dict[str, Any]]]:
-    result: dict[int, list[dict[str, Any]]] = {}
-    for queue_key in SEASONAL_STATUS_QUEUE_ORDER:
-        details = queue_details.get(queue_key, {})
-        for item in details.get("items", []):
-            entry_id = int(item.get("entry_id") or 0)
-            if entry_id <= 0:
-                continue
-            row = dict(item)
-            row["_queue_key"] = queue_key
-            row["_queue_name"] = SEASONAL_STATUS_QUEUE_NAMES.get(queue_key, queue_key)
-            result.setdefault(entry_id, []).append(row)
-    return result
-
-
-def compact_task_reason(item: dict[str, Any]) -> str:
-    reason = str(item.get("display_reason") or item.get("reason") or item.get("last_error") or "").strip()
-    return reason[:160] if reason else ""
-
-
-def summarize_seasonal_entry(
-    item: dict[str, Any],
-    entry_tasks: list[dict[str, Any]],
-    settings: dict[str, str],
-) -> dict[str, Any]:
-    result = dict(item)
-    subtitle_priority = split_setting(settings.get("subtitle_priority", ""))
-    resolution_priority = split_setting(settings.get("resolution_priority", ""))
-    language_priority = split_setting(settings.get("language_priority", ""))
-    secondary_language_priority = split_setting(settings.get("secondary_language_priority", ""))
-
-    result["has_failed_task"] = False
-    result["needs_attention"] = False
-    result["status_category"] = "idle"
-    result["status_level"] = "info"
-    result["status_summary"] = ""
-
-    for status, category, level, prefix in (
-        ("failed", "failed", "danger", "失败"),
-        ("running", "running", "warning", "处理中"),
-    ):
-        for task in entry_tasks:
-            if str(task.get("status") or "") != status:
-                continue
-            reason = compact_task_reason(task) or "任务执行异常"
-            result["has_failed_task"] = status == "failed"
-            result["status_category"] = category
-            result["status_level"] = level
-            result["status_summary"] = f"{task['_queue_name']}{prefix}: {reason}"
-            return result
-
-    for task in entry_tasks:
-        if str(task.get("status") or "") != "waiting" and not (
-            str(task.get("status") or "") == "pending" and bool(task.get("waiting_retry"))
-        ):
-            continue
-        reason = compact_task_reason(task) or f"剩余 {int(task.get('retry_seconds') or 0)} 秒"
-        result["status_category"] = "cooldown"
-        result["status_level"] = "warning"
-        result["status_summary"] = f"{task['_queue_name']}等待重试: {reason}"
-        return result
-
-    for task in entry_tasks:
-        if str(task.get("status") or "") != "pending":
-            continue
-        reason = compact_task_reason(task) or "已入队，等待处理"
-        result["status_category"] = "pending"
-        result["status_level"] = "primary"
-        result["status_summary"] = f"{task['_queue_name']}待处理: {reason}"
-        return result
-
-    if not result.get("bangumi_id"):
-        result["needs_attention"] = True
-        result["status_category"] = "attention"
-        result["status_level"] = "warning"
-        result["status_summary"] = "缺少 Bangumi 关联，不能进入正式处理"
-        return result
-
-    if int(result.get("local_asset_count") or 0) > 0:
-        result["status_category"] = "ready_local"
-        result["status_level"] = "success"
-        result["status_summary"] = "本地文件已就绪"
-        return result
-
-    if int(result.get("download_artifact_count") or 0) > 0:
-        result["status_category"] = "ready_download"
-        result["status_level"] = "success"
-        result["status_summary"] = "下载完成，等待本地整理"
-        return result
-
-    if int(result.get("downloaded_count") or 0) > 0:
-        result["status_category"] = "submitted"
-        result["status_level"] = "warning"
-        result["status_summary"] = "下载任务已提交，等待完成"
-        return result
-
-    if int(result.get("release_count") or 0) > 0:
-        result["status_category"] = "ready"
-        result["status_level"] = "info"
-        result["status_summary"] = "已入库，等待自动选择或下载"
-        return result
-
-    return result
+def summarize_seasonal_entry(item: dict[str, Any]) -> dict[str, Any]:
+    return dict(item)
 
 
 def settings_response() -> dict[str, Any]:
@@ -1767,11 +1630,8 @@ def dashboard_data() -> dict[str, Any]:
         if str(item.get("status") or "") in {"running", "failed", "cancelled"}
     ][:20]
     queue_details = queue_detail_map()
-    seasonal_task_index = build_entry_queue_index(queue_details)
     seasonal_rows = [
-        enrich_catalog_entry(
-            summarize_seasonal_entry(row, seasonal_task_index.get(int(row.get("id") or 0), []), settings)
-        )
+        enrich_catalog_entry(summarize_seasonal_entry(row))
         for row in rows_to_dicts(seasonal_items)
     ]
     library_rows = [enrich_catalog_entry(row) for row in rows_to_dicts(library_items)]
@@ -2217,26 +2077,6 @@ async def api_update_episode_subtitle(episode_id: int, payload: EpisodeSubtitleP
     return {"status": "saved", "item": row_to_dict(row)}
 
 
-@app.get("/api/seasonal/{entry_id}")
-async def api_seasonal_entry(entry_id: int) -> dict[str, Any]:
-    return build_entry_response(entry_id)
-
-
-@app.put("/api/seasonal/{entry_id}")
-async def api_update_seasonal_entry(entry_id: int, payload: EntryPayload) -> dict[str, Any]:
-    return save_entry_payload(entry_id, payload, expected_domain="seasonal")
-
-
-@app.get("/api/library/{entry_id}")
-async def api_library_entry(entry_id: int) -> dict[str, Any]:
-    return build_entry_response(entry_id)
-
-
-@app.put("/api/library/{entry_id}")
-async def api_update_library_entry(entry_id: int, payload: EntryPayload) -> dict[str, Any]:
-    return save_entry_payload(entry_id, payload, expected_domain="library")
-
-
 @app.delete("/api/seasonal/{entry_id}")
 async def api_delete_seasonal_entry(entry_id: int) -> dict[str, str]:
     return archive_seasonal_entry(entry_id)
@@ -2361,6 +2201,11 @@ async def api_clear_data() -> dict[str, str]:
     clear_runtime_data()
     log("warn", "已清除所有运行数据")
     return {"status": "completed", "message": "已清除所有运行数据"}
+
+
+@app.api_route("/api/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def api_not_found(full_path: str) -> None:
+    raise HTTPException(status_code=404, detail="API 不存在")
 
 
 frontend_dir = APP_DIR.parent / "frontend_dist"
