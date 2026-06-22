@@ -525,6 +525,10 @@
             <div class="anime-body">
               <h3>{{ entryTitle(item) }}</h3>
               <p>{{ cardSubtitle(item) }}</p>
+              <div class="tagline">
+                <el-tag size="small" type="success">可观看 {{ watchableCount(item) }} 集</el-tag>
+                <el-tag v-if="hasRecentUpdate(item)" size="small" type="primary">已更新</el-tag>
+              </div>
             </div>
           </article>
           <el-empty v-if="!filteredSeries.length" :description="`没有匹配的${currentMediaPageTitle}`" />
