@@ -677,50 +677,25 @@
                 </div>
               </div>
             </div>
-            <el-form :model="selectedEntry" label-position="top">
-                <div class="form-row">
-                  <el-form-item label="中文标题"><el-input v-model="selectedEntry.title_cn" /></el-form-item>
-                  <el-form-item label="年份"><el-input-number v-model="selectedEntry.year" /></el-form-item>
-                  <el-form-item label="月份"><el-input-number v-model="selectedEntry.month" :min="0" :max="12" /></el-form-item>
-                </div>
-              <div class="form-row">
-                <el-form-item label="Bangumi ID"><el-input v-model="selectedEntry.bangumi_id" /></el-form-item>
-                <el-form-item label="TMDB ID"><el-input v-model="selectedEntry.tmdb_id" /></el-form-item>
-              </div>
-              <div class="form-row">
-                <el-form-item label="媒体类型">
-                  <el-select v-model="selectedEntry.media_type">
-                    <el-option label="动画" value="anime" />
-                    <el-option label="电影" value="movie" />
-                    <el-option label="电视剧" value="tv" />
-                  </el-select>
-                </el-form-item>
-                <el-form-item label="国家 / 地区">
-                  <el-select v-model="selectedEntry.region" clearable>
-                    <el-option label="日本" value="jp" />
-                    <el-option label="中国" value="cn" />
-                    <el-option label="欧美" value="us" />
-                    <el-option label="韩国" value="kr" />
-                    <el-option label="其他" value="other" />
-                  </el-select>
-                </el-form-item>
-              </div>
-            </el-form>
             <el-descriptions :column="2" border class="entry-meta-descriptions">
+              <el-descriptions-item label="标题">{{ selectedEntry.title_cn || selectedEntry.display_title || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="媒体类型">{{ mediaTypeLabel(selectedEntry.media_type) }}</el-descriptions-item>
               <el-descriptions-item label="Bangumi ID">{{ selectedEntry.bangumi_id || '-' }}</el-descriptions-item>
               <el-descriptions-item label="TMDB ID">{{ selectedEntry.tmdb_id || '-' }}</el-descriptions-item>
               <el-descriptions-item label="年份 / 月份">{{ selectedEntry.year || '-' }} / {{ selectedEntry.month || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="国家 / 地区">{{ regionLabel(selectedEntry.region) }}</el-descriptions-item>
               <el-descriptions-item label="追番状态">{{ selectedEntryDomain === 'seasonal' ? '追番中' : '普通媒体库条目' }}</el-descriptions-item>
-              <el-descriptions-item label="别名" :span="2">{{ selectedEntry.aliases || selectedEntry.alias || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="别名" :span="2">{{ selectedEntry.title_romaji || selectedEntry.title_raw || '-' }}</el-descriptions-item>
               <el-descriptions-item label="标签" :span="2">
                 <div class="mini-tag-row">
                   <span v-for="tag in entryTags(selectedEntry)" :key="tag">{{ tag }}</span>
                   <em v-if="!entryTags(selectedEntry).length">-</em>
                 </div>
               </el-descriptions-item>
+              <el-descriptions-item label="简介" :span="2">{{ selectedEntry.summary || '-' }}</el-descriptions-item>
             </el-descriptions>
             <div class="drawer-actions">
-              <el-button type="primary" @click="saveCurrentEntry">保存信息</el-button>
+              <el-button type="primary" @click="openEntryEditDialog">编辑信息</el-button>
               <el-popconfirm
                 v-if="selectedEntryDomain === 'seasonal'"
                 title="归档后新番页不再显示，番剧库仍会保留该动画条目。确定归档？"
@@ -759,6 +734,53 @@
         </el-tabs>
       </template>
     </el-drawer>
+
+    <el-dialog v-model="entryEditDialogOpen" title="编辑作品信息" width="760px">
+      <el-form :model="entryEditForm" label-position="top">
+        <div class="form-row">
+          <el-form-item label="中文标题"><el-input v-model="entryEditForm.title_cn" /></el-form-item>
+          <el-form-item label="年份"><el-input-number v-model="entryEditForm.year" :min="0" /></el-form-item>
+          <el-form-item label="月份"><el-input-number v-model="entryEditForm.month" :min="0" :max="12" /></el-form-item>
+        </div>
+        <div class="form-row">
+          <el-form-item label="Bangumi ID"><el-input v-model="entryEditForm.bangumi_id" /></el-form-item>
+          <el-form-item label="TMDB ID"><el-input v-model="entryEditForm.tmdb_id" /></el-form-item>
+        </div>
+        <div class="form-row">
+          <el-form-item label="媒体类型">
+            <el-select v-model="entryEditForm.media_type">
+              <el-option label="动画" value="anime" />
+              <el-option label="电影" value="movie" />
+              <el-option label="电视剧" value="tv" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="国家 / 地区">
+            <el-select v-model="entryEditForm.region" clearable>
+              <el-option label="日本" value="jp" />
+              <el-option label="中国" value="cn" />
+              <el-option label="欧美" value="us" />
+              <el-option label="韩国" value="kr" />
+              <el-option label="其他" value="other" />
+            </el-select>
+          </el-form-item>
+        </div>
+        <el-form-item label="别名 / 原名"><el-input v-model="entryEditForm.title_romaji" /></el-form-item>
+        <el-form-item label="海报 URL"><el-input v-model="entryEditForm.poster_url" /></el-form-item>
+        <el-form-item label="标签">
+          <el-input v-model="entryEditForm.tags_text" type="textarea" :rows="3" placeholder="一行一个标签，或用逗号分隔" />
+        </el-form-item>
+        <el-form-item label="类型 / 题材">
+          <el-input v-model="entryEditForm.genres_text" type="textarea" :rows="2" placeholder="一行一个类型，或用逗号分隔" />
+        </el-form-item>
+        <el-form-item label="简介"><el-input v-model="entryEditForm.summary" type="textarea" :rows="4" /></el-form-item>
+        <el-progress v-if="metadataFetching || metadataFetchProgress" :percentage="metadataFetchProgress" :status="metadataFetchProgress >= 100 ? 'success' : undefined" />
+      </el-form>
+      <template #footer>
+        <el-button @click="entryEditDialogOpen = false">取消</el-button>
+        <el-button plain :loading="metadataFetching" @click="fetchEntryMetadata">扒信息</el-button>
+        <el-button type="primary" @click="saveEntryEditForm">保存</el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog v-model="episodeResourceDialogOpen" title="配置集数资源" width="620px">
       <el-form :model="episodeResourceForm" label-position="top">
@@ -912,8 +934,12 @@ const mediaWizardStep = ref(0)
 const mediaWizardSeed = ref('')
 const mediaWizardSaving = ref(false)
 const episodeResourceDialogOpen = ref(false)
+const entryEditDialogOpen = ref(false)
+const metadataFetching = ref(false)
+const metadataFetchProgress = ref(0)
 let dashboardStream = null
 let streamRetryTimer = null
+let metadataProgressTimer = null
 const keyword = ref('')
 const libraryYearFilter = ref('')
 const libraryMonthFilter = ref('')
@@ -960,6 +986,22 @@ const episodeResourceForm = reactive({
   subtitle_format: '',
   subtitle_path: '',
   embedded: false,
+})
+const entryEditForm = reactive({
+  title_cn: '',
+  bangumi_id: '',
+  tmdb_id: '',
+  year: 0,
+  month: 0,
+  season_number: 1,
+  media_type: 'anime',
+  region: 'jp',
+  title_romaji: '',
+  title_raw: '',
+  poster_url: '',
+  summary: '',
+  tags_text: '',
+  genres_text: '',
 })
 const mediaWizardDraft = reactive({
   title: '',
@@ -1327,6 +1369,19 @@ function parseJsonArray(value) {
 function entryTags(item) {
   const tags = [...parseJsonArray(item?.genres_json), ...parseJsonArray(item?.tags_json)]
   return Array.from(new Set(tags.map(tag => tag.trim()).filter(Boolean)))
+}
+
+function listTextFromJson(value) {
+  return parseJsonArray(value).join('\n')
+}
+
+function jsonFromListText(value) {
+  const items = String(value || '')
+    .replace(/,/g, '\n')
+    .split('\n')
+    .map(item => item.trim())
+    .filter(Boolean)
+  return JSON.stringify(Array.from(new Set(items)))
 }
 
 function toggleLibraryTag(tag) {
@@ -1786,10 +1841,92 @@ async function openQueueEntry(row) {
   await openEntry(entryId, domain, row?.media_type || (domain === 'seasonal' ? 'anime' : currentMediaType.value))
 }
 
-async function saveCurrentEntry() {
-  const payload = selectedEntry.value
-  if (!payload) return
-  await saveMediaItem(selectedEntryMediaType.value || entryMediaType(payload), payload.id, payload)
+function stopMetadataProgress() {
+  if (metadataProgressTimer) {
+    window.clearInterval(metadataProgressTimer)
+    metadataProgressTimer = null
+  }
+}
+
+function startMetadataProgress() {
+  stopMetadataProgress()
+  metadataFetchProgress.value = 8
+  metadataProgressTimer = window.setInterval(() => {
+    metadataFetchProgress.value = Math.min(92, metadataFetchProgress.value + 8)
+  }, 350)
+}
+
+function openEntryEditDialog() {
+  const entry = selectedEntry.value
+  if (!entry) return
+  entryEditForm.title_cn = entry.title_cn || entry.display_title || ''
+  entryEditForm.bangumi_id = entry.bangumi_id || ''
+  entryEditForm.tmdb_id = entry.tmdb_id || ''
+  entryEditForm.year = Number(entry.year || 0)
+  entryEditForm.month = Number(entry.month || 0)
+  entryEditForm.season_number = Number(entry.season_number || 1)
+  entryEditForm.media_type = entryMediaType(entry)
+  entryEditForm.region = entry.region || 'jp'
+  entryEditForm.title_romaji = entry.title_romaji || entry.title_raw || ''
+  entryEditForm.title_raw = entry.title_raw || ''
+  entryEditForm.poster_url = entry.poster_url || ''
+  entryEditForm.summary = entry.summary || ''
+  entryEditForm.tags_text = listTextFromJson(entry.tags_json)
+  entryEditForm.genres_text = listTextFromJson(entry.genres_json)
+  metadataFetchProgress.value = 0
+  entryEditDialogOpen.value = true
+}
+
+function entryEditPayload() {
+  return {
+    title_cn: entryEditForm.title_cn,
+    bangumi_id: entryEditForm.bangumi_id,
+    tmdb_id: entryEditForm.tmdb_id,
+    year: entryEditForm.year,
+    month: entryEditForm.month,
+    season_number: entryEditForm.season_number,
+    media_type: entryEditForm.media_type,
+    region: entryEditForm.region,
+    title_romaji: entryEditForm.title_romaji,
+    title_raw: entryEditForm.title_raw || entryEditForm.title_romaji,
+    poster_url: entryEditForm.poster_url,
+    summary: entryEditForm.summary,
+    genres_json: jsonFromListText(entryEditForm.genres_text),
+    tags_json: jsonFromListText(entryEditForm.tags_text),
+  }
+}
+
+async function fetchEntryMetadata() {
+  const entry = selectedEntry.value
+  if (!entry?.id) return
+  metadataFetching.value = true
+  startMetadataProgress()
+  try {
+    const result = await postAction(`/media/${selectedEntryMediaType.value || entryMediaType(entry)}/${entry.id}/metadata/fetch`, {
+      bangumi_id: entryEditForm.bangumi_id,
+      tmdb_id: entryEditForm.tmdb_id,
+      provider: 'bangumi',
+    })
+    selectedEntryDetail.value = result
+    metadataFetchProgress.value = 100
+    ElMessage.success('元数据已填入，请确认后保存')
+    openEntryEditDialog()
+    metadataFetchProgress.value = 100
+  } catch (error) {
+    metadataFetchProgress.value = 0
+    ElMessage.error(apiErrorMessage(error))
+  } finally {
+    metadataFetching.value = false
+    stopMetadataProgress()
+  }
+}
+
+async function saveEntryEditForm() {
+  const entry = selectedEntry.value
+  if (!entry?.id) return
+  const result = await saveMediaItem(selectedEntryMediaType.value || entryEditForm.media_type, entry.id, entryEditPayload())
+  selectedEntryDetail.value = result
+  entryEditDialogOpen.value = false
   ElMessage.success(selectedEntryDomain.value === 'library' ? '番剧库条目已保存' : '番剧设置已保存')
   await reload()
 }
@@ -1901,6 +2038,13 @@ watch(consoleNavMode, value => {
 watch(selectedScheduledJob, job => {
   syncScheduledJobForm(job)
 })
+watch(entryEditDialogOpen, value => {
+  if (!value) {
+    stopMetadataProgress()
+    metadataFetching.value = false
+    metadataFetchProgress.value = 0
+  }
+})
 watch(view, value => {
   if (['seasonal', 'library', 'movies', 'tv'].includes(value)) {
     libraryYearFilter.value = ''
@@ -1922,6 +2066,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   stopDashboardStream()
+  stopMetadataProgress()
 })
 </script>
 

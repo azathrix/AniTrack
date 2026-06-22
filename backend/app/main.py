@@ -24,6 +24,7 @@ from .downloader_service import SUPPORTED_DOWNLOADER_TYPES
 from .queue_bridge import register_queue_trigger
 from .runtime_store import runtime_store
 from .library import bool_setting
+from .metadata import refresh_entry_metadata
 from .pipeline_orchestrator import run_ready_tasks, start_pipeline
 from .pipeline_runtime import finish_pipeline_run, pipeline_overview, start_pipeline_run, update_pipeline_run
 from .processors import register_builtin_processors
@@ -86,6 +87,20 @@ class EntryPayload(BaseModel):
     year: int = 0
     month: int = 0
     season_number: int = 1
+    media_type: str = "anime"
+    region: str = "jp"
+    title_romaji: str = ""
+    title_raw: str = ""
+    poster_url: str = ""
+    summary: str = ""
+    genres_json: str = "[]"
+    tags_json: str = "[]"
+
+
+class MetadataFetchPayload(BaseModel):
+    bangumi_id: str = ""
+    tmdb_id: str = ""
+    provider: str = "bangumi"
 
 
 class MediaCreatePayload(BaseModel):
@@ -148,6 +163,20 @@ class PipelineStartPayload(BaseModel):
 
 def row_to_dict(row: Any) -> dict[str, Any]:
     return dict(row) if row is not None else {}
+
+
+def normalize_json_list_text(value: str) -> str:
+    if not value:
+        return "[]"
+    raw = str(value).strip()
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, list):
+            return json.dumps([str(item).strip() for item in parsed if str(item).strip()], ensure_ascii=False)
+    except Exception:
+        pass
+    items = [item.strip() for item in raw.replace(",", "\n").splitlines() if item.strip()]
+    return json.dumps(items, ensure_ascii=False)
 
 
 def rows_to_dicts(rows: list[Any]) -> list[dict[str, Any]]:
@@ -733,7 +762,21 @@ def save_entry_payload(entry_id: int, payload: EntryPayload, *, expected_domain:
         conn.execute(
             """
             UPDATE entries
-            SET title_cn=?, bangumi_id=?, tmdb_id=?, year=?, month=?, season_number=?, updated_at=?
+            SET title_cn=?,
+                bangumi_id=?,
+                tmdb_id=?,
+                year=?,
+                month=?,
+                season_number=?,
+                media_type=?,
+                region=?,
+                title_romaji=?,
+                title_raw=?,
+                poster_url=?,
+                summary=?,
+                genres_json=?,
+                tags_json=?,
+                updated_at=?
             WHERE id=?
             """,
             (
@@ -743,6 +786,14 @@ def save_entry_payload(entry_id: int, payload: EntryPayload, *, expected_domain:
                 payload.year,
                 max(0, min(12, int(payload.month or 0))),
                 payload.season_number,
+                normalize_api_media_type(payload.media_type),
+                payload.region.strip() or "jp",
+                payload.title_romaji.strip(),
+                payload.title_raw.strip(),
+                payload.poster_url.strip(),
+                payload.summary.strip(),
+                normalize_json_list_text(payload.genres_json),
+                normalize_json_list_text(payload.tags_json),
                 now(),
                 entry_id,
             ),
@@ -1939,6 +1990,31 @@ async def api_media_entry(media_type: str, entry_id: int) -> dict[str, Any]:
 async def api_update_media_entry(media_type: str, entry_id: int, payload: EntryPayload) -> dict[str, Any]:
     normalize_api_media_type(media_type)
     return save_entry_payload(entry_id, payload, expected_domain=None)
+
+
+@app.post("/api/media/{media_type}/{entry_id}/metadata/fetch")
+async def api_fetch_media_metadata(media_type: str, entry_id: int, payload: MetadataFetchPayload) -> dict[str, Any]:
+    normalize_api_media_type(media_type)
+    bangumi_id = payload.bangumi_id.strip()
+    tmdb_id = payload.tmdb_id.strip()
+    if bangumi_id or tmdb_id:
+        with connect() as conn:
+            exists = conn.execute("SELECT id FROM entries WHERE id=?", (entry_id,)).fetchone()
+            if not exists:
+                raise HTTPException(status_code=404, detail="媒体条目不存在")
+            conn.execute(
+                "UPDATE entries SET bangumi_id=CASE WHEN ?='' THEN bangumi_id ELSE ? END, tmdb_id=CASE WHEN ?='' THEN tmdb_id ELSE ? END, updated_at=? WHERE id=?",
+                (bangumi_id, bangumi_id, tmdb_id, tmdb_id, now(), entry_id),
+            )
+    with connect() as conn:
+        entry = conn.execute("SELECT bangumi_id FROM entries WHERE id=?", (entry_id,)).fetchone()
+    if not entry:
+        raise HTTPException(status_code=404, detail="媒体条目不存在")
+    if not str(entry["bangumi_id"] or "").strip():
+        raise HTTPException(status_code=400, detail="当前扒信息需要先填写 Bangumi ID")
+    await refresh_entry_metadata(entry_id, get_settings().get("rss_proxy", ""))
+    log("info", f"媒体元数据已刷新: entry_id={entry_id} provider=bangumi")
+    return build_media_entry_response(media_type, entry_id)
 
 
 @app.get("/api/entries/{entry_id}/episodes")
