@@ -3,7 +3,10 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import re
+import shutil
 import time
+import uuid
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -11,20 +14,20 @@ from pathlib import Path
 from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .config import APP_DIR, MEDIA_ROOT
+from .config import APP_DIR, DATA_DIR, MEDIA_ROOT
 from .database import connect
 from .db import clear_runtime_data, diagnostics, get_runtime_generation, get_settings, init_db, log, merge_duplicate_series, now, save_settings
 from .downloader_service import SUPPORTED_DOWNLOADER_TYPES
 from .queue_bridge import register_queue_trigger
 from .runtime_store import runtime_store
 from .library import bool_setting
-from .metadata import refresh_entry_metadata
+from .metadata import refresh_entry_metadata, search_bangumi, subject_cn_name, subject_month, subject_year
 from .pipeline_orchestrator import run_ready_tasks, start_pipeline
 from .pipeline_runtime import finish_pipeline_run, pipeline_overview, start_pipeline_run, update_pipeline_run
 from .processors import register_builtin_processors
@@ -78,6 +81,7 @@ class SettingsPayload(BaseModel):
     resolution_priority: list[str] = Field(default_factory=list)
     language_priority: list[str] = Field(default_factory=list)
     secondary_language_priority: list[str] = Field(default_factory=list)
+    download_concurrency: int = 2
     downloaders: list[dict[str, Any]] = Field(default_factory=list)
     episode_name_template: str = ""
     movie_name_template: str = ""
@@ -168,6 +172,18 @@ class EpisodeImportPayload(BaseModel):
     language: str = ""
 
 
+class LocalUploadItemPayload(BaseModel):
+    temp_path: str = ""
+    file_name: str = ""
+    size: int = 0
+
+
+class LocalUploadImportPayload(BaseModel):
+    uploads: list[LocalUploadItemPayload] = Field(default_factory=list)
+    subtitle_format: str = ""
+    language: str = ""
+
+
 class BatchSubtitlePayload(BaseModel):
     subtitles_text: str = ""
     file_names: list[str] = Field(default_factory=list)
@@ -178,6 +194,10 @@ class BatchSubtitlePayload(BaseModel):
 class ScheduledJobPayload(BaseModel):
     enabled: bool = True
     interval_minutes: int = 1
+
+
+class ProcessorSettingsPayload(BaseModel):
+    download_concurrency: int = 2
 
 
 class PipelineStartPayload(BaseModel):
@@ -207,12 +227,46 @@ def normalize_json_list_text(value: str) -> str:
     return json.dumps(items, ensure_ascii=False)
 
 
+def int_setting(value: Any, default: int = 0, minimum: int | None = None, maximum: int | None = None) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    if minimum is not None:
+        parsed = max(minimum, parsed)
+    if maximum is not None:
+        parsed = min(maximum, parsed)
+    return parsed
+
+
 def subtitle_embedded_value(format_value: str) -> int:
     return 1 if str(format_value or "").strip().lower() in {"embedded", "hardsub", "burned"} else 0
 
 
 def split_input_lines(value: str) -> list[str]:
     return [line.strip() for line in str(value or "").splitlines() if line.strip()]
+
+
+def safe_upload_filename(value: str) -> str:
+    name = Path(value or "upload.bin").name.strip() or "upload.bin"
+    name = re.sub(r"[^\w.\-\u4e00-\u9fff\[\]\(\) ]+", "_", name, flags=re.UNICODE)
+    return name[:180] or "upload.bin"
+
+
+def upload_root() -> Path:
+    root = DATA_DIR / "uploads"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def validate_upload_temp_path(value: str) -> Path:
+    root = upload_root().resolve()
+    path = Path(value or "").resolve()
+    if root not in path.parents and path != root:
+        raise HTTPException(status_code=400, detail="上传临时文件路径无效")
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="上传临时文件不存在")
+    return path
 
 
 def is_valid_resource_reference(value: str) -> bool:
@@ -381,6 +435,20 @@ def derived_downloader_settings(downloaders: list[dict[str, Any]], previous: dic
     return result
 
 
+def sync_download_processor_concurrency(value: int) -> int:
+    concurrency = int_setting(value, 2, 1, 12)
+    with connect() as conn:
+        conn.execute(
+            """
+            UPDATE pipeline_steps
+            SET max_concurrency=?, updated_at=?
+            WHERE processor_key='download'
+            """,
+            (concurrency, now()),
+        )
+    return concurrency
+
+
 def split_candidate_values(value: Any) -> list[str]:
     return [item.strip() for item in str(value or "").split(",") if item.strip()]
 
@@ -468,16 +536,17 @@ def settings_response() -> dict[str, Any]:
     return {
         "rss_url": settings.get("rss_url", ""),
         "rss_proxy": settings.get("rss_proxy", ""),
-        "scan_interval_minutes": int(settings.get("scan_interval_minutes") or 60),
+        "scan_interval_minutes": int_setting(settings.get("scan_interval_minutes"), 60, 1),
         "auto_scan": bool_setting(settings.get("auto_scan", "false")),
         "queue_dispatch_enabled": bool_setting(settings.get("queue_dispatch_enabled", "true")),
-        "queue_dispatch_interval_minutes": int(settings.get("queue_dispatch_interval_minutes") or 1),
+        "queue_dispatch_interval_minutes": int_setting(settings.get("queue_dispatch_interval_minutes"), 1, 1),
         "auto_generate_nfo": bool_setting(settings.get("auto_generate_nfo", "false")),
         "backfill_current_season": bool_setting(settings.get("backfill_current_season", "false")),
         "subtitle_priority": split_setting(settings.get("subtitle_priority", "")),
         "resolution_priority": split_setting(settings.get("resolution_priority", "")),
         "language_priority": split_setting(settings.get("language_priority", "")),
         "secondary_language_priority": split_setting(settings.get("secondary_language_priority", "")),
+        "download_concurrency": int_setting(settings.get("download_concurrency"), 2, 1, 12),
         "downloaders": clean_downloader_items(downloaders if isinstance(downloaders, list) else []),
         "episode_name_template": settings.get("episode_name_template", ""),
         "movie_name_template": settings.get("movie_name_template", ""),
@@ -1288,8 +1357,8 @@ def reschedule() -> None:
     scheduler.remove_all_jobs()
     ensure_queue_handlers()
     settings = get_settings()
-    minutes = max(1, int(settings.get("scan_interval_minutes") or 60))
-    queue_minutes = max(1, int(settings.get("queue_dispatch_interval_minutes") or 1))
+    minutes = int_setting(settings.get("scan_interval_minutes"), 60, 1)
+    queue_minutes = int_setting(settings.get("queue_dispatch_interval_minutes"), 1, 1)
     rss_enabled = bool_setting(settings.get("auto_scan", "false"))
     queue_dispatch_enabled = bool_setting(settings.get("queue_dispatch_enabled", "true"))
     runtime_store.set_scheduler_sync(
@@ -1371,6 +1440,7 @@ def queue_summary(settings: dict[str, str]) -> list[dict[str, Any]]:
             "state_reason": state_reason,
             "state_detail": f"当前运行 {running} 个，待处理 {pending} 个" if running else (f"当前批次可执行 {pending} 个" if pending else ""),
             "description": description,
+            "max_concurrency": int_setting(settings.get("download_concurrency"), 2, 1, 12) if key == "download" else 1,
         }
 
     return [
@@ -1393,6 +1463,7 @@ def queue_summary(settings: dict[str, str]) -> list[dict[str, Any]]:
         runtime_item("selection", "自动选集", "根据全局优先级选择唯一发布"),
         runtime_item("backfill", "整季补全", "补抓当季历史条目"),
         runtime_item("download", "下载到本地", "提交下载器、轮询完成并整理到本地媒体库"),
+        runtime_item("upload", "上传整理", "接收本地文件并整理到媒体库"),
         runtime_item("local_presence", "本地存在性检查", "检查本地最终文件状态"),
     ]
 
@@ -1616,6 +1687,7 @@ def console_sections() -> list[dict[str, Any]]:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
+    sync_download_processor_concurrency(int_setting(get_settings().get("download_concurrency"), 2, 1, 12))
     recovered = reset_orphaned_download_jobs()
     if recovered:
         log("warn", f"已恢复中断下载状态: {recovered} 个")
@@ -2003,6 +2075,7 @@ async def api_update_settings(payload: SettingsPayload) -> dict[str, Any]:
             "resolution_priority": "\n".join(payload.resolution_priority),
             "language_priority": "\n".join(payload.language_priority),
             "secondary_language_priority": "\n".join(payload.secondary_language_priority),
+            "download_concurrency": str(int_setting(payload.download_concurrency, 2, 1, 12)),
             **downloader_settings,
             "local_library_root": str(MEDIA_ROOT),
             "auto_sync_following": "true",
@@ -2018,6 +2091,7 @@ async def api_update_settings(payload: SettingsPayload) -> dict[str, Any]:
             "tv_subtitle_priority": "\n".join(payload.tv_subtitle_priority),
         }
     )
+    sync_download_processor_concurrency(int_setting(payload.download_concurrency, 2, 1, 12))
     current = get_settings()
     if any(
         previous.get(key, "") != current.get(key, "")
@@ -2085,6 +2159,49 @@ async def api_update_scheduled_job(job_key: str, payload: ScheduledJobPayload) -
     reschedule()
     log("info", f"定时任务已更新: job_key={job_key} enabled={enabled} interval={interval}m")
     return {"status": "saved", "settings": settings_response()}
+
+
+@app.put("/api/processors/{processor_key}/settings")
+async def api_update_processor_settings(processor_key: str, payload: ProcessorSettingsPayload) -> dict[str, Any]:
+    key = processor_key.strip().lower()
+    if key != "download":
+        raise HTTPException(status_code=404, detail="处理器设置不存在")
+    concurrency = sync_download_processor_concurrency(payload.download_concurrency)
+    save_settings({"download_concurrency": str(concurrency)})
+    log("info", f"下载处理器并发已更新: {concurrency}")
+    return {"status": "saved", "settings": settings_response()}
+
+
+@app.get("/api/metadata/search")
+async def api_search_metadata(provider: str = Query("bangumi"), keyword: str = Query("")) -> dict[str, Any]:
+    provider_key = provider.strip().lower() or "bangumi"
+    text = keyword.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="搜索关键词不能为空")
+    if provider_key == "tmdb":
+        return {"provider": "tmdb", "items": [], "message": "TMDB 搜索尚未配置"}
+    if provider_key != "bangumi":
+        raise HTTPException(status_code=400, detail="未知元数据来源")
+    try:
+        rows = await search_bangumi(text, get_settings().get("rss_proxy", ""))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Bangumi 搜索失败: {exc}") from exc
+    items = []
+    for row in rows[:20]:
+        images = row.get("images") or {}
+        items.append(
+            {
+                "provider": "bangumi",
+                "id": str(row.get("id") or ""),
+                "title": subject_cn_name(row) or row.get("name_cn") or row.get("name") or "",
+                "original_title": row.get("name") or "",
+                "year": subject_year(row),
+                "month": subject_month(row),
+                "poster_url": images.get("large") or images.get("common") or images.get("medium") or "",
+                "summary": row.get("summary") or "",
+            }
+        )
+    return {"provider": "bangumi", "items": items}
 
 
 @app.get("/api/rss-subscriptions")
@@ -2219,6 +2336,124 @@ async def api_entry_episodes(entry_id: int) -> dict[str, Any]:
         "episode_resources": detail.get("episode_resources", []),
         "episode_subtitles": detail.get("episode_subtitles", []),
     }
+
+
+@app.post("/api/uploads/local")
+async def api_upload_local_file(file: UploadFile = File(...)) -> dict[str, Any]:
+    original_name = safe_upload_filename(file.filename or "upload.bin")
+    token = uuid.uuid4().hex
+    target = upload_root() / f"{token}_{original_name}"
+
+    def write_file() -> int:
+        with target.open("wb") as handle:
+            shutil.copyfileobj(file.file, handle)
+        return target.stat().st_size
+
+    try:
+        size = await run_in_threadpool(write_file)
+    finally:
+        await file.close()
+    log("info", f"本地文件已上传到临时区: name={original_name} size={size}")
+    return {
+        "status": "uploaded",
+        "token": token,
+        "temp_path": str(target),
+        "file_name": original_name,
+        "size": size,
+    }
+
+
+@app.post("/api/entries/{entry_id}/uploads/import")
+async def api_import_entry_uploads(entry_id: int, payload: LocalUploadImportPayload) -> dict[str, Any]:
+    uploads = [item for item in payload.uploads if item.temp_path.strip()]
+    if not uploads:
+        raise HTTPException(status_code=400, detail="请先选择并上传本地文件")
+    ts = now()
+    rows: list[dict[str, Any]] = []
+    with connect() as conn:
+        entry = conn.execute("SELECT * FROM entries WHERE id=?", (entry_id,)).fetchone()
+        if not entry:
+            raise HTTPException(status_code=404, detail="媒体条目不存在")
+        for index, item in enumerate(uploads, start=1):
+            source = validate_upload_temp_path(item.temp_path)
+            file_name = safe_upload_filename(item.file_name or source.name)
+            episode_number = parsed_episode_or_fallback(file_name, index)
+            conn.execute(
+                """
+                INSERT INTO episodes (series_id, entry_id, episode_number, title, status, created_at, updated_at)
+                VALUES (?, ?, ?, '', 'configured', ?, ?)
+                ON CONFLICT(series_id, episode_number) DO UPDATE SET
+                  entry_id=excluded.entry_id,
+                  status=excluded.status,
+                  updated_at=excluded.updated_at
+                """,
+                (entry_id, entry_id, episode_number, ts, ts),
+            )
+            episode = conn.execute(
+                "SELECT id FROM episodes WHERE entry_id=? AND episode_number=? ORDER BY id DESC LIMIT 1",
+                (entry_id, episode_number),
+            ).fetchone()
+            episode_id = int(episode["id"] or 0) if episode else 0
+            conn.execute("UPDATE episode_resources SET selected=0 WHERE entry_id=? AND episode_number=?", (entry_id, episode_number))
+            conn.execute(
+                """
+                INSERT INTO episode_resources
+                  (entry_id, episode_id, episode_number, source_type, source_ref, release_id, title,
+                   language, subtitle_format, selected, status, created_at, updated_at)
+                VALUES (?, ?, ?, 'upload', ?, 0, ?, ?, ?, 1, 'queued', ?, ?)
+                ON CONFLICT(entry_id, episode_number, source_type, source_ref) DO UPDATE SET
+                  episode_id=excluded.episode_id,
+                  title=excluded.title,
+                  language=excluded.language,
+                  subtitle_format=excluded.subtitle_format,
+                  selected=1,
+                  status='queued',
+                  updated_at=excluded.updated_at
+                """,
+                (entry_id, episode_id, episode_number, str(source), file_name, payload.language.strip(), payload.subtitle_format.strip(), ts, ts),
+            )
+            resource = conn.execute(
+                """
+                SELECT id FROM episode_resources
+                WHERE entry_id=? AND episode_number=? AND source_type='upload' AND source_ref=?
+                """,
+                (entry_id, episode_number, str(source)),
+            ).fetchone()
+            rows.append(
+                {
+                    "episode_id": episode_id,
+                    "episode_number": episode_number,
+                    "resource_id": int(resource["id"] or 0) if resource else 0,
+                    "temp_path": str(source),
+                    "file_name": file_name,
+                }
+            )
+
+    run_ids: list[int] = []
+    for row in rows:
+        run_id = start_pipeline(
+            "media_upload",
+            trigger_source="local_upload",
+            first_step_key="upload",
+            subject_type="episode",
+            subject_id=int(row["episode_id"]),
+            payload={
+                "_dedupe_key": f"upload:entry:{entry_id}:episode:{int(row['episode_number'])}",
+                "entry_id": entry_id,
+                "episode_id": int(row["episode_id"]),
+                "episode_number": int(row["episode_number"]),
+                "resource_id": int(row["resource_id"]),
+                "temp_path": row["temp_path"],
+                "original_name": row["file_name"],
+                "domain_kind": "library",
+            },
+            message=f"上传整理: entry_id={entry_id} episode={row['episode_number']}",
+        )
+        run_ids.append(run_id)
+    if run_ids:
+        trigger_queue("processor", delay=0)
+    log("info", f"本地上传资源已入队: entry_id={entry_id} count={len(run_ids)}")
+    return {"status": "started", "count": len(run_ids), "upload_run_ids": run_ids, "detail": build_entry_response(entry_id)}
 
 
 @app.post("/api/entries/{entry_id}/resources/import")

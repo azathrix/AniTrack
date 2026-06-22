@@ -182,12 +182,50 @@ h1 {
 .app-shell .el-button--primary {
   background: linear-gradient(135deg, var(--ani-blue), var(--ani-pink));
   border-color: transparent;
+  color: #fff !important;
 }
 
 .app-shell .el-button--primary:hover,
 .app-shell .el-button--primary:focus {
   border-color: transparent;
   filter: brightness(1.02);
+  color: #fff !important;
+}
+
+.app-shell .el-button--primary.is-plain:not(.is-link):not(.is-text),
+.app-shell .el-button--success.is-plain:not(.is-link):not(.is-text),
+.app-shell .el-button--warning.is-plain:not(.is-link):not(.is-text),
+.app-shell .el-button--danger.is-plain:not(.is-link):not(.is-text),
+.app-shell .el-button--info.is-plain:not(.is-link):not(.is-text),
+.app-shell .el-button--success:not(.is-link):not(.is-text),
+.app-shell .el-button--warning:not(.is-link):not(.is-text),
+.app-shell .el-button--danger:not(.is-link):not(.is-text),
+.app-shell .el-button--info:not(.is-link):not(.is-text) {
+  color: #fff !important;
+}
+
+.app-shell .el-button--success.is-plain:not(.is-link):not(.is-text),
+.app-shell .el-button--success:not(.is-link):not(.is-text) {
+  background: #34c6a3;
+  border-color: #34c6a3;
+}
+
+.app-shell .el-button--warning.is-plain:not(.is-link):not(.is-text),
+.app-shell .el-button--warning:not(.is-link):not(.is-text) {
+  background: #f59e0b;
+  border-color: #f59e0b;
+}
+
+.app-shell .el-button--danger.is-plain:not(.is-link):not(.is-text),
+.app-shell .el-button--danger:not(.is-link):not(.is-text) {
+  background: #ef476f;
+  border-color: #ef476f;
+}
+
+.app-shell .el-button--info.is-plain:not(.is-link):not(.is-text),
+.app-shell .el-button--info:not(.is-link):not(.is-text) {
+  background: #64748b;
+  border-color: #64748b;
 }
 
 .app-shell .el-tag.el-tag--primary {
@@ -711,6 +749,113 @@ h1 {
   display: block;
   font-size: 15px;
   margin-top: 5px;
+}
+
+.metadata-search-dialog {
+  display: grid;
+  gap: 14px;
+}
+
+.metadata-search-bar {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.metadata-result-list,
+.metadata-candidate-list {
+  display: grid;
+  gap: 10px;
+  max-height: 420px;
+  overflow: auto;
+}
+
+.metadata-result-list button,
+.metadata-candidate-list button {
+  align-items: center;
+  background: #fff;
+  border: 1px solid var(--ani-line);
+  border-radius: 12px;
+  color: #1f2937;
+  cursor: pointer;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 56px minmax(0, 1fr);
+  padding: 10px;
+  text-align: left;
+  transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+}
+
+.metadata-candidate-list {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  margin-bottom: 14px;
+}
+
+.metadata-candidate-list button {
+  grid-template-columns: 46px minmax(0, 1fr);
+}
+
+.metadata-result-list button:hover,
+.metadata-candidate-list button:hover {
+  border-color: rgba(79, 124, 255, .42);
+  box-shadow: 0 10px 28px rgba(79, 124, 255, .12);
+  transform: translateY(-1px);
+}
+
+.metadata-result-list img,
+.metadata-candidate-list img,
+.metadata-result-list button > span:first-child,
+.metadata-candidate-list button > span:first-child {
+  align-items: center;
+  background: linear-gradient(135deg, rgba(255, 122, 182, .16), rgba(79, 124, 255, .14));
+  border-radius: 10px;
+  color: #3456d1;
+  display: flex;
+  font-weight: 800;
+  height: 56px;
+  justify-content: center;
+  object-fit: cover;
+  overflow: hidden;
+  width: 56px;
+}
+
+.metadata-candidate-list img,
+.metadata-candidate-list button > span:first-child {
+  height: 46px;
+  width: 46px;
+}
+
+.metadata-result-list strong,
+.metadata-candidate-list strong {
+  color: #172033;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metadata-result-list small,
+.metadata-candidate-list small {
+  color: #64748b;
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metadata-result-list code {
+  color: #64748b;
+  display: block;
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+.field-with-action {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  width: 100%;
 }
 
 .queue-monitor-grid {

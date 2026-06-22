@@ -27,6 +27,7 @@ DEFAULT_SETTINGS = {
     "language_priority": "简体\n繁体\n日语",
     "secondary_language_priority": "繁体\n日语\n英语",
     "pikpak_rate_limit_cooldown_minutes": "60",
+    "download_concurrency": "2",
     "download_backend": "rclone",
     "local_downloader_root": str(DATA_DIR / "local-downloader"),
     "rclone_command": "rclone",

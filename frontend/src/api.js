@@ -37,6 +37,15 @@ export async function postAction(path, payload = undefined) {
   return (await api.post(path, payload)).data
 }
 
+export async function uploadFile(path, file) {
+  const form = new FormData()
+  form.append('file', file)
+  return (await api.post(path, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 0
+  })).data
+}
+
 export async function putAction(path, payload = undefined) {
   return (await api.put(path, payload)).data
 }

@@ -114,6 +114,7 @@
                   <div class="detail-tags">
                     <el-tag :type="queueTag(selectedQueue)">{{ queueState(selectedQueue) }}</el-tag>
                     <el-tag v-if="selectedQueue.waiting" type="warning">重试 {{ selectedQueue.waiting }}</el-tag>
+                    <el-button v-if="selectedQueue.key === 'download'" size="small" plain @click="openProcessorSettings">设置</el-button>
                     <el-button v-if="selectedQueueAction" size="small" plain @click="runAction(selectedQueueAction)">立即执行该队列</el-button>
                   </div>
                 </div>
@@ -187,6 +188,7 @@
                   </div>
                   <div class="detail-tags">
                     <el-tag :type="taskTag(selectedScheduledJob.last_status || 'idle')">{{ selectedScheduledJob.last_status || 'idle' }}</el-tag>
+                    <el-button size="small" plain @click="openScheduledSettings">设置</el-button>
                   </div>
                 </div>
                 <div class="detail-summary-grid">
@@ -195,15 +197,6 @@
                   <div><span>防抖</span><strong>{{ selectedScheduledJob.debounce_seconds || 0 }} 秒</strong></div>
                   <div><span>最近状态</span><strong>{{ selectedScheduledJob.last_status || '-' }}</strong></div>
                   <div><span>最近执行</span><strong>{{ selectedScheduledJob.latest_run?.started_at || '-' }}</strong></div>
-                </div>
-                <div class="scheduled-config-panel">
-                  <el-form label-position="top">
-                    <div class="form-row">
-                      <el-form-item label="启用定时任务"><el-switch v-model="scheduledJobForm.enabled" /></el-form-item>
-                      <el-form-item label="执行间隔（分钟）"><el-input-number v-model="scheduledJobForm.interval_minutes" :min="1" /></el-form-item>
-                    </div>
-                    <el-button type="primary" plain @click="saveScheduledJob">保存定时配置</el-button>
-                  </el-form>
                 </div>
                 <el-table :data="selectedScheduledRuns" height="520" class="candidate-table">
                   <el-table-column prop="status" label="状态" width="110">
@@ -1002,6 +995,45 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="processorSettingsDialogOpen" title="下载处理器设置" width="520px">
+      <el-form :model="processorSettingsForm" label-position="top">
+        <el-alert
+          type="info"
+          show-icon
+          :closable="false"
+          title="控制同时运行的下载处理器数量。过高可能让下载器或 NAS 压力变大，建议从 2-4 开始。"
+          class="settings-alert"
+        />
+        <el-form-item label="下载并发数">
+          <el-input-number v-model="processorSettingsForm.download_concurrency" :min="1" :max="12" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="processorSettingsDialogOpen = false">取消</el-button>
+        <el-button type="primary" @click="saveProcessorSettings">保存设置</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="scheduledSettingsDialogOpen" title="定时任务设置" width="520px">
+      <el-form :model="scheduledJobForm" label-position="top">
+        <el-alert
+          type="info"
+          show-icon
+          :closable="false"
+          :title="selectedScheduledJob?.job_key === 'rss_scan' ? '配置 RSS 自动扫描。关闭后只会在手动触发时扫描。' : '配置运行时队列恢复调度。通常保持开启即可。'"
+          class="settings-alert"
+        />
+        <div class="form-row">
+          <el-form-item label="启用定时任务"><el-switch v-model="scheduledJobForm.enabled" /></el-form-item>
+          <el-form-item label="执行间隔（分钟）"><el-input-number v-model="scheduledJobForm.interval_minutes" :min="1" /></el-form-item>
+        </div>
+      </el-form>
+      <template #footer>
+        <el-button @click="scheduledSettingsDialogOpen = false">取消</el-button>
+        <el-button type="primary" @click="saveScheduledJob">保存设置</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="rssDialogOpen" title="RSS 订阅" width="760px">
       <div class="rss-dialog-layout">
         <el-form :model="rssForm" label-position="top" class="rss-form">
@@ -1038,6 +1070,34 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="metadataSearchDialogOpen" :title="metadataSearchProvider === 'tmdb' ? '搜索 TMDB' : '搜索 Bangumi'" width="760px">
+      <div class="metadata-search-dialog">
+        <div class="metadata-search-bar">
+          <el-input v-model="metadataSearchKeyword" clearable placeholder="输入作品名、别名或原名" @keyup.enter="runMetadataSearch" />
+          <el-button type="primary" :loading="metadataSearchLoading" @click="runMetadataSearch">搜索</el-button>
+        </div>
+        <el-alert
+          v-if="metadataSearchProvider === 'tmdb'"
+          type="warning"
+          show-icon
+          :closable="false"
+          title="TMDB 搜索入口已预留，后端还未配置 TMDB API。"
+        />
+        <div class="metadata-result-list" v-loading="metadataSearchLoading">
+          <button v-for="item in metadataSearchResults" :key="`${item.provider}-${item.id}`" type="button" @click="applyMetadataToWizard(item); metadataSearchDialogOpen = false">
+            <img v-if="item.poster_url" :src="item.poster_url" />
+            <span v-else>{{ (item.title || item.original_title || '候选').slice(0, 2) }}</span>
+            <div>
+              <strong>{{ item.title || item.original_title }}</strong>
+              <small>{{ item.original_title || '-' }}</small>
+              <code>{{ item.provider }} · {{ item.id }} · {{ item.year || '年份未知' }}</code>
+            </div>
+          </button>
+          <el-empty v-if="!metadataSearchLoading && !metadataSearchResults.length" description="暂无匹配结果" />
+        </div>
+      </div>
+    </el-dialog>
+
     <el-dialog v-model="mediaWizardOpen" :title="mediaWizardTitle" width="760px">
       <el-steps :active="mediaWizardStep" finish-status="success" align-center>
         <el-step title="选择来源" />
@@ -1071,9 +1131,16 @@
               </div>
             </el-radio-button>
           </el-radio-group>
-          <el-upload v-if="mediaWizardDraft.source_mode === 'local'" drag action="#" :auto-upload="false" multiple>
+          <el-upload
+            v-if="mediaWizardDraft.source_mode === 'local'"
+            v-model:file-list="mediaWizardFiles"
+            drag
+            action="#"
+            :auto-upload="false"
+            multiple
+          >
             <p>选择本地文件或目录</p>
-            <small>第一版只记录文件信息，真实上传整理会在导入器接入后启用。</small>
+            <small>提交后会先上传到服务端临时区，再由上传整理队列收录到媒体库。</small>
           </el-upload>
           <el-form label-position="top" class="wizard-form">
             <el-form-item :label="mediaWizardDraft.source_mode === 'metadata' ? '作品线索' : '资源线索'">
@@ -1089,14 +1156,32 @@
         <template v-else-if="mediaWizardStep === 1">
           <div class="wizard-intro">
             <strong>确认作品信息</strong>
-            <span>这里是媒体卡片的基础信息。不确定的字段可以先留空，收录后还能在详情页编辑。</span>
+            <span>系统会尽量从第一步线索匹配 Bangumi；多结果时先选择最接近的一项，再手动修正。</span>
+          </div>
+          <div v-if="mediaWizardCandidates.length" class="metadata-candidate-list">
+            <button v-for="item in mediaWizardCandidates" :key="`${item.provider}-${item.id}`" type="button" @click="applyMetadataToWizard(item)">
+              <img v-if="item.poster_url" :src="item.poster_url" />
+              <span v-else>{{ (item.title || item.original_title || '候选').slice(0, 2) }}</span>
+              <strong>{{ item.title || item.original_title }}</strong>
+              <small>{{ item.provider }} · {{ item.id }} · {{ item.year || '年份未知' }}</small>
+            </button>
           </div>
           <el-form :model="mediaWizardDraft" label-position="top" class="wizard-form">
             <div class="wizard-form-grid labeled">
               <el-form-item label="作品标题"><el-input v-model="mediaWizardDraft.title" placeholder="例如 欢迎来到实力至上主义的教室 第四季" /></el-form-item>
               <el-form-item label="别名 / 原名"><el-input v-model="mediaWizardDraft.alias" placeholder="可选，例如 Youkoso Jitsuryoku..." /></el-form-item>
-              <el-form-item label="Bangumi ID"><el-input v-model="mediaWizardDraft.bangumi_id" placeholder="动画优先使用 Bangumi ID" /></el-form-item>
-              <el-form-item label="TMDB ID"><el-input v-model="mediaWizardDraft.tmdb_id" placeholder="电影/电视剧可填 TMDB ID" /></el-form-item>
+              <el-form-item label="Bangumi ID">
+                <div class="field-with-action">
+                  <el-input v-model="mediaWizardDraft.bangumi_id" placeholder="动画优先使用 Bangumi ID" />
+                  <el-button plain @click="openMetadataSearch('bangumi')">搜索</el-button>
+                </div>
+              </el-form-item>
+              <el-form-item label="TMDB ID">
+                <div class="field-with-action">
+                  <el-input v-model="mediaWizardDraft.tmdb_id" placeholder="电影/电视剧可填 TMDB ID" />
+                  <el-button plain @click="openMetadataSearch('tmdb')">搜索</el-button>
+                </div>
+              </el-form-item>
               <el-form-item label="年份"><el-input v-model="mediaWizardDraft.year" placeholder="例如 2026" /></el-form-item>
               <el-form-item label="月份"><el-input v-model="mediaWizardDraft.month" placeholder="例如 4，未知可留空" /></el-form-item>
               <el-form-item label="季 / 篇章"><el-input v-model="mediaWizardDraft.season_number" placeholder="例如 1、2，电影可留空" /></el-form-item>
@@ -1115,28 +1200,43 @@
         <template v-else-if="mediaWizardStep === 2">
           <div class="wizard-intro">
             <strong>配置第一条集数资源</strong>
-            <span>如果只是先登记作品，可以跳过这里。批量集数和字幕在详情页的“集数资源”里继续配置。</span>
+            <span>一行一个磁力链接或下载链接，系统按链接/标题里的集数自动匹配。字幕也按相同方式逐行匹配。</span>
           </div>
           <el-form :model="mediaWizardDraft" label-position="top" class="wizard-form">
-            <div class="wizard-form-grid labeled">
-              <el-form-item label="集数"><el-input v-model="mediaWizardDraft.episode_number" placeholder="例如 1、05、S01E05；不填则只收录作品" /></el-form-item>
-              <el-form-item label="资源标题 / 文件名"><el-input v-model="mediaWizardDraft.resource_title" placeholder="资源发布标题或本地文件名" /></el-form-item>
-              <el-form-item label="资源链接"><el-input v-model="mediaWizardDraft.source_ref" placeholder="磁力链接、下载链接或文件标识" /></el-form-item>
-              <el-form-item label="字幕组"><el-input v-model="mediaWizardDraft.subtitle_group" placeholder="例如 LoliHouse" /></el-form-item>
-              <el-form-item label="分辨率"><el-input v-model="mediaWizardDraft.resolution" placeholder="例如 1080p、2160p" /></el-form-item>
-              <el-form-item label="语言"><el-input v-model="mediaWizardDraft.language" placeholder="例如 简繁、简体、双语" /></el-form-item>
+            <el-form-item label="资源链接">
+              <el-input v-model="mediaWizardDraft.resources_text" type="textarea" :rows="7" placeholder="magnet:?xt=urn:btih:...&#10;https://example.com/show.S01E05.torrent" />
+            </el-form-item>
+            <div class="form-row">
               <el-form-item label="字幕类型">
                 <el-select v-model="mediaWizardDraft.subtitle_format" clearable placeholder="可选">
-                  <el-option label="内嵌（硬字幕）" value="embedded" />
-                  <el-option label="内封（软字幕）" value="muxed" />
+                  <el-option label="无字幕 / 未配置" value="" />
                   <el-option label="外挂" value="external" />
+                  <el-option label="内封（软字幕）" value="muxed" />
+                  <el-option label="内嵌（硬字幕）" value="embedded" />
                 </el-select>
               </el-form-item>
-              <el-form-item label="字幕链接"><el-input v-model="mediaWizardDraft.subtitle_url" placeholder="外挂字幕下载链接，可选" /></el-form-item>
-              <el-form-item label="上传字幕文件名"><el-input v-model="mediaWizardDraft.subtitle_file_name" placeholder="选择文件后记录文件名，可选" /></el-form-item>
-              <el-form-item label="字幕路径"><el-input v-model="mediaWizardDraft.subtitle_path" placeholder="服务端整理后的字幕路径，可选" /></el-form-item>
+              <el-form-item label="语言"><el-input v-model="mediaWizardDraft.language" placeholder="例如 简繁、简体、双语" /></el-form-item>
             </div>
+            <el-form-item label="外挂字幕链接 / 文件名">
+              <el-input v-model="mediaWizardDraft.subtitles_text" type="textarea" :rows="4" placeholder="可选，一行一个字幕链接或字幕文件名" />
+            </el-form-item>
           </el-form>
+          <div class="guide-preview" v-if="mediaWizardResourceRows.length">
+            <strong>资源识别</strong>
+            <div v-for="item in mediaWizardResourceRows" :key="item.key" :class="['guide-preview-row', { invalid: !item.valid }]">
+              <span>第 {{ item.episode }} 集</span>
+              <code>{{ item.text }}</code>
+              <el-tag size="small" :type="item.valid ? 'success' : 'danger'">{{ item.valid ? item.kind : item.reason }}</el-tag>
+            </div>
+          </div>
+          <div class="guide-preview" v-if="mediaWizardSubtitleRows.length">
+            <strong>字幕识别</strong>
+            <div v-for="item in mediaWizardSubtitleRows" :key="item.key" :class="['guide-preview-row', { invalid: !item.valid }]">
+              <span>第 {{ item.episode }} 集</span>
+              <code>{{ item.text }}</code>
+              <el-tag size="small" :type="item.valid ? 'success' : 'danger'">{{ item.valid ? '可导入' : item.reason }}</el-tag>
+            </div>
+          </div>
         </template>
         <template v-else>
           <div class="wizard-confirm-panel">
@@ -1147,9 +1247,9 @@
             <div class="confirm-grid">
               <div><span>Bangumi</span><code>{{ mediaWizardDraft.bangumi_id || '-' }}</code></div>
               <div><span>TMDB</span><code>{{ mediaWizardDraft.tmdb_id || '-' }}</code></div>
-              <div><span>首条集数</span><code>{{ mediaWizardDraft.episode_number ? `第 ${mediaWizardDraft.episode_number} 集` : '暂不配置' }}</code></div>
-              <div><span>资源</span><code>{{ mediaWizardDraft.resource_title || mediaWizardDraft.source_ref || '未填写资源' }}</code></div>
-              <div><span>字幕</span><code>{{ subtitleFormatText(mediaWizardDraft.subtitle_format) || '-' }} · {{ mediaWizardDraft.language || '-' }}</code></div>
+              <div><span>资源</span><code>{{ mediaWizardDraft.source_mode === 'local' ? `${mediaWizardFiles.length} 个文件` : (mediaWizardResourceRows.length ? `${mediaWizardResourceRows.length} 条` : '未填写资源') }}</code></div>
+              <div><span>字幕链接</span><code>{{ mediaWizardSubtitleRows.length ? `${mediaWizardSubtitleRows.length} 条` : '未填写字幕' }}</code></div>
+              <div><span>字幕规则</span><code>{{ subtitleFormatText(mediaWizardDraft.subtitle_format) || '-' }} · {{ mediaWizardDraft.language || '-' }}</code></div>
               <div><span>来源</span><code>{{ sourceModeText(mediaWizardDraft.source_mode) }}</code></div>
             </div>
           </div>
@@ -1170,7 +1270,7 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import draggable from 'vuedraggable'
 import { ElMessage } from 'element-plus'
 import { Calendar, Collection, DataBoard, Document, Refresh, Search, Setting } from '@element-plus/icons-vue'
-import { deleteAction, getAction, getDashboard, getDiagnostics, getMediaItem, getSettings, postAction, putAction, saveMediaItem, saveSettings } from './api'
+import { deleteAction, getAction, getDashboard, getDiagnostics, getMediaItem, getSettings, postAction, putAction, saveMediaItem, saveSettings, uploadFile } from './api'
 import { APP_BUILD, APP_VERSION } from './version'
 
 const view = ref('dashboard')
@@ -1187,11 +1287,20 @@ const advancedFilterOpen = ref(false)
 const rssDialogOpen = ref(false)
 const rssLoading = ref(false)
 const rssEditingId = ref(0)
+const processorSettingsDialogOpen = ref(false)
+const scheduledSettingsDialogOpen = ref(false)
 const mediaWizardOpen = ref(false)
 const mediaWizardMode = ref('import')
 const mediaWizardStep = ref(0)
 const mediaWizardSeed = ref('')
 const mediaWizardSaving = ref(false)
+const mediaWizardCandidates = ref([])
+const mediaWizardFiles = ref([])
+const metadataSearchDialogOpen = ref(false)
+const metadataSearchProvider = ref('bangumi')
+const metadataSearchKeyword = ref('')
+const metadataSearchLoading = ref(false)
+const metadataSearchResults = ref([])
 const episodeResourceDialogOpen = ref(false)
 const entryEditDialogOpen = ref(false)
 const batchSubtitleDialogOpen = ref(false)
@@ -1250,6 +1359,8 @@ const episodeResourceForm = reactive({
   subtitle_path: '',
   subtitle_url: '',
   subtitle_file_name: '',
+  resources_text: '',
+  subtitles_text: '',
 })
 const entryEditForm = reactive({
   title_cn: '',
@@ -1303,6 +1414,9 @@ const mediaWizardDraft = reactive({
 const scheduledJobForm = reactive({
   enabled: true,
   interval_minutes: 1,
+})
+const processorSettingsForm = reactive({
+  download_concurrency: 2,
 })
 
 const pageTitle = computed(() => ({
@@ -1586,6 +1700,29 @@ const episodeImportCanAdvance = computed(() => {
   return true
 })
 const episodeImportCanSave = computed(() => episodeImportResourceRows.value.length > 0 && episodeImportInvalidCount.value === 0)
+const mediaWizardResourceRows = computed(() => splitTextLines(mediaWizardDraft.resources_text).map((text, index) => {
+  const valid = isValidResourceReference(text)
+  return {
+    key: `wizard-resource:${index}:${text}`,
+    text,
+    episode: inferEpisodeFromText(text, index + 1),
+    valid,
+    kind: resourceReferenceKind(text),
+    reason: valid ? '' : '不是下载链接',
+  }
+}))
+const mediaWizardSubtitleRows = computed(() => splitTextLines(mediaWizardDraft.subtitles_text).map((text, index) => {
+  const valid = isValidSubtitleReference(text)
+  return {
+    key: `wizard-subtitle:${index}:${text}`,
+    text,
+    episode: inferEpisodeFromText(text, index + 1),
+    valid,
+    reason: valid ? '' : '格式无效',
+  }
+}))
+const mediaWizardInvalidResourceCount = computed(() => mediaWizardResourceRows.value.filter(item => !item.valid).length)
+const mediaWizardInvalidSubtitleCount = computed(() => mediaWizardSubtitleRows.value.filter(item => !item.valid).length)
 
 const filteredSeries = computed(() => {
   const text = keyword.value.toLowerCase()
@@ -2090,6 +2227,11 @@ function syncScheduledJobForm(job = selectedScheduledJob.value) {
   scheduledJobForm.interval_minutes = Math.max(1, Number(job?.interval_minutes || 1))
 }
 
+function openScheduledSettings() {
+  syncScheduledJobForm()
+  scheduledSettingsDialogOpen.value = true
+}
+
 async function saveScheduledJob() {
   const job = selectedScheduledJob.value
   if (!job?.job_key) return
@@ -2099,6 +2241,27 @@ async function saveScheduledJob() {
       interval_minutes: scheduledJobForm.interval_minutes,
     })
     ElMessage.success('定时配置已保存')
+    scheduledSettingsDialogOpen.value = false
+    await reload()
+  } catch (error) {
+    ElMessage.error(apiErrorMessage(error))
+  }
+}
+
+function openProcessorSettings() {
+  processorSettingsForm.download_concurrency = Math.max(1, Number(settings.download_concurrency || selectedQueue.value?.max_concurrency || 2))
+  processorSettingsDialogOpen.value = true
+}
+
+async function saveProcessorSettings() {
+  try {
+    const result = await putAction('/processors/download/settings', {
+      download_concurrency: processorSettingsForm.download_concurrency,
+    })
+    Object.assign(settings, result.settings || {})
+    normalizeSettingsShape()
+    ElMessage.success('下载处理器设置已保存')
+    processorSettingsDialogOpen.value = false
     await reload()
   } catch (error) {
     ElMessage.error(apiErrorMessage(error))
@@ -2381,25 +2544,94 @@ function openMediaWizard(mode = 'collect') {
   mediaWizardDraft.subtitle_path = ''
   mediaWizardDraft.subtitle_url = ''
   mediaWizardDraft.subtitle_file_name = ''
+  mediaWizardDraft.resources_text = ''
+  mediaWizardDraft.subtitles_text = ''
+  mediaWizardCandidates.value = []
+  mediaWizardFiles.value = []
   mediaWizardOpen.value = true
 }
 
-function advanceMediaWizard() {
+async function advanceMediaWizard() {
   if (mediaWizardStep.value === 0) {
     const seed = String(mediaWizardSeed.value || '').trim()
-    const firstLine = seed.split(/\r?\n/).map(item => item.trim()).filter(Boolean)[0] || ''
+    const uploadNames = mediaWizardFiles.value.map(item => item.name || item.raw?.name || '').filter(Boolean)
+    const firstLine = seed.split(/\r?\n/).map(item => item.trim()).filter(Boolean)[0] || uploadNames[0] || ''
     const bangumiMatch = seed.match(/(?:bangumi|bgm|subject)[^\d]*(\d{2,})/i)
     const tmdbMatch = seed.match(/tmdb[^\d]*(\d{2,})/i)
     if (bangumiMatch && !mediaWizardDraft.bangumi_id) mediaWizardDraft.bangumi_id = bangumiMatch[1]
     if (tmdbMatch && !mediaWizardDraft.tmdb_id) mediaWizardDraft.tmdb_id = tmdbMatch[1]
-    if (/^(magnet:|https?:\/\/)/i.test(firstLine) && !mediaWizardDraft.source_ref) {
-      mediaWizardDraft.source_ref = firstLine
-      if (!mediaWizardDraft.resource_title) mediaWizardDraft.resource_title = firstLine.slice(0, 80)
+    const resourceLines = splitTextLines(seed).filter(line => isValidResourceReference(line))
+    if (resourceLines.length && !mediaWizardDraft.resources_text) {
+      mediaWizardDraft.resources_text = resourceLines.join('\n')
+      mediaWizardDraft.source_ref = resourceLines[0]
+      if (!mediaWizardDraft.resource_title) mediaWizardDraft.resource_title = resourceLines[0].slice(0, 80)
     } else if (firstLine && !bangumiMatch && !tmdbMatch && !mediaWizardDraft.title) {
       mediaWizardDraft.title = firstLine
     }
+    const searchText = String(mediaWizardDraft.title || (!isValidResourceReference(firstLine) ? firstLine : '')).trim()
+    if (searchText && !mediaWizardDraft.bangumi_id && currentMediaType.value === 'anime') {
+      await searchWizardMetadata('bangumi', searchText, true)
+    }
+  }
+  if (mediaWizardStep.value === 2 && (mediaWizardInvalidResourceCount.value || mediaWizardInvalidSubtitleCount.value)) {
+    ElMessage.warning('请先修正无法识别的资源或字幕')
+    return
   }
   mediaWizardStep.value += 1
+}
+
+function applyMetadataToWizard(item) {
+  if (!item) return
+  if (item.provider === 'bangumi') mediaWizardDraft.bangumi_id = String(item.id || '')
+  if (item.provider === 'tmdb') mediaWizardDraft.tmdb_id = String(item.id || '')
+  mediaWizardDraft.title = item.title || mediaWizardDraft.title
+  mediaWizardDraft.alias = item.original_title || mediaWizardDraft.alias
+  mediaWizardDraft.year = item.year || mediaWizardDraft.year
+  mediaWizardDraft.month = item.month || mediaWizardDraft.month
+  if (item.poster_url) mediaWizardDraft.poster_url = item.poster_url
+}
+
+async function searchWizardMetadata(provider, keyword, autoApply = false) {
+  const text = String(keyword || '').trim()
+  if (!text) return []
+  try {
+    const result = await getAction(`/metadata/search?provider=${encodeURIComponent(provider)}&keyword=${encodeURIComponent(text)}`)
+    const items = result.items || []
+    if (autoApply && items.length === 1) applyMetadataToWizard(items[0])
+    else if (autoApply && items.length > 1) mediaWizardCandidates.value = items.slice(0, 6)
+    return items
+  } catch (error) {
+    if (!autoApply) ElMessage.error(apiErrorMessage(error))
+    return []
+  }
+}
+
+async function openMetadataSearch(provider) {
+  metadataSearchProvider.value = provider
+  metadataSearchKeyword.value = mediaWizardDraft.title || mediaWizardSeed.value || ''
+  metadataSearchResults.value = []
+  metadataSearchDialogOpen.value = true
+  if (metadataSearchKeyword.value.trim()) await runMetadataSearch()
+}
+
+async function runMetadataSearch() {
+  metadataSearchLoading.value = true
+  try {
+    metadataSearchResults.value = await searchWizardMetadata(metadataSearchProvider.value, metadataSearchKeyword.value, false)
+  } finally {
+    metadataSearchLoading.value = false
+  }
+}
+
+async function uploadMediaWizardFiles() {
+  const files = mediaWizardFiles.value
+    .map(item => item.raw || item)
+    .filter(item => item && item.name)
+  const uploaded = []
+  for (const file of files) {
+    uploaded.push(await uploadFile('/uploads/local', file))
+  }
+  return uploaded
 }
 
 async function commitMediaWizard() {
@@ -2427,9 +2659,9 @@ async function commitMediaWizard() {
       month,
       season_number: seasonNumber,
       region: mediaWizardDraft.region || '',
-      episode_number: episodeNumber,
-      resource_title: mediaWizardDraft.resource_title,
-      source_ref: sourceRef,
+      episode_number: mediaWizardDraft.resources_text ? 0 : episodeNumber,
+      resource_title: mediaWizardDraft.resources_text ? '' : mediaWizardDraft.resource_title,
+      source_ref: mediaWizardDraft.resources_text ? '' : sourceRef,
       subtitle_group: mediaWizardDraft.subtitle_group,
       resolution: mediaWizardDraft.resolution,
       language: mediaWizardDraft.language,
@@ -2438,10 +2670,32 @@ async function commitMediaWizard() {
       subtitle_url: mediaWizardDraft.subtitle_url,
       subtitle_file_name: mediaWizardDraft.subtitle_file_name,
     })
-    ElMessage.success(result?.download_run_id ? '媒体条目已收录，下载任务已创建' : '媒体条目已收录')
+    const entryId = result?.entry?.id
+    let queuedCount = 0
+    if (entryId && mediaWizardDraft.source_mode === 'local' && mediaWizardFiles.value.length) {
+      const uploads = await uploadMediaWizardFiles()
+      const uploadResult = await postAction(`/entries/${entryId}/uploads/import`, {
+        uploads,
+        subtitle_format: mediaWizardDraft.subtitle_format,
+        language: mediaWizardDraft.language,
+      })
+      queuedCount += Number(uploadResult.count || 0)
+    }
+    if (entryId && mediaWizardDraft.resources_text.trim()) {
+      await postAction(`/entries/${entryId}/resources/import`, {
+        resources_text: mediaWizardDraft.resources_text,
+        subtitles_text: mediaWizardDraft.subtitles_text,
+        subtitle_format: mediaWizardDraft.subtitle_format,
+        language: mediaWizardDraft.language,
+      })
+      if (mediaWizardDraft.source_mode === 'link') {
+        const downloadResult = await postAction(`/entries/${entryId}/download`)
+        queuedCount += Number(downloadResult.count || 0)
+      }
+    }
+    ElMessage.success(queuedCount ? `媒体条目已收录，已加入 ${queuedCount} 个处理任务` : '媒体条目已收录')
     mediaWizardOpen.value = false
     await reload()
-    const entryId = result?.entry?.id
     if (entryId) await openEntry(entryId, 'library', currentMediaType.value)
   } catch (error) {
     ElMessage.error(errorMessage(error))
@@ -2614,6 +2868,7 @@ function normalizeSettingsShape() {
   }
   settings.backfill_current_season = Boolean(settings.backfill_current_season)
   settings.auto_generate_nfo = false
+  settings.download_concurrency = Math.max(1, Number(settings.download_concurrency || 2))
   settings.movie_name_template = settings.movie_name_template || '{title_cn} ({year})/{title_cn} ({year})'
   settings.tv_name_template = settings.tv_name_template || '{title_cn} ({year})/Season {season:02d}/{title_cn} - S{season:02d}E{episode:02d}'
   settings.episode_name_template = settings.episode_name_template || '{title_cn} - S{season:02d}E{episode:02d} - {episode_title}'

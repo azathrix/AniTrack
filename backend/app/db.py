@@ -116,6 +116,7 @@ def ensure_pipeline_runtime(conn: sqlite3.Connection) -> None:
     pipelines = [
         ("seasonal_mikan_tracking", "Mikan 新番追更", "seasonal"),
         ("library_backfill", "番剧库补番", "library"),
+        ("media_upload", "本地文件上传整理", "library"),
     ]
     for key, name, domain_kind in pipelines:
         conn.execute(
@@ -150,6 +151,9 @@ def ensure_pipeline_runtime(conn: sqlite3.Connection) -> None:
             ("release_selection", "selection"),
             ("download", "download"),
         ],
+        "media_upload": [
+            ("upload", "upload"),
+        ],
     }
     conn.execute("UPDATE pipelines SET enabled=0, updated_at=? WHERE key='media_import'", (ts,))
     processor_concurrency = {
@@ -162,6 +166,7 @@ def ensure_pipeline_runtime(conn: sqlite3.Connection) -> None:
         "backfill": 2,
         "selection": 3,
         "download": 2,
+        "upload": 2,
         "local_sync": 2,
         "local_presence": 2,
     }
