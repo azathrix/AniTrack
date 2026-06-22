@@ -32,9 +32,9 @@
     <main class="main">
       <header class="hero">
         <div>
-          <p class="eyebrow">Mikan · Downloader · Local</p>
+          <p class="eyebrow">RSS · Downloader · Media Library</p>
           <h1>{{ pageTitle }}</h1>
-          <p class="hero-sub">RSS 扫描写入源头任务，处理队列实时推进。<span class="build-version">v{{ appVersion }} · {{ appBuild }}</span></p>
+          <p class="hero-sub">扫描订阅、自动选集并整理到本地媒体库。<span class="build-version">v{{ appVersion }} · {{ appBuild }}</span></p>
         </div>
         <div class="hero-actions">
           <el-switch
@@ -300,8 +300,8 @@
             </div>
             <div class="maintenance-actions maintenance-pane">
               <el-button type="primary" :icon="Search" :disabled="scanRunning" @click="runAction('/scan')">扫描全部</el-button>
-              <el-button type="primary" plain @click="runAction('/tasks/process?force=true')">立即处理下载队列</el-button>
-              <el-button :icon="Refresh" @click="runAction('/tasks/poll')">刷新下载任务</el-button>
+              <el-button type="primary" plain @click="runAction('/tasks/process?force=true')">立即处理任务队列</el-button>
+              <el-button :icon="Refresh" @click="runAction('/tasks/poll')">刷新下载状态</el-button>
               <el-button type="warning" @click="runAction('/tasks/retry-failed')">重试失败任务</el-button>
               <el-popconfirm title="会清空番剧、候选、任务、下载记录、本地资源记录和日志。确定？" @confirm="runAction('/system/clear-data')">
                 <template #reference>
@@ -428,7 +428,7 @@
               </div>
               <div class="calendar-entry-tags">
                 <el-tag size="small" type="primary">第 {{ item.episode_number || '?' }} 集</el-tag>
-                <el-tag size="small" :type="item.synced ? 'success' : 'warning'">{{ item.synced ? '已同步' : '已更新' }}</el-tag>
+                <el-tag size="small" :type="item.synced ? 'success' : 'warning'">{{ item.synced ? '已下载' : '已更新' }}</el-tag>
               </div>
             </article>
             <div v-if="!day.items.length" class="calendar-empty">无更新</div>
@@ -1400,7 +1400,7 @@ function scheduledBadgeType(jobKey) {
 
 function taskStatusText(row) {
   if (row?.status === 'completed') return '已完成'
-  if (row?.status === 'synced') return '已同步'
+  if (row?.status === 'synced') return '已整理'
   if (row?.status === 'submitted') return '已提交'
   if (row?.status === 'running') return '处理中'
   if (row?.status === 'waiting') return '等待重试'
@@ -1767,7 +1767,7 @@ async function commitMediaWizard() {
       subtitle_format: mediaWizardDraft.subtitle_format,
       subtitle_path: mediaWizardDraft.subtitle_path,
     })
-    ElMessage.success(result?.download_run_id ? '媒体条目已收录，并已加入下载队列' : '媒体条目已收录')
+    ElMessage.success(result?.download_run_id ? '媒体条目已收录，下载任务已创建' : '媒体条目已收录')
     mediaWizardOpen.value = false
     await reload()
     const entryId = result?.entry?.id

@@ -134,6 +134,34 @@ class MediaContractTests(unittest.TestCase):
         self.assertEqual(client.put("/api/seasonal/1", json={}).status_code, 404)
         self.assertEqual(client.get("/api/library/1").status_code, 404)
         self.assertEqual(client.put("/api/library/1", json={}).status_code, 404)
+        self.assertEqual(client.post("/api/import/local/preview", json={}).status_code, 404)
+        self.assertEqual(client.post("/api/import/torrent/preview", json={}).status_code, 404)
+        self.assertEqual(client.post("/api/import/local/commit", json={}).status_code, 404)
+        self.assertEqual(client.post("/api/import/torrent/commit", json={}).status_code, 404)
+        self.assertEqual(client.post("/api/library/import", json={}).status_code, 404)
+
+    def test_media_detail_route_is_the_entry_detail_contract(self) -> None:
+        detail = create_media_entry(
+            "tv",
+            MediaCreatePayload(
+                mode="add",
+                title="Contract TV",
+                tmdb_id="tmdb-contract-tv",
+                year=2026,
+                episode_number=2,
+                resource_title="Contract TV S01E02 1080p",
+                source_ref="magnet:?xt=urn:btih:contracttv",
+            ),
+        )
+        client = TestClient(app)
+
+        response = client.get(f"/api/media/tv/{int(detail['entry']['id'])}")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["entry"]["media_type"], "tv")
+        self.assertEqual(payload["episode_resources"][0]["episode_number"], 2)
+        self.assertEqual(client.get(f"/api/media/movie/{int(detail['entry']['id'])}").status_code, 404)
 
 
 if __name__ == "__main__":

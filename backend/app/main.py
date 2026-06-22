@@ -425,6 +425,16 @@ def media_items_response(media_type: str) -> dict[str, Any]:
     return {"type": media_type, "items": items}
 
 
+def build_media_entry_response(media_type: str, entry_id: int) -> dict[str, Any]:
+    media_type = normalize_api_media_type(media_type)
+    detail = build_entry_response(entry_id)
+    entry = detail.get("entry") or {}
+    entry_media_type = normalize_api_media_type(str(entry.get("media_type") or "anime"))
+    if entry_media_type != media_type:
+        raise HTTPException(status_code=404, detail="媒体条目类型不匹配")
+    return detail
+
+
 def media_library_key(media_type: str) -> str:
     return {
         "anime": "anime_library",
@@ -1924,8 +1934,7 @@ async def api_create_media_entry(media_type: str, payload: MediaCreatePayload) -
 
 @app.get("/api/media/{media_type}/{entry_id}")
 async def api_media_entry(media_type: str, entry_id: int) -> dict[str, Any]:
-    normalize_api_media_type(media_type)
-    return build_entry_response(entry_id)
+    return build_media_entry_response(media_type, entry_id)
 
 
 @app.put("/api/media/{media_type}/{entry_id}")
@@ -2132,20 +2141,20 @@ async def api_process_tasks(force: bool = Query(False)) -> dict[str, str]:
         return "已触发 Runtime 处理器；下载器会负责提交、轮询并整理到本地"
 
     operation_id = run_operation(
-        "下载队列立即处理" if force else "下载队列处理",
+        "任务队列立即处理" if force else "任务队列处理",
         run,
-        "正在立即提交下载任务" if force else "正在提交下载任务",
+        "正在立即推进任务队列" if force else "正在推进任务队列",
     )
-    return {"status": "started", "operation_id": str(operation_id), "message": "下载队列已立即触发" if force else "队列处理已启动"}
+    return {"status": "started", "operation_id": str(operation_id), "message": "任务队列已立即触发" if force else "队列处理已启动"}
 
 
 @app.post("/api/tasks/poll")
 async def api_poll_tasks() -> dict[str, str]:
     async def run() -> str:
         trigger_queue("processor", delay=0)
-        return "已触发 Runtime 处理器；等待中的下载任务到期后会继续推进"
+        return "已触发 Runtime 处理器；等待中的下载状态到期后会继续推进"
 
-    operation_id = run_operation("刷新下载任务", run, "正在刷新下载器任务状态")
+    operation_id = run_operation("刷新下载状态", run, "正在刷新下载器任务状态")
     return {"status": "started", "operation_id": str(operation_id), "message": "状态刷新已启动"}
 
 
