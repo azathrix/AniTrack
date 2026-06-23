@@ -130,10 +130,13 @@ async def api_import_entry_uploads(entry_id: int, payload: LocalUploadImportPayl
         entry = conn.execute("SELECT * FROM entries WHERE id=?", (entry_id,)).fetchone()
         if not entry:
             raise HTTPException(status_code=404, detail="媒体条目不存在")
+        entry_media_type = str(entry["media_type"] or "")
         for index, item in enumerate(uploads, start=1):
             source = validate_upload_temp_path(item.temp_path)
             file_name = safe_upload_filename(item.file_name or source.name)
-            episode_number = parsed_episode_required(file_name)
+            episode_number = int(item.episode_number or 0) or parsed_episode_required(file_name)
+            if episode_number <= 0 and entry_media_type == "movie":
+                episode_number = 1
             if episode_number <= 0:
                 raise HTTPException(status_code=400, detail=f"上传文件无法识别集数: {file_name}")
             conn.execute(

@@ -132,6 +132,8 @@ const mediaWizardSeed = ref('')
 const mediaWizardSaving = ref(false)
 const mediaWizardCandidates = ref([])
 const mediaWizardFiles = ref([])
+const mediaWizardResourceItems = ref([])
+const mediaWizardSubtitleItems = ref([])
 const metadataSearchDialogOpen = ref(false)
 const metadataSearchProvider = ref('bangumi')
 const metadataSearchKeyword = ref('')
@@ -251,6 +253,8 @@ const mediaWizardDraft = reactive({
   subtitle_path: '',
   subtitle_url: '',
   subtitle_file_name: '',
+  resource_input: '',
+  subtitle_input: '',
 })
 const scheduledJobForm = reactive({
   enabled: true,
@@ -588,23 +592,27 @@ const episodeImportCanAdvance = computed(() => {
   return true
 })
 const episodeImportCanSave = computed(() => episodeImportResourceRows.value.length > 0 && episodeImportInvalidCount.value === 0)
-const mediaWizardResourceRows = computed(() => splitTextLines(mediaWizardDraft.resources_text).map((text, index) => {
-  const valid = isValidResourceReference(text)
+const mediaWizardResourceRows = computed(() => mediaWizardResourceItems.value.map((item, index) => {
+  const text = item.source_ref || item.file_name || ''
+  const valid = item.source_mode === 'local' ? Boolean(text) : isValidResourceReference(text)
   return {
-    key: `wizard-resource:${index}:${text}`,
+    ...item,
+    key: item.id || `wizard-resource:${index}:${text}`,
     text,
-    episode: inferEpisodeFromText(text, index + 1),
+    episode: Number(item.episode_number || 0) || inferEpisodeFromText(text, currentMediaType.value === 'movie' ? 1 : index + 1),
     valid,
-    kind: resourceReferenceKind(text),
-    reason: valid ? '' : '不是下载链接',
+    kind: item.source_mode === 'local' ? '本地文件' : resourceReferenceKind(text),
+    reason: valid ? '' : '不是可用资源',
   }
 }))
-const mediaWizardSubtitleRows = computed(() => splitTextLines(mediaWizardDraft.subtitles_text).map((text, index) => {
-  const valid = isValidSubtitleReference(text)
+const mediaWizardSubtitleRows = computed(() => mediaWizardSubtitleItems.value.map((item, index) => {
+  const text = item.subtitle_ref || item.file_name || ''
+  const valid = item.source_mode === 'local' ? Boolean(text) : isValidSubtitleReference(text)
   return {
-    key: `wizard-subtitle:${index}:${text}`,
+    ...item,
+    key: item.id || `wizard-subtitle:${index}:${text}`,
     text,
-    episode: inferEpisodeFromText(text, index + 1),
+    episode: Number(item.episode_number || 0) || inferEpisodeFromText(text, currentMediaType.value === 'movie' ? 1 : index + 1),
     valid,
     reason: valid ? '' : '格式无效',
   }
@@ -930,9 +938,11 @@ exposeAppContext({
   mediaWizardInvalidSubtitleCount,
   mediaWizardMode,
   mediaWizardOpen,
+  mediaWizardResourceItems,
   mediaWizardResourceRows,
   mediaWizardSaving,
   mediaWizardStep,
+  mediaWizardSubtitleItems,
   mediaWizardSubtitleRows,
   mediaWizardTitle,
   metadataFetchProgress,
@@ -1014,6 +1024,8 @@ provide('appContext', appContext)
 
 const {
   addDownloader,
+  addMediaWizardResourceLines,
+  addMediaWizardSubtitleLines,
   advanceMediaWizard,
   apiErrorMessage,
   applyMetadataToWizard,
@@ -1045,6 +1057,8 @@ const {
   pauseEpisodeDownload,
   refreshEpisodeResource,
   removeDownloader,
+  removeMediaWizardResourceItem,
+  removeMediaWizardSubtitleItem,
   resetRssForm,
   resetSelectionRules,
   runAction,
@@ -1061,6 +1075,7 @@ const {
   selectedMetadataCandidate,
   selectMetadataCandidate,
   skipMetadataProvider,
+  syncMediaWizardFileResources,
   startMetadataProgress,
   stopMetadataProgress,
   syncScheduledJobForm,
@@ -1080,6 +1095,8 @@ const {
 
 exposeAppContext({
   addDownloader,
+  addMediaWizardResourceLines,
+  addMediaWizardSubtitleLines,
   advanceMediaWizard,
   apiErrorMessage,
   applyMetadataToWizard,
@@ -1111,6 +1128,8 @@ exposeAppContext({
   pauseEpisodeDownload,
   refreshEpisodeResource,
   removeDownloader,
+  removeMediaWizardResourceItem,
+  removeMediaWizardSubtitleItem,
   resetRssForm,
   resetSelectionRules,
   runAction,
@@ -1127,6 +1146,7 @@ exposeAppContext({
   selectedMetadataCandidate,
   selectMetadataCandidate,
   skipMetadataProvider,
+  syncMediaWizardFileResources,
   startMetadataProgress,
   stopMetadataProgress,
   syncScheduledJobForm,

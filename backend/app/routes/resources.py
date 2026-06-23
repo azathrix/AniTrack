@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -36,28 +37,42 @@ router = APIRouter()
 async def api_import_entry_resources(entry_id: int, payload: EpisodeImportPayload) -> dict[str, Any]:
     resource_lines = split_input_lines(payload.resources_text)
     subtitle_lines = split_input_lines(payload.subtitles_text)
-    if not resource_lines:
+    resource_items = [item for item in payload.resources if item.source_ref.strip()]
+    if not resource_items:
+        resource_items = [
+            SimpleNamespace(
+                source_ref=line,
+                episode_number=0,
+                title=line,
+                language="",
+                subtitle_format="",
+                subtitle_url="",
+                subtitle_file_name="",
+            )
+            for line in resource_lines
+        ]
+    if not resource_items:
         raise HTTPException(status_code=400, detail="请至少填写一个资源链接")
-    invalid_resources = [line for line in resource_lines if not is_valid_resource_reference(line)]
+    invalid_resources = [item.source_ref.strip() for item in resource_items if not is_valid_resource_reference(item.source_ref)]
     if invalid_resources:
         raise HTTPException(status_code=400, detail=f"资源链接格式无效: {invalid_resources[0]}")
     invalid_subtitles = [line for line in subtitle_lines if not is_valid_subtitle_reference(line)]
     if invalid_subtitles:
         raise HTTPException(status_code=400, detail=f"字幕链接或文件名格式无效: {invalid_subtitles[0]}")
-    invalid_episode_resources = [line for line in resource_lines if parsed_episode_required(line) <= 0]
-    if invalid_episode_resources:
-        raise HTTPException(status_code=400, detail=f"资源无法识别集数: {invalid_episode_resources[0]}")
-    invalid_episode_subtitles = [line for line in subtitle_lines if parsed_episode_required(line) <= 0]
-    if invalid_episode_subtitles:
-        raise HTTPException(status_code=400, detail=f"字幕无法识别集数: {invalid_episode_subtitles[0]}")
     ts = now()
     created = 0
     with connect() as conn:
         entry = conn.execute("SELECT * FROM entries WHERE id=?", (entry_id,)).fetchone()
         if not entry:
             raise HTTPException(status_code=404, detail="媒体条目不存在")
-        for index, line in enumerate(resource_lines, start=1):
-            episode_number = parsed_episode_required(line)
+        entry_media_type = str(entry["media_type"] or "")
+        for index, item in enumerate(resource_items, start=1):
+            line = item.source_ref.strip()
+            episode_number = int(item.episode_number or 0) or parsed_episode_required(line)
+            if episode_number <= 0 and entry_media_type == "movie":
+                episode_number = 1
+            if episode_number <= 0:
+                raise HTTPException(status_code=400, detail=f"资源无法识别集数: {line}")
             conn.execute(
                 """
                 INSERT INTO episodes (series_id, entry_id, episode_number, title, status, created_at, updated_at)
@@ -89,12 +104,27 @@ async def api_import_entry_resources(entry_id: int, payload: EpisodeImportPayloa
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
                     ON CONFLICT(guid) DO UPDATE SET
                       title=excluded.title,
+                      language=excluded.language,
+                      subtitle_format=excluded.subtitle_format,
                       torrent_url=excluded.torrent_url,
                       magnet=excluded.magnet,
                       selected=1,
                       updated_at=excluded.updated_at
                     """,
-                    (entry_id, entry_id, episode_number, guid, line, payload.language.strip(), payload.subtitle_format.strip(), torrent_url, magnet, ts, ts, ts),
+                    (
+                        entry_id,
+                        entry_id,
+                        episode_number,
+                        guid,
+                        item.title.strip() or line,
+                        (item.language or payload.language).strip(),
+                        (item.subtitle_format or payload.subtitle_format).strip(),
+                        torrent_url,
+                        magnet,
+                        ts,
+                        ts,
+                        ts,
+                    ),
                 )
                 release = conn.execute("SELECT id FROM releases WHERE guid=?", (guid,)).fetchone()
                 release_id = int(release["id"] or 0) if release else 0
@@ -116,11 +146,33 @@ async def api_import_entry_resources(entry_id: int, payload: EpisodeImportPayloa
                   selected=1,
                   updated_at=excluded.updated_at
                 """,
-                (entry_id, episode_id, episode_number, line, release_id, line, payload.language.strip(), payload.subtitle_format.strip(), torrent_url, magnet, ts, ts),
+                (
+                    entry_id,
+                    episode_id,
+                    episode_number,
+                    line,
+                    release_id,
+                    item.title.strip() or line,
+                    (item.language or payload.language).strip(),
+                    (item.subtitle_format or payload.subtitle_format).strip(),
+                    torrent_url,
+                    magnet,
+                    ts,
+                    ts,
+                ),
             )
+            subtitle_ref = (item.subtitle_url or item.subtitle_file_name or "").strip()
+            if subtitle_ref:
+                if not is_valid_subtitle_reference(subtitle_ref):
+                    raise HTTPException(status_code=400, detail=f"字幕链接或文件名格式无效: {subtitle_ref}")
+                subtitle_lines.append(subtitle_ref)
             created += 1
         for index, line in enumerate(subtitle_lines, start=1):
             episode_number = parsed_episode_required(line)
+            if episode_number <= 0 and entry_media_type == "movie":
+                episode_number = 1
+            if episode_number <= 0:
+                raise HTTPException(status_code=400, detail=f"字幕无法识别集数: {line}")
             episode = conn.execute(
                 "SELECT id FROM episodes WHERE entry_id=? AND episode_number=? ORDER BY id DESC LIMIT 1",
                 (entry_id, episode_number),

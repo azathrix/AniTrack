@@ -102,8 +102,18 @@ class EpisodeDownloadActionPayload(BaseModel):
     entry_id: int = 0
     episode_number: int = 0
 
+class EpisodeImportItemPayload(BaseModel):
+    source_ref: str = ""
+    episode_number: int = 0
+    title: str = ""
+    language: str = ""
+    subtitle_format: str = ""
+    subtitle_url: str = ""
+    subtitle_file_name: str = ""
+
 class EpisodeImportPayload(BaseModel):
     resources_text: str = ""
+    resources: list[EpisodeImportItemPayload] = Field(default_factory=list)
     subtitles_text: str = ""
     subtitle_format: str = "external"
     language: str = ""
@@ -112,6 +122,7 @@ class LocalUploadItemPayload(BaseModel):
     temp_path: str = ""
     file_name: str = ""
     size: int = 0
+    episode_number: int = 0
 
 class LocalUploadImportPayload(BaseModel):
     uploads: list[LocalUploadItemPayload] = Field(default_factory=list)
