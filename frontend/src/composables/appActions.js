@@ -377,6 +377,7 @@ export function createAppActions(app, deps) {
       tmdb_id: '',
       year: 0,
       month: 0,
+      release_month: '',
       season_number: 1,
       region: app.currentMediaType === 'anime' ? 'jp' : '',
       poster_url: '',
@@ -536,14 +537,32 @@ export function createAppActions(app, deps) {
 
   function fillListIfEmpty(target, key, value) {
     if (hasFieldValue(target[key])) return
-    const text = listTextFromJson(value)
+    const text = key === 'tags_text' ? tagsInputText(value) : listTextFromJson(value)
     if (text) target[key] = text
+  }
+
+  function monthFieldValue(year, month) {
+    const y = Number(year || 0)
+    const m = Number(month || 0)
+    if (y <= 0 || m <= 0 || m > 12) return ''
+    return `${y}-${String(m).padStart(2, '0')}`
+  }
+
+  function parseMonthField(value) {
+    const match = String(value || '').match(/^(\d{4})-(\d{2})/)
+    if (!match) return { year: 0, month: 0 }
+    return { year: Number(match[1]), month: Number(match[2]) }
+  }
+
+  function tagsInputText(value) {
+    return listTextFromJson(value).replace(/\n/g, '，')
   }
 
   function applyMetadataToWizard(item) {
     fillIfEmpty(app.mediaWizardDraft, 'title', item.title || item.original_title)
     fillIfEmpty(app.mediaWizardDraft, 'year', item.year)
     fillIfEmpty(app.mediaWizardDraft, 'month', item.month)
+    fillIfEmpty(app.mediaWizardDraft, 'release_month', monthFieldValue(item.year, item.month))
     fillIfEmpty(app.mediaWizardDraft, 'region', item.region)
     fillIfEmpty(app.mediaWizardDraft, 'poster_url', item.poster_url)
     fillIfEmpty(app.mediaWizardDraft, 'summary', item.summary)
@@ -557,6 +576,7 @@ export function createAppActions(app, deps) {
     fillIfEmpty(app.entryEditForm, 'title_raw', item.original_title)
     fillIfEmpty(app.entryEditForm, 'year', item.year)
     fillIfEmpty(app.entryEditForm, 'month', item.month)
+    fillIfEmpty(app.entryEditForm, 'release_month', monthFieldValue(item.year, item.month))
     fillIfEmpty(app.entryEditForm, 'region', item.region)
     fillIfEmpty(app.entryEditForm, 'poster_url', item.poster_url)
     fillIfEmpty(app.entryEditForm, 'summary', item.summary)
@@ -673,13 +693,14 @@ export function createAppActions(app, deps) {
       const linkItems = app.mediaWizardResourceItems.filter(item => item.source_mode !== 'local' && item.source_ref)
       const resourcesText = linkItems.map(item => item.source_ref).join('\n')
       const sourceMode = app.mediaWizardFiles.length ? 'local' : (linkItems.length ? 'link' : 'metadata')
+      const release = parseMonthField(app.mediaWizardDraft.release_month)
       const payload = {
         mode: sourceMode,
         title: app.mediaWizardDraft.title,
         bangumi_id: app.mediaWizardDraft.bangumi_id,
         tmdb_id: app.mediaWizardDraft.tmdb_id,
-        year: numberFromInput(app.mediaWizardDraft.year, 0),
-        month: numberFromInput(app.mediaWizardDraft.month, 0),
+        year: release.year || numberFromInput(app.mediaWizardDraft.year, 0),
+        month: release.month || numberFromInput(app.mediaWizardDraft.month, 0),
         season_number: numberFromInput(app.mediaWizardDraft.season_number, 1),
         region: app.mediaWizardDraft.region || (app.currentMediaType === 'anime' ? 'jp' : ''),
         episode_number: 0,
@@ -803,6 +824,7 @@ export function createAppActions(app, deps) {
       tmdb_id: entry.tmdb_id || '',
       year: Number(entry.year || 0),
       month: Number(entry.month || 0),
+      release_month: monthFieldValue(entry.year, entry.month),
       season_number: Number(entry.season_number || 1),
       media_type: entry.media_type || 'anime',
       region: entry.region || 'jp',
@@ -810,19 +832,20 @@ export function createAppActions(app, deps) {
       title_raw: entry.title_raw || '',
       poster_url: entry.poster_url || '',
       summary: entry.summary || '',
-      tags_text: listTextFromJson(entry.tags_json),
+      tags_text: tagsInputText(entry.tags_json),
       genres_text: listTextFromJson(entry.genres_json),
     })
     app.entryEditDialogOpen = true
   }
 
   function entryEditPayload() {
+    const release = parseMonthField(app.entryEditForm.release_month)
     return {
       title_cn: app.entryEditForm.title_cn,
       bangumi_id: app.entryEditForm.bangumi_id,
       tmdb_id: app.entryEditForm.tmdb_id,
-      year: Number(app.entryEditForm.year || 0),
-      month: Number(app.entryEditForm.month || 0),
+      year: release.year || Number(app.entryEditForm.year || 0),
+      month: release.month || Number(app.entryEditForm.month || 0),
       season_number: Number(app.entryEditForm.season_number || 1),
       media_type: app.entryEditForm.media_type,
       region: app.entryEditForm.region,
@@ -857,7 +880,8 @@ export function createAppActions(app, deps) {
         summary: entry.summary || app.entryEditForm.summary,
         year: entry.year || app.entryEditForm.year,
         month: entry.month || app.entryEditForm.month,
-        tags_text: entry.tags_json ? listTextFromJson(entry.tags_json) : app.entryEditForm.tags_text,
+        release_month: monthFieldValue(entry.year || app.entryEditForm.year, entry.month || app.entryEditForm.month),
+        tags_text: entry.tags_json ? tagsInputText(entry.tags_json) : app.entryEditForm.tags_text,
         genres_text: entry.genres_json ? listTextFromJson(entry.genres_json) : app.entryEditForm.genres_text,
       })
       app.metadataFetchProgress = 100

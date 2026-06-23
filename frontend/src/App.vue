@@ -9,13 +9,13 @@
       </div>
       <nav>
         <div class="nav-caption">媒体</div>
-        <button :class="{ active: view === 'dashboard' }" @click="view = 'dashboard'"><el-icon><DataBoard /></el-icon> 控制台</button>
         <button :class="{ active: view === 'seasonal' }" @click="view = 'seasonal'"><el-icon><Collection /></el-icon> 新番</button>
         <button :class="{ active: view === 'calendar' }" @click="view = 'calendar'"><el-icon><Calendar /></el-icon> 日历</button>
         <button :class="{ active: view === 'library' }" @click="view = 'library'"><el-icon><Collection /></el-icon> 番剧</button>
         <button :class="{ active: view === 'movies' }" @click="view = 'movies'"><el-icon><Collection /></el-icon> 电影</button>
         <button :class="{ active: view === 'tv' }" @click="view = 'tv'"><el-icon><Collection /></el-icon> 电视剧</button>
         <div class="nav-caption">系统</div>
+        <button :class="{ active: view === 'dashboard' }" @click="view = 'dashboard'"><el-icon><DataBoard /></el-icon> 控制台</button>
         <button :class="{ active: view === 'logs' }" @click="view = 'logs'"><el-icon><Document /></el-icon> 日志</button>
         <button :class="{ active: view === 'settings' }" @click="view = 'settings'"><el-icon><Setting /></el-icon> 设置</button>
       </nav>
@@ -65,6 +65,7 @@ import {
   addDays,
   cardInitials,
   cardSubtitle,
+  catalogTags,
   entryMediaType,
   entryTags,
   entryTitle,
@@ -82,6 +83,7 @@ import {
   jsonFromListText,
   listTextFromJson,
   mediaTypeLabel,
+  normalizedSeasonLabel,
   numberFromInput,
   parseDateValue,
   queueBadge,
@@ -208,6 +210,7 @@ const entryEditForm = reactive({
   tmdb_id: '',
   year: 0,
   month: 0,
+  release_month: '',
   season_number: 1,
   media_type: 'anime',
   region: 'jp',
@@ -237,6 +240,7 @@ const mediaWizardDraft = reactive({
   tmdb_id: '',
   year: 0,
   month: 0,
+  release_month: '',
   season_number: 1,
   region: '',
   poster_url: '',
@@ -359,7 +363,7 @@ const currentRegionOptions = computed(() => {
 const currentScopeOptions = computed(() => {
   const values = new Set()
   for (const item of currentCatalogSourceRows.value) {
-    const scope = item.entry_scope_label || item.entry_badge_text || ''
+    const scope = normalizedSeasonLabel(item)
     if (scope) values.add(scope)
   }
   return Array.from(values).sort((a, b) => String(a).localeCompare(String(b)))
@@ -367,7 +371,7 @@ const currentScopeOptions = computed(() => {
 const currentTagOptions = computed(() => {
   const counts = new Map()
   for (const item of currentCatalogSourceRows.value) {
-    for (const tag of entryTags(item)) {
+    for (const tag of catalogTags(item)) {
       counts.set(tag, (counts.get(tag) || 0) + 1)
     }
   }
@@ -630,9 +634,9 @@ const filteredSeries = computed(() => {
     if (libraryRegionFilter.value && String(item.region || '') !== String(libraryRegionFilter.value)) return false
     if (libraryYearFilter.value && Number(item.year || 0) !== Number(libraryYearFilter.value)) return false
     if (libraryMonthFilter.value && Number(item.month || 0) !== Number(libraryMonthFilter.value)) return false
-    if (libraryScopeFilter.value && String(item.entry_scope_label || item.entry_badge_text || '') !== String(libraryScopeFilter.value)) return false
+    if (libraryScopeFilter.value && normalizedSeasonLabel(item) !== String(libraryScopeFilter.value)) return false
     if (libraryTagFilters.value.length) {
-      const tags = entryTags(item)
+      const tags = catalogTags(item)
       if (!libraryTagFilters.value.every(tag => tags.includes(tag))) return false
     }
     return true
@@ -867,6 +871,7 @@ exposeAppContext({
   calendarWeek,
   cardInitials,
   cardSubtitle,
+  catalogTags,
   consoleNavMode,
   currentCatalogSourceRows,
   currentMediaPageTitle,
@@ -955,6 +960,7 @@ exposeAppContext({
   metadataSearchTarget,
   metadataSelectedBangumi,
   metadataSelectedTmdb,
+  normalizedSeasonLabel,
   numberFromInput,
   openBatchSubtitleDialog,
   openEpisodeImportDialog,

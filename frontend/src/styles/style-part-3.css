@@ -567,6 +567,16 @@
   gap: 8px;
 }
 
+.rss-row-actions .el-button--danger,
+.rss-row-actions .el-button--danger span {
+  color: #fff !important;
+}
+
+.entry-edit-dialog .el-date-editor,
+.wizard-form .el-date-editor {
+  width: 100%;
+}
+
 .sync-panel {
   align-items: center;
   background: #f8fafc;

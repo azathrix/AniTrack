@@ -124,8 +124,9 @@ export function entryTitle(item) {
 }
 
 export function cardSubtitle(item) {
-  if (!item) return 'Season 01'
-  return item.entry_scope_label || item.entry_secondary_title || item.bangumi_id || item.tmdb_id || 'Season 01'
+  if (!item) return '第一季'
+  if (entryMediaType(item) === 'movie') return '电影'
+  return normalizedSeasonLabel(item)
 }
 
 export function cardInitials(item) {
@@ -157,6 +158,45 @@ export function parseJsonArray(value) {
 export function entryTags(item) {
   const tags = [...parseJsonArray(item?.genres_json), ...parseJsonArray(item?.tags_json)]
   return Array.from(new Set(tags.map(tag => tag.trim()).filter(Boolean)))
+}
+
+export function normalizedSeasonLabel(item) {
+  const candidates = [
+    item?.season_number,
+    item?.entry_scope_label,
+    item?.entry_badge_text,
+    item?.entry_secondary_title,
+  ]
+  for (const value of candidates) {
+    const text = String(value || '')
+    const match = text.match(/(?:第\s*)?(\d{1,3})(?:\s*季|期|部|章|篇)|season\s*0*(\d{1,3})/i)
+    const parsed = Number.parseInt(match?.[1] || match?.[2] || text, 10)
+    if (Number.isFinite(parsed) && parsed > 0) return `第${parsed}季`
+  }
+  return '第一季'
+}
+
+export function catalogTags(item) {
+  const titleTokens = [
+    item?.entry_display_title,
+    item?.display_title,
+    item?.title_cn,
+    item?.title_raw,
+    item?.title_root,
+    item?.work_title,
+  ].map(value => String(value || '').trim()).filter(Boolean)
+  return entryTags(item).filter(tag => {
+    const text = String(tag || '').trim()
+    if (!text) return false
+    if (text.length > 8) return false
+    if (/^\d{4}(年)?(\d{1,2}月)?$/.test(text)) return false
+    if (/^\d{4}年\d{1,2}月$/.test(text)) return false
+    if (/^(第?\d+季|Season\s*\d+|S\d+|TV|OVA|OAD|WEB|剧场版|电影)$/i.test(text)) return false
+    if (/^(日本|中国|欧美|韩国|美国|其他|未定档)$/.test(text)) return false
+    if (/^[A-Za-z0-9 ._-]{2,}$/.test(text)) return false
+    if (titleTokens.some(title => title.includes(text) || text.includes(title))) return false
+    return true
+  })
 }
 
 export function listTextFromJson(value) {

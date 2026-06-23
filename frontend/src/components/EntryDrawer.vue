@@ -16,7 +16,7 @@ export default appContextComponent()
               </div>
               <div>
                 <h2>{{ entryTitle(selectedEntry) }}</h2>
-                <p>{{ selectedEntry.entry_scope_label || selectedEntry.entry_secondary_title || selectedEntry.display_title || '-' }}</p>
+                <p>{{ normalizedSeasonLabel(selectedEntry) }}</p>
                 <div class="tagline">
                   <el-tag size="small">{{ mediaTypeLabel(selectedEntry.media_type) }}</el-tag>
                   <el-tag size="small" type="info">{{ regionLabel(selectedEntry.region) }}</el-tag>
@@ -36,14 +36,15 @@ export default appContextComponent()
                 <a v-if="selectedEntry.tmdb_id" :href="`https://www.themoviedb.org/${selectedEntry.media_type === 'movie' ? 'movie' : 'tv'}/${selectedEntry.tmdb_id}`" target="_blank" rel="noreferrer">{{ selectedEntry.tmdb_id }}</a>
                 <span v-else>-</span>
               </el-descriptions-item>
-              <el-descriptions-item label="年份 / 月份">{{ selectedEntry.year || '-' }} / {{ selectedEntry.month || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="首播月份">{{ selectedEntry.year || '-' }} / {{ selectedEntry.month || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="季 / 章节 / 部分">{{ normalizedSeasonLabel(selectedEntry) }}</el-descriptions-item>
               <el-descriptions-item label="国家 / 地区">{{ regionLabel(selectedEntry.region) }}</el-descriptions-item>
               <el-descriptions-item label="追番状态">{{ selectedEntryDomain === 'seasonal' ? '追番中' : '普通媒体库条目' }}</el-descriptions-item>
               <el-descriptions-item label="别名" :span="2">{{ selectedEntry.title_romaji || selectedEntry.title_raw || '-' }}</el-descriptions-item>
               <el-descriptions-item label="标签" :span="2">
                 <div class="mini-tag-row">
-                  <span v-for="tag in entryTags(selectedEntry)" :key="tag">{{ tag }}</span>
-                  <em v-if="!entryTags(selectedEntry).length">-</em>
+                  <span v-for="tag in catalogTags(selectedEntry)" :key="tag">{{ tag }}</span>
+                  <em v-if="!catalogTags(selectedEntry).length">-</em>
                 </div>
               </el-descriptions-item>
               <el-descriptions-item label="简介" :span="2">{{ selectedEntry.summary || '-' }}</el-descriptions-item>

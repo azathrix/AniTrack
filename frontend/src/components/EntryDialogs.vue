@@ -5,16 +5,21 @@ export default appContextComponent()
 </script>
 
 <template>
-    <el-dialog v-model="entryEditDialogOpen" title="编辑作品信息" width="760px">
+    <el-dialog v-model="entryEditDialogOpen" title="编辑作品信息" width="760px" class="entry-edit-dialog">
       <el-form :model="entryEditForm" label-position="top">
+        <el-form-item label="中文标题">
+          <div class="field-with-action">
+            <el-input v-model="entryEditForm.title_cn" />
+            <el-button type="primary" plain @click="openMetadataSearch('bangumi', 'entry')">匹配</el-button>
+          </div>
+        </el-form-item>
         <div class="form-row">
-          <el-form-item label="中文标题"><el-input v-model="entryEditForm.title_cn" /></el-form-item>
-          <el-form-item label="年份"><el-input-number v-model="entryEditForm.year" :min="0" /></el-form-item>
-          <el-form-item label="月份"><el-input-number v-model="entryEditForm.month" :min="0" :max="12" /></el-form-item>
-        </div>
-        <div class="form-row">
-          <el-form-item label="Bangumi ID"><el-input v-model="entryEditForm.bangumi_id" /></el-form-item>
-          <el-form-item label="TMDB ID"><el-input v-model="entryEditForm.tmdb_id" /></el-form-item>
+          <el-form-item label="首播月份">
+            <el-date-picker v-model="entryEditForm.release_month" type="month" value-format="YYYY-MM" format="YYYY年MM月" placeholder="选择月份" />
+          </el-form-item>
+          <el-form-item label="季 / 章节 / 部分">
+            <el-input-number v-model="entryEditForm.season_number" :min="1" :max="99" controls-position="right" />
+          </el-form-item>
         </div>
         <div class="form-row">
           <el-form-item label="媒体类型">
@@ -34,17 +39,20 @@ export default appContextComponent()
             </el-select>
           </el-form-item>
         </div>
+        <div class="form-row">
+          <el-form-item label="Bangumi ID"><el-input v-model="entryEditForm.bangumi_id" /></el-form-item>
+          <el-form-item label="TMDB ID"><el-input v-model="entryEditForm.tmdb_id" /></el-form-item>
+        </div>
         <el-form-item label="原名"><el-input v-model="entryEditForm.title_raw" /></el-form-item>
         <el-form-item label="海报 URL"><el-input v-model="entryEditForm.poster_url" /></el-form-item>
         <el-form-item label="标签">
-          <el-input v-model="entryEditForm.tags_text" type="textarea" :rows="3" placeholder="一行一个标签，或用逗号分隔" />
+          <el-input v-model="entryEditForm.tags_text" type="textarea" :rows="3" placeholder="逗号分隔，例如 轻改，校园，智斗" />
         </el-form-item>
         <el-form-item label="简介"><el-input v-model="entryEditForm.summary" type="textarea" :rows="4" /></el-form-item>
         <el-progress v-if="metadataFetching || metadataFetchProgress" :percentage="metadataFetchProgress" :status="metadataFetchProgress >= 100 ? 'success' : undefined" />
       </el-form>
       <template #footer>
         <el-button @click="entryEditDialogOpen = false">取消</el-button>
-        <el-button plain @click="openMetadataSearch('bangumi', 'entry')">匹配</el-button>
         <el-button type="primary" @click="saveEntryEditForm">保存</el-button>
       </template>
     </el-dialog>
@@ -405,9 +413,12 @@ export default appContextComponent()
               <el-form-item label="TMDB ID">
                 <el-input v-model="mediaWizardDraft.tmdb_id" placeholder="电影/电视剧可填 TMDB ID" />
               </el-form-item>
-              <el-form-item label="年份"><el-input v-model="mediaWizardDraft.year" placeholder="例如 2026" /></el-form-item>
-              <el-form-item label="月份"><el-input v-model="mediaWizardDraft.month" placeholder="例如 4，未知可留空" /></el-form-item>
-              <el-form-item label="季 / 篇章"><el-input v-model="mediaWizardDraft.season_number" placeholder="例如 1、2，电影可留空" /></el-form-item>
+              <el-form-item label="首播月份">
+                <el-date-picker v-model="mediaWizardDraft.release_month" type="month" value-format="YYYY-MM" format="YYYY年MM月" placeholder="选择月份" />
+              </el-form-item>
+              <el-form-item label="季 / 章节 / 部分">
+                <el-input-number v-model="mediaWizardDraft.season_number" :min="1" :max="99" controls-position="right" />
+              </el-form-item>
               <el-form-item label="国家 / 地区">
                 <el-select v-model="mediaWizardDraft.region" clearable placeholder="可选">
                   <el-option label="日本" value="jp" />
@@ -418,7 +429,7 @@ export default appContextComponent()
                 </el-select>
               </el-form-item>
               <el-form-item label="海报 URL"><el-input v-model="mediaWizardDraft.poster_url" placeholder="可选，匹配后会自动填入" /></el-form-item>
-              <el-form-item label="标签"><el-input v-model="mediaWizardDraft.tags_text" type="textarea" :rows="2" placeholder="一行一个标签" /></el-form-item>
+              <el-form-item label="标签"><el-input v-model="mediaWizardDraft.tags_text" type="textarea" :rows="2" placeholder="逗号分隔，例如 轻改，校园，智斗" /></el-form-item>
               <el-form-item label="简介" class="full-row"><el-input v-model="mediaWizardDraft.summary" type="textarea" :rows="4" /></el-form-item>
             </div>
           </el-form>
