@@ -387,12 +387,24 @@ def init_db() -> None:
                 (key, value),
             )
         for key, old_value, new_value in [
-            ("series_dir_template", "{title_base} ({year}) [bangumi-{bangumi_id}]", "{title_base}"),
-            ("movie_name_template", "{title_cn} ({year})/{title_cn} ({year})", "{title_base}/{title_base}"),
+            ("series_dir_template", "{title_base} ({year}) [bangumi-{bangumi_id}]", "{title_base}{year_suffix}"),
+            ("series_dir_template", "{title_base}", "{title_base}{year_suffix}"),
+            ("movie_name_template", "{title_cn} ({year})/{title_cn} ({year})", "{title_base}{year_suffix}/{title_base}{year_suffix}"),
+            ("movie_name_template", "{title_base}/{title_base}", "{title_base}{year_suffix}/{title_base}{year_suffix}"),
             (
                 "tv_name_template",
                 "{title_cn} ({year})/Season {season:02d}/{title_cn} - S{season:02d}E{episode:02d}",
+                "{title_base}{year_suffix}/Season {season:02d}/{title_base} - S{season:02d}E{episode:02d} - 第 {episode:02d} 话",
+            ),
+            (
+                "tv_name_template",
                 "{title_base}/Season {season:02d}/{title_base} - S{season:02d}E{episode:02d}",
+                "{title_base}{year_suffix}/Season {season:02d}/{title_base} - S{season:02d}E{episode:02d} - 第 {episode:02d} 话",
+            ),
+            (
+                "episode_name_template",
+                "{title_cn} - S{season:02d}E{episode:02d} - {episode_title}",
+                "{title_base} - S{season:02d}E{episode:02d} - 第 {episode:02d} 话",
             ),
         ]:
             conn.execute(
@@ -982,4 +994,3 @@ def clear_server_logs() -> int:
         count = len(LOG_BUFFER)
         LOG_BUFFER.clear()
     return count
-

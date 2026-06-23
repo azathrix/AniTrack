@@ -130,11 +130,12 @@ def cn_number_to_int(value: str) -> int:
 
 
 def render_series_dir(series: dict, settings: dict[str, str]) -> str:
-    template = settings.get("series_dir_template") or "{title_base}"
+    template = settings.get("series_dir_template") or "{title_base}{year_suffix}"
     title_cn = clean_name(series.get("title_cn") or series.get("title_raw") or "Unknown")
     title_base = normalize_series_root_title(title_cn)
     bangumi_id = series.get("bangumi_id") or "unknown"
     year = int(series.get("year") or 0)
+    year_suffix = f" ({year})" if year > 0 else ""
     return template.format(
         title_cn=title_cn,
         title_base=title_base,
@@ -142,6 +143,7 @@ def render_series_dir(series: dict, settings: dict[str, str]) -> str:
         bangumi_id=bangumi_id,
         tmdb_id=series.get("tmdb_id") or "unknown",
         year=year or "0000",
+        year_suffix=year_suffix,
     )
 
 
@@ -151,15 +153,18 @@ def render_season_dir(season: int, settings: dict[str, str]) -> str:
 
 
 def render_episode_name(series: dict, episode_number: int, episode_title: str, settings: dict[str, str]) -> str:
-    template = settings.get("episode_name_template") or "{title_cn} - S{season:02d}E{episode:02d} - {episode_title}"
+    template = settings.get("episode_name_template") or "{title_base} - S{season:02d}E{episode:02d} - 第 {episode:02d} 话"
     title_cn = clean_name(series.get("title_cn") or series.get("title_raw") or "Unknown")
     title_base = normalize_series_root_title(title_cn)
+    year = int(series.get("year") or 0)
     return template.format(
         title_cn=title_cn,
         title_base=title_base,
         season=int(series.get("season_number") or 1),
         episode=int(episode_number or 0),
         episode_title=clean_name(episode_title or f"第{int(episode_number or 0):02d}话"),
+        year=year or "0000",
+        year_suffix=f" ({year})" if year > 0 else "",
     )
 
 

@@ -355,8 +355,8 @@ def repair_local_paths() -> dict[str, Any]:
     settings = get_settings()
     summary = {
         "checked": 0,
-        "updated": 0,
-        "kept_existing": 0,
+        "rewritten": 0,
+        "available": 0,
         "missing": 0,
     }
     with connect() as conn:
@@ -404,16 +404,14 @@ def repair_local_paths() -> dict[str, Any]:
                 entry,
                 settings,
             )
-            chosen = ""
-            if expected and Path(expected).exists():
-                chosen = expected
-                summary["updated"] += 1
-            elif old_path and Path(old_path).exists():
-                chosen = old_path
-                summary["kept_existing"] += 1
-            else:
+            if not expected:
                 summary["missing"] += 1
-            if chosen:
+                continue
+            expected_exists = Path(expected).exists()
+            if expected != old_path:
+                summary["rewritten"] += 1
+            if expected_exists:
+                summary["available"] += 1
                 if row["local_asset_id"]:
                     conn.execute(
                         """
@@ -421,7 +419,7 @@ def repair_local_paths() -> dict[str, Any]:
                         SET local_path=?, status='synced', updated_at=?
                         WHERE id=?
                         """,
-                        (chosen, ts, row["local_asset_id"]),
+                        (expected, ts, row["local_asset_id"]),
                     )
                 conn.execute(
                     """
@@ -429,22 +427,26 @@ def repair_local_paths() -> dict[str, Any]:
                     SET downloaded=1, local_path=?, status='downloaded', updated_at=?
                     WHERE entry_id=? AND episode_number=?
                     """,
-                    (chosen, ts, row["entry_id"], row["episode_number"]),
+                    (expected, ts, row["entry_id"], row["episode_number"]),
                 )
                 continue
+            summary["missing"] += 1
             if row["local_asset_id"]:
-                conn.execute("UPDATE local_assets SET status='removed', updated_at=? WHERE id=?", (ts, row["local_asset_id"]))
+                conn.execute(
+                    "UPDATE local_assets SET local_path=?, status='removed', updated_at=? WHERE id=?",
+                    (expected, ts, row["local_asset_id"]),
+                )
             conn.execute(
                 """
                 UPDATE episode_resources
-                SET downloaded=0, status='available', updated_at=?
-                WHERE entry_id=? AND episode_number=? AND downloaded=1
+                SET downloaded=0, local_path=?, status='available', updated_at=?
+                WHERE entry_id=? AND episode_number=?
                 """,
-                (ts, row["entry_id"], row["episode_number"]),
+                (expected, ts, row["entry_id"], row["episode_number"]),
             )
     message = (
         f"本地路径修复完成: 检查 {summary['checked']} 集，"
-        f"更新 {summary['updated']} 条，保留现有 {summary['kept_existing']} 条，缺失 {summary['missing']} 条"
+        f"重写路径 {summary['rewritten']} 条，可观看 {summary['available']} 条，缺失 {summary['missing']} 条"
     )
     log("info", message)
     return {"status": "completed", "message": message, **summary}
