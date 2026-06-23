@@ -9,7 +9,9 @@ from fastapi import APIRouter, HTTPException
 
 from ..database import connect
 from ..db import log, now
+from ..download_task_service import queue_download_for_release
 from ..media_service import build_entry_response, reset_orphaned_download_jobs_in_conn
+from ..runtime_service import ACTIVE_DOWNLOAD_STATUSES
 from ..pipeline_orchestrator import cancel_active_processor_tasks, start_pipeline
 from ..runtime_service import DOWNLOAD_RUNTIME_PROCESSORS, trigger_queue
 from ..runtime_store import runtime_store
@@ -384,14 +386,15 @@ async def api_delete_episode_resource(resource_id: int) -> dict[str, Any]:
         ).fetchone()
         if synced:
             raise HTTPException(status_code=400, detail="该集已有本地文件，请先取消/清理本地资源")
+        active_placeholders = ",".join("?" for _ in ACTIVE_DOWNLOAD_STATUSES)
         active = conn.execute(
-            """
+            f"""
             SELECT 1 FROM download_jobs
             WHERE entry_id=? AND episode_number=?
-              AND status IN ('pending','running','submitted','downloading')
+              AND status IN ({active_placeholders})
             LIMIT 1
             """,
-            (entry_id, episode_number),
+            (entry_id, episode_number, *ACTIVE_DOWNLOAD_STATUSES),
         ).fetchone()
         if active:
             raise HTTPException(status_code=400, detail="该集仍有下载任务，请先取消任务")
@@ -463,36 +466,31 @@ async def api_download_episode_resource(episode_id: int) -> dict[str, Any]:
         ).fetchone()
         if not selected or int(selected["release_id"] or 0) <= 0:
             raise HTTPException(status_code=400, detail="该集没有可下载资源")
-        ts = now()
-        conn.execute("UPDATE episode_resources SET status='queued', updated_at=? WHERE entry_id=? AND episode_number=? AND selected=1", (ts, episode["entry_id"], episode["episode_number"]))
-        conn.execute(
-            """
-            UPDATE download_jobs
-            SET status='pending', retry_after='', last_error='', updated_at=?
-            WHERE entry_id=? AND episode_number=? AND status IN ('cancelled','paused','failed')
-            """,
-            (ts, episode["entry_id"], episode["episode_number"]),
-        )
+        episode_data = row_to_dict(episode)
+        selected_data = row_to_dict(selected)
+    queued = queue_download_for_release(int(selected_data["release_id"]), reset_cancelled=True)
+    if not queued.get("queued") and queued.get("reason") != "已有活跃下载任务":
+        return {"status": "skipped", "message": str(queued.get("reason") or "没有需要下载的资源")}
     run_id = start_pipeline(
         "library_backfill",
         trigger_source="episode_download",
         first_step_key="download",
         subject_type="release",
-        subject_id=int(selected["release_id"]),
+        subject_id=int(selected_data["release_id"]),
         payload={
-            "_dedupe_key": f"download:entry:{int(episode['entry_id'])}:episode:{int(episode['episode_number'])}",
-            "entry_id": int(episode["entry_id"]),
-            "release_id": int(selected["release_id"]),
-            "episode_number": int(episode["episode_number"]),
+            "_dedupe_key": f"download:entry:{int(episode_data['entry_id'])}:episode:{int(episode_data['episode_number'])}",
+            "entry_id": int(episode_data["entry_id"]),
+            "release_id": int(selected_data["release_id"]),
+            "episode_number": int(episode_data["episode_number"]),
             "domain_kind": "library",
         },
-        message=f"手动下载集数: entry_id={episode['entry_id']} episode={episode['episode_number']}",
+        message=f"手动下载集数: entry_id={episode_data['entry_id']} episode={episode_data['episode_number']}",
     )
     trigger_queue("processor", delay=0)
     log(
         "info",
-        f"单集下载请求: entry_id={int(episode['entry_id'])} episode={int(episode['episode_number'])} "
-        f"release_id={int(selected['release_id'])} run_id={run_id}",
+        f"单集下载请求: entry_id={int(episode_data['entry_id'])} episode={int(episode_data['episode_number'])} "
+        f"release_id={int(selected_data['release_id'])} run_id={run_id}",
     )
     return {"status": "started", "download_run_id": run_id, "message": "已加入下载队列"}
 
@@ -505,8 +503,9 @@ async def api_download_entry_resources(entry_id: int) -> dict[str, Any]:
         if not entry:
             raise HTTPException(status_code=404, detail="媒体条目不存在")
         reset_orphaned_download_jobs_in_conn(conn, entry_id)
+        active_placeholders = ",".join("?" for _ in ACTIVE_DOWNLOAD_STATUSES)
         candidates = conn.execute(
-            """
+            f"""
             SELECT er.entry_id, er.episode_number, er.release_id
             FROM episode_resources er
             LEFT JOIN local_assets la ON la.entry_id=er.entry_id AND la.episode_number=er.episode_number AND la.status='synced'
@@ -515,24 +514,25 @@ async def api_download_entry_resources(entry_id: int) -> dict[str, Any]:
               AND NOT EXISTS (
                 SELECT 1 FROM download_jobs dj
                 WHERE dj.entry_id=er.entry_id AND dj.episode_number=er.episode_number
-                  AND dj.status IN ('pending','running','submitted','downloading')
+                  AND dj.status IN ({active_placeholders})
               )
             ORDER BY er.episode_number ASC, er.id DESC
             """,
-            (entry_id,),
+            (entry_id, *ACTIVE_DOWNLOAD_STATUSES),
         ).fetchall()
-        ts = now()
-        seen_episodes: set[int] = set()
-        for candidate in candidates:
-            episode_number = int(candidate["episode_number"] or 0)
-            release_id = int(candidate["release_id"] or 0)
-            if episode_number <= 0 or release_id <= 0 or episode_number in seen_episodes:
-                continue
-            seen_episodes.add(episode_number)
-            if runtime_store.has_active_episode_task(entry_id, episode_number, DOWNLOAD_RUNTIME_PROCESSORS):
-                continue
-            conn.execute("UPDATE episode_resources SET status='queued', updated_at=? WHERE entry_id=? AND episode_number=? AND selected=1", (ts, entry_id, episode_number))
-            rows.append({"entry_id": entry_id, "episode_number": episode_number, "release_id": release_id})
+    seen_episodes: set[int] = set()
+    for candidate in candidates:
+        episode_number = int(candidate["episode_number"] or 0)
+        release_id = int(candidate["release_id"] or 0)
+        if episode_number <= 0 or release_id <= 0 or episode_number in seen_episodes:
+            continue
+        seen_episodes.add(episode_number)
+        if runtime_store.has_active_episode_task(entry_id, episode_number, DOWNLOAD_RUNTIME_PROCESSORS):
+            continue
+        queued = queue_download_for_release(release_id)
+        if not queued.get("queued"):
+            continue
+        rows.append({"entry_id": entry_id, "episode_number": episode_number, "release_id": release_id})
     run_ids: list[int] = []
     for row in rows:
         run_id = start_pipeline(
@@ -591,14 +591,15 @@ async def api_cancel_all_downloads() -> dict[str, Any]:
     cancelled_runtime = await runtime_store.cancel_processor_tasks(DOWNLOAD_RUNTIME_PROCESSORS)
     cancelled_active = await cancel_active_processor_tasks(DOWNLOAD_RUNTIME_PROCESSORS)
     ts = now()
+    active_placeholders = ",".join("?" for _ in ACTIVE_DOWNLOAD_STATUSES)
     with connect() as conn:
         cursor = conn.execute(
-            """
+            f"""
             UPDATE download_jobs
-            SET status='cancelled', last_error='用户取消全部下载', retry_after='', updated_at=?
-            WHERE status IN ('pending','running','submitted','downloading','failed','paused')
+            SET status='cancelled', phase='cancelled', last_error='用户取消全部下载', retry_after='', updated_at=?
+            WHERE status IN ({active_placeholders}, 'failed', 'paused')
             """,
-            (ts,),
+            (ts, *ACTIVE_DOWNLOAD_STATUSES),
         )
         changed_jobs = cursor.rowcount if cursor.rowcount is not None else 0
         conn.execute(
@@ -620,11 +621,6 @@ async def api_cancel_all_downloads() -> dict[str, Any]:
     }
 
 
-@router.post("/api/episodes/{episode_id}/download/pause")
-async def api_pause_episode_download(episode_id: int) -> dict[str, Any]:
-    return await _set_episode_download_state(episode_id, "paused", "用户暂停下载", "已暂停该集本地下载流程")
-
-
 async def _set_episode_download_state(episode_id: int, status: str, error: str, message: str) -> dict[str, Any]:
     with connect() as conn:
         episode = conn.execute("SELECT * FROM episodes WHERE id=?", (episode_id,)).fetchone()
@@ -643,14 +639,15 @@ async def _set_episode_download_state_by_entry_episode(
     message: str,
 ) -> dict[str, Any]:
     ts = now()
+    active_placeholders = ",".join("?" for _ in ACTIVE_DOWNLOAD_STATUSES)
     with connect() as conn:
         conn.execute(
-            """
+            f"""
             UPDATE download_jobs
-            SET status=?, retry_after='', last_error=?, updated_at=?
-            WHERE entry_id=? AND episode_number=? AND status IN ('pending','running','submitted','downloading','failed','paused')
+            SET status=?, phase=?, retry_after='', last_error=?, updated_at=?
+            WHERE entry_id=? AND episode_number=? AND status IN ({active_placeholders}, 'failed', 'paused')
             """,
-            (status, error, ts, entry_id, episode_number),
+            (status, status, error, ts, entry_id, episode_number, *ACTIVE_DOWNLOAD_STATUSES),
         )
         conn.execute(
             """

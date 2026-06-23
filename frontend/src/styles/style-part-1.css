@@ -393,6 +393,31 @@ h1 {
   gap: 8px;
 }
 
+.scheduled-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.scheduled-pill {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #dbe4ef;
+  border-radius: 999px;
+  color: #334155;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 8px;
+  min-height: 34px;
+  padding: 6px 10px 6px 14px;
+}
+
+.scheduled-pill span {
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .console-overview-grid {
   margin-bottom: 14px;
 }

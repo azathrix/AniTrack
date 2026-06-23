@@ -16,7 +16,16 @@ from .utils import int_setting
 
 scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
 QUEUE_DEBOUNCE_SECONDS = 10.0
-ACTIVE_DOWNLOAD_STATUSES = {"pending", "running", "submitted", "downloading"}
+ACTIVE_DOWNLOAD_STATUSES = {
+    "pending",
+    "submitting",
+    "remote_downloading",
+    "remote_completed",
+    "local_copying",
+    "running",
+    "submitted",
+    "downloading",
+}
 DOWNLOAD_RUNTIME_PROCESSORS = {
     "download",
     "download_presence",

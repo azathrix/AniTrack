@@ -267,10 +267,18 @@ async def download_to_local(
         async with httpx.AsyncClient(proxy=proxy, timeout=None, follow_redirects=True) as client:
             async with client.stream("GET", url) as response:
                 response.raise_for_status()
+                total = int(response.headers.get("content-length") or 0)
+                downloaded = 0
                 with target_path.open("wb") as output:
                     async for chunk in response.aiter_bytes():
                         if chunk:
                             output.write(chunk)
+                            downloaded += len(chunk)
+                            if progress_cb and total > 0:
+                                percent = max(1, min(99, int(downloaded * 100 / total)))
+                                await progress_cb(percent, f"本地整理 {percent}%")
+                if progress_cb:
+                    await progress_cb(100, "本地整理完成")
         return
 
     source_path = Path(source)

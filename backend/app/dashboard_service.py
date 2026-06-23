@@ -9,6 +9,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from .database import connect
 from .db import get_settings
+from .download_task_service import download_overview, list_download_tasks
 from .library import bool_setting
 from .pipeline_runtime import pipeline_overview
 from .runtime_service import canonical_queue_key, queue_job_key, QUEUE_KEY_ALIASES
@@ -82,9 +83,20 @@ def queue_summary(settings: dict[str, str]) -> list[dict[str, Any]]:
         runtime_item("selection", "自动选集", "根据全局优先级选择唯一发布"),
         runtime_item("backfill", "整季补全", "补抓当季历史条目"),
         runtime_item("download", "下载到本地", "提交下载器、轮询完成并整理到本地媒体库"),
-        runtime_item("upload", "上传整理", "接收本地文件并整理到媒体库"),
         runtime_item("local_presence", "本地存在性检查", "检查本地最终文件状态"),
     ]
+
+
+def scanner_status(runtime_snapshot: dict[str, Any]) -> dict[str, Any]:
+    scan_ops = [dict(item) for item in runtime_snapshot.get("operations", []) if item.get("name") == "扫描全部"]
+    running = next((item for item in scan_ops if item.get("status") == "running"), None)
+    latest = running or (scan_ops[0] if scan_ops else {})
+    return {
+        "status": latest.get("status") or "idle",
+        "message": latest.get("message") or ("正在扫描" if running else "空闲"),
+        "operation_id": latest.get("id") or "",
+        "updated_at": latest.get("updated_at") or latest.get("finished_at") or "",
+    }
 
 def console_overview(
     queue_items: list[dict[str, Any]],
@@ -503,6 +515,7 @@ def dashboard_data() -> dict[str, Any]:
         for item in runtime_snapshot.get("operations", [])
         if str(item.get("status") or "") in {"running", "failed", "cancelled"}
     ][:20]
+    download_tasks = list_download_tasks()
     queue_details = queue_detail_map()
     seasonal_rows = [
         enrich_catalog_entry(summarize_seasonal_entry(row))
@@ -523,6 +536,9 @@ def dashboard_data() -> dict[str, Any]:
         "scheduled_runs": scheduled_runs,
         "queue_summary": queue_items,
         "queue_details": queue_details,
+        "scanner_status": scanner_status(runtime_snapshot),
+        "download_tasks": download_tasks,
+        "download_overview": download_overview(download_tasks),
         "pipelines": pipeline_overview(),
         "console_sections": console_sections(),
         "server_logs": server_logs,

@@ -214,6 +214,8 @@ def target_dir(series: dict, settings: dict[str, str]) -> str:
                 root = remote_dir
                 break
     root = "/" + root.strip("/")
+    if str(series.get("media_type") or "").lower() == "movie":
+        return "/".join([root, render_series_dir(series, settings)])
     return "/".join(
         [
             root,

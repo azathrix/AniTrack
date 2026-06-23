@@ -10,6 +10,7 @@ from .config import DATA_DIR, DB_PATH
 from .database import connect
 from .db import get_settings, log
 from .library import local_library_root, render_series_dir
+from .sync_service import local_episode_path
 
 
 def _now() -> str:
@@ -345,6 +346,105 @@ def cleanup_invalid_episode_data() -> dict[str, Any]:
         f"无效集数数据清理完成: 资源 {summary['episode_resources']} 条，"
         f"发布 {summary['releases']} 条，字幕 {summary['episode_subtitles']} 条，"
         f"下载记录 {summary['download_jobs'] + summary['download_artifacts'] + summary['local_assets']} 条"
+    )
+    log("info", message)
+    return {"status": "completed", "message": message, **summary}
+
+
+def repair_local_paths() -> dict[str, Any]:
+    settings = get_settings()
+    summary = {
+        "checked": 0,
+        "updated": 0,
+        "kept_existing": 0,
+        "missing": 0,
+    }
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT ep.id AS episode_id,
+                   ep.entry_id,
+                   ep.episode_number,
+                   e.*,
+                   la.id AS local_asset_id,
+                   la.local_path AS local_asset_path,
+                   er.local_path AS resource_local_path,
+                   da.artifact_name AS artifact_name
+            FROM episodes ep
+            JOIN entries e ON e.id=ep.entry_id
+            LEFT JOIN local_assets la
+              ON la.entry_id=ep.entry_id
+             AND la.episode_number=ep.episode_number
+            LEFT JOIN episode_resources er
+              ON er.id=(
+                SELECT id FROM episode_resources
+                WHERE entry_id=ep.entry_id AND episode_number=ep.episode_number
+                ORDER BY selected DESC, id DESC
+                LIMIT 1
+              )
+            LEFT JOIN download_artifacts da
+              ON da.id=(
+                SELECT id FROM download_artifacts
+                WHERE entry_id=ep.entry_id AND episode_number=ep.episode_number
+                ORDER BY updated_at DESC, id DESC
+                LIMIT 1
+              )
+            WHERE ep.episode_number > 0 AND COALESCE(e.hidden, 0)=0
+            ORDER BY ep.entry_id, ep.episode_number
+            """
+        ).fetchall()
+        ts = _now()
+        for row in rows:
+            summary["checked"] += 1
+            entry = dict(row)
+            old_path = str(row["local_asset_path"] or row["resource_local_path"] or "")
+            artifact_name = str(row["artifact_name"] or Path(old_path).name or "")
+            expected = local_episode_path(
+                {"artifact_name": artifact_name, "episode_number": int(row["episode_number"] or 0)},
+                entry,
+                settings,
+            )
+            chosen = ""
+            if expected and Path(expected).exists():
+                chosen = expected
+                summary["updated"] += 1
+            elif old_path and Path(old_path).exists():
+                chosen = old_path
+                summary["kept_existing"] += 1
+            else:
+                summary["missing"] += 1
+            if chosen:
+                if row["local_asset_id"]:
+                    conn.execute(
+                        """
+                        UPDATE local_assets
+                        SET local_path=?, status='synced', updated_at=?
+                        WHERE id=?
+                        """,
+                        (chosen, ts, row["local_asset_id"]),
+                    )
+                conn.execute(
+                    """
+                    UPDATE episode_resources
+                    SET downloaded=1, local_path=?, status='downloaded', updated_at=?
+                    WHERE entry_id=? AND episode_number=?
+                    """,
+                    (chosen, ts, row["entry_id"], row["episode_number"]),
+                )
+                continue
+            if row["local_asset_id"]:
+                conn.execute("UPDATE local_assets SET status='removed', updated_at=? WHERE id=?", (ts, row["local_asset_id"]))
+            conn.execute(
+                """
+                UPDATE episode_resources
+                SET downloaded=0, status='available', updated_at=?
+                WHERE entry_id=? AND episode_number=? AND downloaded=1
+                """,
+                (ts, row["entry_id"], row["episode_number"]),
+            )
+    message = (
+        f"本地路径修复完成: 检查 {summary['checked']} 集，"
+        f"更新 {summary['updated']} 条，保留现有 {summary['kept_existing']} 条，缺失 {summary['missing']} 条"
     )
     log("info", message)
     return {"status": "completed", "message": message, **summary}

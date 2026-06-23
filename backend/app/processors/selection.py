@@ -3,6 +3,7 @@ from __future__ import annotations
 from ..database import connect
 from ..db import get_settings, log
 from ..pipeline_models import ProcessorContext, ProcessorResult
+from ..runtime_service import ACTIVE_DOWNLOAD_STATUSES
 from ..scanner import mark_selected_releases, resolve_entry_choice, task_retry_after
 
 
@@ -29,6 +30,7 @@ async def process_selection(context: ProcessorContext, payload: dict) -> Process
             if reset_count:
                 log("warn", f"自动选集前已释放中断下载状态: entry_id={entry_id} count={reset_count}")
             placeholders = ",".join("?" for _ in release_ids)
+            active_placeholders = ",".join("?" for _ in ACTIVE_DOWNLOAD_STATUSES)
             rows = conn.execute(
                 f"""
                 SELECT r.id, r.entry_id, r.episode_number, r.title,
@@ -45,7 +47,7 @@ async def process_selection(context: ProcessorContext, payload: dict) -> Process
                     FROM download_jobs dj
                     WHERE dj.entry_id=r.entry_id
                       AND dj.episode_number=r.episode_number
-                      AND dj.status IN ('pending','running','submitted','downloading')
+                      AND dj.status IN ({active_placeholders})
                     LIMIT 1
                   ) AS active_download,
                   EXISTS(
@@ -60,7 +62,7 @@ async def process_selection(context: ProcessorContext, payload: dict) -> Process
                 FROM releases r
                 WHERE r.id IN ({placeholders})
                 """,
-                tuple(release_ids),
+                (*ACTIVE_DOWNLOAD_STATUSES, *release_ids),
             ).fetchall()
             release_rows = {int(row["id"]): row for row in rows}
 

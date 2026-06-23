@@ -303,20 +303,31 @@ def init_db() -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 series_id INTEGER NOT NULL,
                 entry_id INTEGER NOT NULL DEFAULT 0,
+                episode_resource_id INTEGER NOT NULL DEFAULT 0,
+                episode_id INTEGER NOT NULL DEFAULT 0,
                 episode_number INTEGER NOT NULL,
                 release_id INTEGER NOT NULL,
                 provider TEXT NOT NULL DEFAULT 'pikpak',
+                provider_index INTEGER NOT NULL DEFAULT 0,
+                provider_key TEXT NOT NULL DEFAULT '',
                 download_task_id INTEGER NOT NULL DEFAULT 0,
                 status TEXT NOT NULL DEFAULT 'pending',
+                phase TEXT NOT NULL DEFAULT 'pending',
                 attempts INTEGER NOT NULL DEFAULT 0,
                 submission_id TEXT NOT NULL DEFAULT '',
                 provider_file_id TEXT NOT NULL DEFAULT '',
                 target_dir TEXT NOT NULL DEFAULT '',
+                remote_path TEXT NOT NULL DEFAULT '',
+                target_local_path TEXT NOT NULL DEFAULT '',
                 normalized_name TEXT NOT NULL DEFAULT '',
+                source_ref TEXT NOT NULL DEFAULT '',
+                media_type TEXT NOT NULL DEFAULT 'anime',
                 retry_after TEXT NOT NULL DEFAULT '',
                 last_error TEXT NOT NULL DEFAULT '',
                 progress INTEGER NOT NULL DEFAULT 0,
                 progress_text TEXT NOT NULL DEFAULT '',
+                total_size INTEGER NOT NULL DEFAULT 0,
+                downloaded_size INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 last_seen_at TEXT NOT NULL DEFAULT '',
@@ -639,20 +650,31 @@ def migrate(conn: sqlite3.Connection) -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             series_id INTEGER NOT NULL,
             entry_id INTEGER NOT NULL DEFAULT 0,
+            episode_resource_id INTEGER NOT NULL DEFAULT 0,
+            episode_id INTEGER NOT NULL DEFAULT 0,
             episode_number INTEGER NOT NULL,
             release_id INTEGER NOT NULL,
             provider TEXT NOT NULL DEFAULT 'pikpak',
+            provider_index INTEGER NOT NULL DEFAULT 0,
+            provider_key TEXT NOT NULL DEFAULT '',
             download_task_id INTEGER NOT NULL DEFAULT 0,
             status TEXT NOT NULL DEFAULT 'pending',
+            phase TEXT NOT NULL DEFAULT 'pending',
             attempts INTEGER NOT NULL DEFAULT 0,
             submission_id TEXT NOT NULL DEFAULT '',
             provider_file_id TEXT NOT NULL DEFAULT '',
             target_dir TEXT NOT NULL DEFAULT '',
+            remote_path TEXT NOT NULL DEFAULT '',
+            target_local_path TEXT NOT NULL DEFAULT '',
             normalized_name TEXT NOT NULL DEFAULT '',
+            source_ref TEXT NOT NULL DEFAULT '',
+            media_type TEXT NOT NULL DEFAULT 'anime',
             retry_after TEXT NOT NULL DEFAULT '',
             last_error TEXT NOT NULL DEFAULT '',
             progress INTEGER NOT NULL DEFAULT 0,
             progress_text TEXT NOT NULL DEFAULT '',
+            total_size INTEGER NOT NULL DEFAULT 0,
+            downloaded_size INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
             last_seen_at TEXT NOT NULL DEFAULT '',
@@ -771,10 +793,38 @@ def migrate(conn: sqlite3.Connection) -> None:
         if "entry_id" not in columns:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN entry_id INTEGER NOT NULL DEFAULT 0")
         if table == "download_jobs":
+            additions = {
+                "episode_resource_id": "INTEGER NOT NULL DEFAULT 0",
+                "episode_id": "INTEGER NOT NULL DEFAULT 0",
+                "media_type": "TEXT NOT NULL DEFAULT 'anime'",
+                "provider_index": "INTEGER NOT NULL DEFAULT 0",
+                "provider_key": "TEXT NOT NULL DEFAULT ''",
+                "phase": "TEXT NOT NULL DEFAULT 'pending'",
+                "source_ref": "TEXT NOT NULL DEFAULT ''",
+                "remote_path": "TEXT NOT NULL DEFAULT ''",
+                "target_local_path": "TEXT NOT NULL DEFAULT ''",
+                "total_size": "INTEGER NOT NULL DEFAULT 0",
+                "downloaded_size": "INTEGER NOT NULL DEFAULT 0",
+            }
+            for column, ddl in additions.items():
+                if column not in columns:
+                    conn.execute(f"ALTER TABLE download_jobs ADD COLUMN {column} {ddl}")
             if "progress" not in columns:
                 conn.execute("ALTER TABLE download_jobs ADD COLUMN progress INTEGER NOT NULL DEFAULT 0")
             if "progress_text" not in columns:
                 conn.execute("ALTER TABLE download_jobs ADD COLUMN progress_text TEXT NOT NULL DEFAULT ''")
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_download_jobs_entry_episode_status
+        ON download_jobs(entry_id, episode_number, status)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_download_jobs_resource
+        ON download_jobs(episode_resource_id)
+        """
+    )
     ensure_pipeline_runtime(conn)
     merge_duplicate_series(conn)
 
@@ -932,6 +982,4 @@ def clear_server_logs() -> int:
         count = len(LOG_BUFFER)
         LOG_BUFFER.clear()
     return count
-
-
 

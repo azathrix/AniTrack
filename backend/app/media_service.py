@@ -369,7 +369,8 @@ def reset_orphaned_download_jobs_in_conn(conn, entry_id: int = 0, episode_number
             conn.execute(
                 """
                 UPDATE download_jobs
-                SET status='completed', retry_after='', last_error='', updated_at=?, last_seen_at=?
+                SET status='completed', phase='completed', progress=100, progress_text='本地下载完成',
+                    retry_after='', last_error='', updated_at=?, last_seen_at=?
                 WHERE id=?
                 """,
                 (ts, ts, row["id"]),
@@ -386,7 +387,7 @@ def reset_orphaned_download_jobs_in_conn(conn, entry_id: int = 0, episode_number
             conn.execute(
                 """
                 UPDATE download_jobs
-                SET status='failed', retry_after='', last_error='下载流程已中断，请重新下载', updated_at=?
+                SET status='failed', phase='failed', retry_after='', last_error='下载流程已中断，请重新下载', updated_at=?
                 WHERE id=?
                 """,
                 (ts, row["id"]),
@@ -396,7 +397,7 @@ def reset_orphaned_download_jobs_in_conn(conn, entry_id: int = 0, episode_number
                 UPDATE episode_resources
                 SET status='available', updated_at=?
                 WHERE entry_id=? AND episode_number=? AND selected=1 AND downloaded=0
-                  AND status IN ('queued','downloading','remote_completed')
+                  AND status IN ('queued','downloading','remote_completed','local_copying','remote_downloading','submitting')
                 """,
                 (ts, row_entry_id, row_episode_number),
             )
@@ -435,14 +436,18 @@ def build_entry_response(entry_id: int) -> dict[str, Any]:
               WHERE entry_id=er.entry_id
                 AND episode_number=er.episode_number
               ORDER BY CASE status
-                WHEN 'running' THEN 0
-                WHEN 'submitted' THEN 1
-                WHEN 'pending' THEN 2
-                WHEN 'paused' THEN 3
-                WHEN 'failed' THEN 4
-                WHEN 'cancelled' THEN 5
-                WHEN 'completed' THEN 6
-                ELSE 7
+                WHEN 'local_copying' THEN 0
+                WHEN 'remote_completed' THEN 1
+                WHEN 'remote_downloading' THEN 2
+                WHEN 'submitting' THEN 3
+                WHEN 'pending' THEN 4
+                WHEN 'failed' THEN 5
+                WHEN 'paused' THEN 6
+                WHEN 'cancelled' THEN 7
+                WHEN 'completed' THEN 8
+                WHEN 'running' THEN 9
+                WHEN 'submitted' THEN 10
+                ELSE 11
               END, updated_at DESC, id DESC
               LIMIT 1
             )
@@ -583,10 +588,17 @@ def save_entry_payload(entry_id: int, payload: EntryPayload, *, expected_domain:
         log("info", f"番剧库条目已保存: {payload.title_cn}")
     return build_entry_response(entry_id)
 
-def hide_entry(entry_id: int, *, expected_domain: str | None = None, success_message: str = "已隐藏条目，关联记录已保留", log_prefix: str = "已隐藏条目") -> dict[str, str]:
+def hide_entry(
+    entry_id: int,
+    *,
+    expected_domain: str | None = None,
+    expected_media_type: str | None = None,
+    success_message: str = "已隐藏条目，关联记录已保留",
+    log_prefix: str = "已隐藏条目",
+) -> dict[str, str]:
     with connect() as conn:
         entry = conn.execute(
-            "SELECT display_title, domain_kind FROM entries WHERE id=?",
+            "SELECT display_title, domain_kind, media_type FROM entries WHERE id=?",
             (entry_id,),
         ).fetchone()
         if not entry:
@@ -594,12 +606,34 @@ def hide_entry(entry_id: int, *, expected_domain: str | None = None, success_mes
         if expected_domain and entry["domain_kind"] != expected_domain:
             domain_label = "新番域" if expected_domain == "seasonal" else "番剧库"
             return {"status": "invalid_domain", "message": f"该条目不属于{domain_label}"}
+        if expected_media_type and str(entry["media_type"] or "anime").lower() != expected_media_type:
+            return {"status": "invalid_media_type", "message": "媒体类型不匹配"}
         title = entry["display_title"]
         ts = now()
         conn.execute(
             "UPDATE entries SET hidden=1, updated_at=? WHERE id=?",
             (ts, entry_id),
         )
+        active_placeholders = ",".join("?" for _ in ACTIVE_DOWNLOAD_STATUSES)
+        conn.execute(
+            f"""
+            UPDATE download_jobs
+            SET status='cancelled', phase='cancelled', last_error='条目已删除', retry_after='', updated_at=?
+            WHERE entry_id=? AND status IN ({active_placeholders})
+            """,
+            (ts, entry_id, *ACTIVE_DOWNLOAD_STATUSES),
+        )
+        has_local = conn.execute(
+            "SELECT 1 FROM local_assets WHERE entry_id=? AND status='synced' LIMIT 1",
+            (entry_id,),
+        ).fetchone()
+        if not has_local:
+            conn.execute("DELETE FROM episode_subtitles WHERE entry_id=?", (entry_id,))
+            conn.execute("DELETE FROM episode_resources WHERE entry_id=?", (entry_id,))
+            conn.execute("DELETE FROM download_jobs WHERE entry_id=?", (entry_id,))
+            conn.execute("DELETE FROM download_artifacts WHERE entry_id=?", (entry_id,))
+            conn.execute("DELETE FROM releases WHERE entry_id=?", (entry_id,))
+            conn.execute("DELETE FROM episodes WHERE entry_id=?", (entry_id,))
     log("warn", f"{log_prefix}: {title}")
     return {"status": "completed", "message": success_message}
 

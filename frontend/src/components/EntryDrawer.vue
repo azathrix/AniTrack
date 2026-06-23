@@ -60,6 +60,11 @@ export default appContextComponent()
                   <el-button plain>归档</el-button>
                 </template>
               </el-popconfirm>
+              <el-popconfirm title="删除后只隐藏/清理数据库记录，不删除本地媒体文件。确定删除？" @confirm="deleteCurrentEntry">
+                <template #reference>
+                  <el-button type="danger" plain>删除条目</el-button>
+                </template>
+              </el-popconfirm>
             </div>
           </el-tab-pane>
           <el-tab-pane label="集数资源">
@@ -106,7 +111,6 @@ export default appContextComponent()
                       <div class="resource-expand-actions">
                         <el-button size="small" plain @click="openEpisodeResourceEditor(row)">配置</el-button>
                         <el-button size="small" plain :disabled="row.downloaded || !row.release_id" @click="downloadEpisodeResource(row)">下载</el-button>
-                        <el-button size="small" plain :disabled="!episodeCanPause(row)" @click="pauseEpisodeDownload(row)">暂停</el-button>
                         <el-button size="small" plain :disabled="!episodeCanCancel(row)" @click="cancelEpisodeDownload(row)">取消</el-button>
                         <el-button size="small" plain @click="refreshEpisodeResource(row)">刷新</el-button>
                         <el-popconfirm title="删除该资源配置？已下载或正在下载的资源需要先清理任务。" @confirm="deleteEpisodeResource(row)">
@@ -132,4 +136,3 @@ export default appContextComponent()
       </template>
     </el-drawer>
 </template>
-

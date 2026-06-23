@@ -82,8 +82,11 @@ def ensure_sync_rule(entry_id: int, settings: dict[str, str], enabled: bool | No
 def local_episode_path(download_artifact: dict, entry: dict, settings: dict[str, str]) -> str:
     root = Path(local_library_root(entry, settings))
     series_dir = render_series_dir(entry, settings)
-    season_dir = render_season_dir(int(entry.get("season_number") or 1), settings)
     suffix = Path(download_artifact.get("artifact_name") or "").suffix
+    if str(entry.get("media_type") or "").lower() == "movie":
+        filename = f"{series_dir}{suffix or Path(str(download_artifact.get('artifact_name') or '')).suffix}"
+        return str(root / series_dir / filename)
+    season_dir = render_season_dir(int(entry.get("season_number") or 1), settings)
     filename = download_artifact.get("artifact_name") or render_episode_name(
         entry,
         int(download_artifact.get("episode_number") or 0),

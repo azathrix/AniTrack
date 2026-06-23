@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Query
 
 from ..db import log
-from ..maintenance import cleanup_invalid_episode_data, clear_runtime_data, migrate_media_folders
+from ..maintenance import cleanup_invalid_episode_data, clear_runtime_data, migrate_media_folders, repair_local_paths
 from ..pipeline_orchestrator import run_ready_tasks, start_pipeline
 from ..pipeline_runtime import pipeline_overview
 from ..runtime_service import (
@@ -69,6 +69,25 @@ async def api_scan() -> dict[str, str]:
         "正在扫描 RSS 源头，后续队列会自动推进",
     )
     return {"status": "started", "operation_id": str(operation_id), "message": "扫描已启动"}
+
+
+@router.get("/api/scanner/status")
+async def api_scanner_status() -> dict[str, str]:
+    operations = runtime_store.snapshot().get("operations", [])
+    running = next((item for item in operations if item.get("name") == "扫描全部" and item.get("status") == "running"), None)
+    recent = next((item for item in operations if item.get("name") == "扫描全部"), None)
+    item = running or recent or {}
+    return {
+        "status": str(item.get("status") or "idle"),
+        "message": str(item.get("message") or ("正在扫描" if running else "空闲")),
+        "operation_id": str(item.get("id") or ""),
+        "updated_at": str(item.get("updated_at") or ""),
+    }
+
+
+@router.post("/api/scanner/run")
+async def api_scanner_run() -> dict[str, str]:
+    return await api_scan()
 
 
 @router.post("/api/queues/{queue_name}/trigger")
@@ -176,6 +195,11 @@ async def api_migrate_media_folders() -> dict:
 @router.post("/api/maintenance/cleanup-invalid-episodes")
 async def api_cleanup_invalid_episodes() -> dict:
     return cleanup_invalid_episode_data()
+
+
+@router.post("/api/maintenance/repair-local-paths")
+async def api_repair_local_paths() -> dict:
+    return repair_local_paths()
 
 
 @router.post("/api/system/clear-data")

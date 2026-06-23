@@ -1,8 +1,9 @@
 export function taskTag(status) {
   if (status === 'failed') return 'danger'
   if (status === 'superseded') return 'info'
-  if (status === 'completed' || status === 'submitted' || status === 'synced') return 'success'
-  if (status === 'running') return 'warning'
+  if (status === 'completed' || status === 'synced') return 'success'
+  if (['running', 'submitting', 'remote_downloading', 'remote_completed', 'local_copying', 'submitted', 'downloading'].includes(status)) return 'warning'
+  if (status === 'cancelled') return 'info'
   return 'info'
 }
 
@@ -32,13 +33,11 @@ export function regionLabel(value) {
 export function sourceModeText(value) {
   const key = String(value || 'link')
   return {
-    local: '本地文件',
     link: '磁链 / 下载链接',
     metadata: '只登记作品',
     collect: '收录',
     add: '添加',
     import: '导入',
-    upload: '本地上传',
     manual: '磁力 / 下载链接',
   }[key] || key
 }
@@ -228,12 +227,17 @@ export function queueBadge(queue) {
 export function taskStatusText(row) {
   if (row?.status === 'completed') return '已完成'
   if (row?.status === 'synced') return '已整理'
-  if (row?.status === 'submitted') return '已提交'
+  if (row?.status === 'submitting') return '提交下载器'
+  if (row?.status === 'remote_downloading') return '等待下载器'
+  if (row?.status === 'remote_completed') return '等待整理'
+  if (row?.status === 'local_copying') return '整理中'
+  if (row?.status === 'submitted') return '等待下载器'
   if (row?.status === 'running') return '处理中'
   if (row?.status === 'waiting') return '等待重试'
   if (row?.status === 'pending' && row?.waiting_retry) return '等待重试'
   if (row?.status === 'pending') return '待处理'
   if (row?.status === 'failed') return '失败'
+  if (row?.status === 'cancelled') return '已取消'
   if (row?.status === 'superseded') return '已替代'
   return row?.status || ''
 }
@@ -262,7 +266,7 @@ export function episodeDownloadState(row) {
 export function episodeDownloadText(row) {
   const state = episodeDownloadState(row)
   const progress = Number(row?.download_progress || 0)
-  if (progress > 0 && progress < 100 && ['queued', 'pending', 'running', 'submitted', 'downloading'].includes(state)) {
+  if (progress > 0 && progress < 100 && ['queued', 'pending', 'running', 'submitted', 'downloading', 'submitting', 'remote_downloading', 'remote_completed', 'local_copying'].includes(state)) {
     return `下载中 ${progress}%`
   }
   return {
@@ -270,11 +274,13 @@ export function episodeDownloadText(row) {
     synced: '可观看',
     queued: '排队中',
     pending: '排队中',
-    running: '下载中',
-    submitted: '下载中',
+    submitting: '提交下载器',
+    running: '提交下载器',
+    submitted: '等待下载器',
+    remote_downloading: '等待下载器',
     downloading: '下载中',
-    remote_completed: '整理中',
-    paused: '已暂停',
+    remote_completed: '等待整理',
+    local_copying: '整理中',
     cancelled: '已取消',
     failed: '失败',
     available: '未下载',
@@ -284,18 +290,18 @@ export function episodeDownloadText(row) {
 export function episodeDownloadTag(row) {
   const state = episodeDownloadState(row)
   if (['downloaded', 'synced'].includes(state)) return 'success'
-  if (['queued', 'pending', 'running', 'submitted', 'downloading', 'remote_completed'].includes(state)) return 'warning'
+  if (['queued', 'pending', 'running', 'submitted', 'downloading', 'submitting', 'remote_downloading', 'remote_completed', 'local_copying'].includes(state)) return 'warning'
   if (state === 'failed') return 'danger'
-  if (state === 'cancelled' || state === 'paused') return 'info'
+  if (state === 'cancelled') return 'info'
   return 'info'
 }
 
 export function episodeCanCancel(row) {
-  return ['queued', 'pending', 'running', 'submitted', 'downloading', 'failed', 'paused'].includes(episodeDownloadState(row))
+  return ['queued', 'pending', 'running', 'submitted', 'downloading', 'submitting', 'remote_downloading', 'remote_completed', 'local_copying', 'failed'].includes(episodeDownloadState(row))
 }
 
 export function episodeCanPause(row) {
-  return ['queued', 'pending', 'running', 'submitted', 'downloading'].includes(episodeDownloadState(row))
+  return false
 }
 
 export function formatCountdown(seconds) {

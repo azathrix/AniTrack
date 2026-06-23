@@ -58,7 +58,7 @@
 import { computed, isRef, onMounted, onUnmounted, provide, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Calendar, Collection, DataBoard, Document, Refresh, Search, Setting } from '@element-plus/icons-vue'
-import { deleteAction, getAction, getDashboard, getDiagnostics, getMediaItem, getSettings, postAction, putAction, saveMediaItem, saveSettings, uploadFile } from './api'
+import { deleteAction, getAction, getDashboard, getDiagnostics, getMediaItem, getSettings, postAction, putAction, saveMediaItem, saveSettings } from './api'
 import { APP_BUILD, APP_VERSION } from './version'
 import { createAppActions } from './composables/appActions'
 import {
@@ -70,14 +70,11 @@ import {
   entryTags,
   entryTitle,
   episodeCanCancel,
-  episodeCanPause,
   episodeDownloadTag,
   episodeDownloadText,
   errorMessage,
-  formatCountdown,
   formatDateKey,
   inferEpisodeFromText,
-  isQueueActive,
   isValidResourceReference,
   isValidSubtitleReference,
   jsonFromListText,
@@ -86,11 +83,6 @@ import {
   normalizedSeasonLabel,
   numberFromInput,
   parseDateValue,
-  queueBadge,
-  queuePendingHint,
-  queueState,
-  queueTag,
-  queueTaskProgressText,
   regionLabel,
   resourceReferenceKind,
   sourceModeText,
@@ -119,7 +111,6 @@ const logKeyword = ref('')
 const loading = ref(false)
 const savingSettings = ref(false)
 const liveConnected = ref(false)
-const consoleNavMode = ref('队列')
 const calendarWeek = ref('')
 const advancedFilterOpen = ref(false)
 const rssDialogOpen = ref(false)
@@ -133,7 +124,6 @@ const mediaWizardStep = ref(0)
 const mediaWizardSeed = ref('')
 const mediaWizardSaving = ref(false)
 const mediaWizardCandidates = ref([])
-const mediaWizardFiles = ref([])
 const mediaWizardResourceItems = ref([])
 const mediaWizardSubtitleItems = ref([])
 const metadataSearchDialogOpen = ref(false)
@@ -179,6 +169,9 @@ const dashboard = reactive({
   queue_details: {},
   console_sections: [],
   console_overview: {},
+  scanner_status: {},
+  download_tasks: [],
+  download_overview: {},
 })
 const settings = reactive({})
 const diagnostics = reactive({ tables: {} })
@@ -197,8 +190,6 @@ const episodeResourceForm = reactive({
   title: '',
   source_type: 'manual',
   source_ref: '',
-  local_upload_temp_path: '',
-  local_upload_file_name: '',
   subtitle_group: '',
   resolution: '',
   language: '',
@@ -414,49 +405,16 @@ const weekDays = computed(() => {
     }
   })
 })
-const scanOperation = computed(() => dashboard.operations.find(op => op.name === '扫描全部' && op.status === 'running'))
-const queueMap = computed(() => Object.fromEntries((dashboard.queue_summary || []).map(item => [item.key, item])))
-const queueConsoleSections = computed(() => (dashboard.console_sections || []).filter(section => {
-  return section.kind === 'queue'
-}))
-const queueListSections = computed(() => queueConsoleSections.value.filter(section => section.kind === 'queue'))
 const scheduledConsoleSections = computed(() => (dashboard.console_sections || []).filter(section => section.kind === 'scheduled'))
 const selectedSectionMeta = computed(() => {
-  const source = consoleNavMode.value === '定时任务' ? scheduledConsoleSections.value : queueListSections.value
-  return source.find(item => item.key === selectedConsoleSection.value) || null
-})
-const selectedQueue = computed(() => {
-  const section = selectedSectionMeta.value
-  if (!section || section.kind !== 'queue') return null
-  return queueMap.value[section.queue_key] || null
-})
-const selectedQueueItems = computed(() => {
-  const section = selectedSectionMeta.value
-  if (!section || section.kind !== 'queue') return []
-  return dashboard.queue_details?.[section.queue_key]?.items || []
-})
-const selectedQueueAction = computed(() => {
-  const queue = selectedQueue.value
-  if (!queue) return ''
-  return `/queues/${queue.key}/trigger`
+  return scheduledConsoleSections.value.find(item => item.key === selectedConsoleSection.value) || null
 })
 const selectedScheduledJob = computed(() => {
   const section = selectedSectionMeta.value
   if (!section || section.kind !== 'scheduled') return null
   return (dashboard.scheduled_jobs || []).find(item => item.job_key === section.job_key) || null
 })
-const selectedScheduledRuns = computed(() => {
-  const section = selectedSectionMeta.value
-  if (!section || section.kind !== 'scheduled') return []
-  return (dashboard.scheduled_runs || []).filter(item => item.job_key === section.job_key)
-})
-const scanRunning = computed(() => Boolean(scanOperation.value))
-const scanProgress = computed(() => {
-  const message = scanOperation.value?.message || ''
-  const match = message.match(/(\d+)\/(\d+)/)
-  if (!match) return scanRunning.value ? 12 : 0
-  return Math.min(95, Math.round(Number(match[1]) / Number(match[2]) * 100))
-})
+const scanRunning = computed(() => String(dashboard.scanner_status?.status || '') === 'running')
 const filteredServerLogs = computed(() => {
   const keyword = logKeyword.value.trim().toLowerCase()
   const rows = dashboard.server_logs || []
@@ -516,7 +474,7 @@ const entryResourceRows = computed(() => {
       subtitle_file: '-',
       subtitle_url: '',
       subtitle_file_name: '',
-      downloaded: Boolean(resource.downloaded) || Boolean(resource.local_path),
+      downloaded: Boolean(resource.downloaded) || Boolean(resource.local_asset_id),
       local_path: resource.local_path || '',
       status: resource.status || '',
       download_status: resource.download_status || '',
@@ -604,20 +562,20 @@ const episodeImportCanAdvance = computed(() => {
 const episodeImportCanSave = computed(() => episodeImportResourceRows.value.length > 0 && episodeImportInvalidCount.value === 0)
 const mediaWizardResourceRows = computed(() => mediaWizardResourceItems.value.map((item, index) => {
   const text = item.source_ref || item.file_name || ''
-  const valid = item.source_mode === 'local' ? Boolean(text) : isValidResourceReference(text)
+  const valid = isValidResourceReference(text)
   return {
     ...item,
     key: item.id || `wizard-resource:${index}:${text}`,
     text,
     episode: Number(item.episode_number || 0) || inferEpisodeFromText(text, currentMediaType.value === 'movie' ? 1 : index + 1),
     valid,
-    kind: item.source_mode === 'local' ? '本地文件' : resourceReferenceKind(text),
+    kind: resourceReferenceKind(text),
     reason: valid ? '' : '不是可用资源',
   }
 }))
 const mediaWizardSubtitleRows = computed(() => mediaWizardSubtitleItems.value.map((item, index) => {
   const text = item.subtitle_ref || item.file_name || ''
-  const valid = item.source_mode === 'local' ? Boolean(text) : isValidSubtitleReference(text)
+  const valid = isValidSubtitleReference(text)
   return {
     ...item,
     key: item.id || `wizard-subtitle:${index}:${text}`,
@@ -649,30 +607,12 @@ const filteredSeries = computed(() => {
   })
 })
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 function belongsToCurrentMediaPage(item) {
   const type = entryMediaType(item)
   if (view.value === 'movies') return type === 'movie'
   if (view.value === 'tv') return type === 'tv'
   return type === 'anime'
 }
-
-
-
-
-
 
 function hasRecentUpdate(item) {
   const entryId = Number(item?.id || item?.entry_id || 0)
@@ -683,18 +623,12 @@ function hasRecentUpdate(item) {
   })
 }
 
-
-
-
-
 function toggleLibraryTag(tag) {
   const next = new Set(libraryTagFilters.value)
   if (next.has(tag)) next.delete(tag)
   else next.add(tag)
   libraryTagFilters.value = Array.from(next)
 }
-
-
 
 function scheduledBadgeText(jobKey) {
   const job = (dashboard.scheduled_jobs || []).find(item => item.job_key === jobKey)
@@ -715,29 +649,6 @@ function scheduledBadgeType(jobKey) {
   return 'success'
 }
 
-
-
-
-
-
-
-
-
-async function handleSubtitleFilePicked(file) {
-  const raw = file?.raw || file
-  episodeResourceForm.subtitle_file_name = file?.name || raw?.name || ''
-  if (!episodeResourceForm.subtitle_format) episodeResourceForm.subtitle_format = 'external'
-  if (!raw) return
-  try {
-    const result = await uploadFile('/subtitles/upload', raw)
-    episodeResourceForm.subtitle_path = result.temp_path || ''
-    episodeResourceForm.subtitle_file_name = result.file_name || episodeResourceForm.subtitle_file_name
-    ElMessage.success('字幕已上传')
-  } catch (error) {
-    ElMessage.error(apiErrorMessage(error))
-  }
-}
-
 function openBatchSubtitleDialog() {
   batchSubtitleForm.subtitles_text = ''
   batchSubtitleForm.file_names = []
@@ -745,22 +656,6 @@ function openBatchSubtitleDialog() {
   batchSubtitleForm.language = ''
   batchSubtitleStep.value = 0
   batchSubtitleDialogOpen.value = true
-}
-
-async function handleBatchSubtitlePicked(file) {
-  const raw = file?.raw || file
-  const name = file?.name || raw?.name || ''
-  if (!raw) return
-  try {
-    const result = await uploadFile('/subtitles/upload', raw)
-    const value = result.temp_path || name
-    if (value && !batchSubtitleForm.file_names.includes(value)) {
-      batchSubtitleForm.file_names = [...batchSubtitleForm.file_names, value]
-    }
-    ElMessage.success('字幕已上传')
-  } catch (error) {
-    ElMessage.error(apiErrorMessage(error))
-  }
 }
 
 function openEpisodeImportDialog() {
@@ -772,12 +667,6 @@ function openEpisodeImportDialog() {
   episodeImportDialogOpen.value = true
 }
 
-
-
-
-
-
-
 function setCalendarThisWeek() {
   calendarWeek.value = formatDateKey(startOfWeek(new Date()))
 }
@@ -788,8 +677,7 @@ function shiftCalendarWeek(delta) {
 
 function applyDashboard(nextDashboard) {
   Object.assign(dashboard, nextDashboard || {})
-  const source = consoleNavMode.value === '定时任务' ? scheduledConsoleSections.value : queueListSections.value
-  if (!source.some(item => item.key === selectedConsoleSection.value)) {
+  if (!scheduledConsoleSections.value.some(item => item.key === selectedConsoleSection.value)) {
     selectedConsoleSection.value = ''
   }
 }
@@ -843,16 +731,6 @@ function startDashboardStream() {
   }
 }
 
-function queueTaskCanCancel(row) {
-  const status = String(row?.status || '').toLowerCase()
-  return row?.processor_key === 'download'
-    && Number(row?.entry_id || 0) > 0
-    && Number(row?.episode_number || 0) > 0
-    && !['completed', 'skipped', 'cancelled'].includes(status)
-}
-
-
-
 exposeAppContext({
   Calendar,
   Collection,
@@ -878,7 +756,6 @@ exposeAppContext({
   cardInitials,
   cardSubtitle,
   catalogTags,
-  consoleNavMode,
   currentCatalogSourceRows,
   currentMediaPageTitle,
   currentMediaType,
@@ -898,7 +775,6 @@ exposeAppContext({
   entryTags,
   entryTitle,
   episodeCanCancel,
-  episodeCanPause,
   episodeDownloadTag,
   episodeDownloadText,
   episodeImportCanAdvance,
@@ -916,14 +792,10 @@ exposeAppContext({
   filteredSeries,
   filteredServerLogs,
   filteredServerLogText,
-  formatCountdown,
   formatDateKey,
-  handleBatchSubtitlePicked,
-  handleSubtitleFilePicked,
   hasRecentUpdate,
   inferEpisodeFromText,
   isMediaCatalogView,
-  isQueueActive,
   isValidResourceReference,
   isValidSubtitleReference,
   jsonFromListText,
@@ -945,7 +817,6 @@ exposeAppContext({
   mediaTypeLabel,
   mediaWizardCandidates,
   mediaWizardDraft,
-  mediaWizardFiles,
   mediaWizardInvalidResourceCount,
   mediaWizardInvalidSubtitleCount,
   mediaWizardMode,
@@ -975,15 +846,6 @@ exposeAppContext({
   parseDateValue,
   processorSettingsDialogOpen,
   processorSettingsForm,
-  queueBadge,
-  queueConsoleSections,
-  queueListSections,
-  queueMap,
-  queuePendingHint,
-  queueState,
-  queueTag,
-  queueTaskCanCancel,
-  queueTaskProgressText,
   regionLabel,
   reload,
   reloadDiagnostics,
@@ -994,8 +856,6 @@ exposeAppContext({
   rssLoading,
   rssSubscriptions,
   savingSettings,
-  scanOperation,
-  scanProgress,
   scanRunning,
   scheduledBadgeText,
   scheduledBadgeType,
@@ -1010,11 +870,7 @@ exposeAppContext({
   selectedEntryDomain,
   selectedEntryMediaType,
   selectedEntryStats,
-  selectedQueue,
-  selectedQueueAction,
-  selectedQueueItems,
   selectedScheduledJob,
-  selectedScheduledRuns,
   selectedSectionMeta,
   settings,
   shiftCalendarWeek,
@@ -1036,65 +892,16 @@ exposeAppContext({
 provide('appContext', appContext)
 
 const {
-  addDownloader,
-  addMediaWizardResourceLines,
-  addMediaWizardSubtitleLines,
-  advanceMediaWizard,
-  apiErrorMessage,
-  applyMetadataToWizard,
-  archiveCurrentEntry,
-  cancelAllDownloads,
-  cancelEpisodeDownload,
-  cancelQueueDownload,
-  commitEpisodeImport,
-  commitMediaWizard,
-  deleteEpisodeResource,
-  deleteRssSubscription,
-  downloadCurrentEntryResources,
-  downloadEpisodeResource,
-  editRssSubscription,
-  entryEditPayload,
-  exportLogs,
-  fetchEntryMetadata,
-  handleEpisodeResourceFilePicked,
-  loadRssSubscriptions,
-  normalizeSettingsShape,
-  openEntry,
-  openEntryEditDialog,
-  openEpisodeResourceEditor,
-  openMediaWizard,
-  openMetadataSearch,
-  openProcessorSettings,
-  openQueueEntry,
-  openRssDialog,
-  openScheduledSettings,
-  pauseEpisodeDownload,
-  refreshEpisodeResource,
-  removeDownloader,
-  removeMediaWizardResourceItem,
-  removeMediaWizardSubtitleItem,
-  resetRssForm,
-  resetSelectionRules,
-  runAction,
-  runMetadataSearch,
-  saveAllSettings,
-  saveBatchSubtitles,
-  saveEntryEditForm,
-  saveEpisodeResource,
-  saveProcessorSettings,
-  saveRssSubscription,
-  saveScheduledJob,
-  searchWizardMetadata,
-  confirmMetadataMatch,
-  selectedMetadataCandidate,
-  selectMetadataCandidate,
-  skipMetadataProvider,
-  syncMediaWizardFileResources,
-  toggleEntryResourceRow,
-  startMetadataProgress,
-  stopMetadataProgress,
-  syncScheduledJobForm,
-  uploadMediaWizardFiles,
+  addDownloader, addMediaWizardResourceLines, addMediaWizardSubtitleLines, advanceMediaWizard, apiErrorMessage, applyMetadataToWizard,
+  archiveCurrentEntry, cancelAllDownloads, cancelDownloadTask, cancelEpisodeDownload, cancelQueueDownload, commitEpisodeImport, commitMediaWizard,
+  deleteCurrentEntry, deleteDownloadTask, deleteEpisodeResource, deleteRssSubscription, downloadCurrentEntryResources, downloadEpisodeResource,
+  editRssSubscription, entryEditPayload, exportLogs, fetchEntryMetadata, loadRssSubscriptions, normalizeSettingsShape, openEntry,
+  openEntryEditDialog, openEpisodeResourceEditor, openMediaWizard, openMetadataSearch, openProcessorSettings, openQueueEntry, openRssDialog,
+  openScheduledSettings, repairLocalPaths, retryDownloadTask, refreshEpisodeResource, removeDownloader, removeMediaWizardResourceItem,
+  removeMediaWizardSubtitleItem, resetRssForm, resetSelectionRules, runAction, runMetadataSearch, saveAllSettings, saveBatchSubtitles,
+  saveEntryEditForm, saveEpisodeResource, saveProcessorSettings, saveRssSubscription, saveScheduledJob, searchWizardMetadata,
+  confirmMetadataMatch, selectedMetadataCandidate, selectMetadataCandidate, skipMetadataProvider, toggleEntryResourceRow,
+  startMetadataProgress, stopMetadataProgress, syncScheduledJobForm,
 } = createAppActions(appContext, {
   deleteAction,
   getAction,
@@ -1105,74 +912,21 @@ const {
   putAction,
   saveMediaItem,
   saveSettings,
-  uploadFile,
 })
 
 exposeAppContext({
-  addDownloader,
-  addMediaWizardResourceLines,
-  addMediaWizardSubtitleLines,
-  advanceMediaWizard,
-  apiErrorMessage,
-  applyMetadataToWizard,
-  archiveCurrentEntry,
-  cancelAllDownloads,
-  cancelEpisodeDownload,
-  cancelQueueDownload,
-  commitEpisodeImport,
-  commitMediaWizard,
-  deleteEpisodeResource,
-  deleteRssSubscription,
-  downloadCurrentEntryResources,
-  downloadEpisodeResource,
-  editRssSubscription,
-  entryEditPayload,
-  exportLogs,
-  fetchEntryMetadata,
-  handleEpisodeResourceFilePicked,
-  loadRssSubscriptions,
-  normalizeSettingsShape,
-  openEntry,
-  openEntryEditDialog,
-  openEpisodeResourceEditor,
-  openMediaWizard,
-  openMetadataSearch,
-  openProcessorSettings,
-  openQueueEntry,
-  openRssDialog,
-  openScheduledSettings,
-  pauseEpisodeDownload,
-  refreshEpisodeResource,
-  removeDownloader,
-  removeMediaWizardResourceItem,
-  removeMediaWizardSubtitleItem,
-  resetRssForm,
-  resetSelectionRules,
-  runAction,
-  runMetadataSearch,
-  saveAllSettings,
-  saveBatchSubtitles,
-  saveEntryEditForm,
-  saveEpisodeResource,
-  saveProcessorSettings,
-  saveRssSubscription,
-  saveScheduledJob,
-  searchWizardMetadata,
-  confirmMetadataMatch,
-  selectedMetadataCandidate,
-  selectMetadataCandidate,
-  skipMetadataProvider,
-  syncMediaWizardFileResources,
-  toggleEntryResourceRow,
-  startMetadataProgress,
-  stopMetadataProgress,
-  syncScheduledJobForm,
-  uploadMediaWizardFiles,
+  addDownloader, addMediaWizardResourceLines, addMediaWizardSubtitleLines, advanceMediaWizard, apiErrorMessage, applyMetadataToWizard,
+  archiveCurrentEntry, cancelAllDownloads, cancelDownloadTask, cancelEpisodeDownload, cancelQueueDownload, commitEpisodeImport, commitMediaWizard,
+  deleteCurrentEntry, deleteDownloadTask, deleteEpisodeResource, deleteRssSubscription, downloadCurrentEntryResources, downloadEpisodeResource,
+  editRssSubscription, entryEditPayload, exportLogs, fetchEntryMetadata, loadRssSubscriptions, normalizeSettingsShape, openEntry,
+  openEntryEditDialog, openEpisodeResourceEditor, openMediaWizard, openMetadataSearch, openProcessorSettings, openQueueEntry, openRssDialog,
+  openScheduledSettings, repairLocalPaths, retryDownloadTask, refreshEpisodeResource, removeDownloader, removeMediaWizardResourceItem,
+  removeMediaWizardSubtitleItem, resetRssForm, resetSelectionRules, runAction, runMetadataSearch, saveAllSettings, saveBatchSubtitles,
+  saveEntryEditForm, saveEpisodeResource, saveProcessorSettings, saveRssSubscription, saveScheduledJob, searchWizardMetadata,
+  confirmMetadataMatch, selectedMetadataCandidate, selectMetadataCandidate, skipMetadataProvider, toggleEntryResourceRow,
+  startMetadataProgress, stopMetadataProgress, syncScheduledJobForm,
 })
 
-watch(consoleNavMode, value => {
-  selectedConsoleSection.value = ''
-})
 watch(selectedScheduledJob, job => {
   syncScheduledJobForm(job)
 })
@@ -1207,8 +961,5 @@ onUnmounted(() => {
   stopMetadataProgress()
 })
 </script>
-
-
-
 
 

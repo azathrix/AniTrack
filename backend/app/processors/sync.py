@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from ..database import connect
@@ -49,6 +50,18 @@ async def sync_download_artifact_to_local(
         target = local_episode_path(dict(row), dict(row), settings)
     target = normalize_local_target_path(target, str(row["artifact_name"] or ""))
     target_file = Path(target)
+    with connect() as conn:
+        size_row = conn.execute(
+            """
+            SELECT total_size
+            FROM download_jobs
+            WHERE entry_id=? AND episode_number=? AND provider=?
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            (int(row["entry_id"] or 0), int(row["episode_number"] or 0), str(row["provider"] or "")),
+        ).fetchone()
+    total_size = int(size_row["total_size"] or 0) if size_row else 0
 
     try:
         if target_file.exists() and target_file.stat().st_size > 0:
@@ -64,16 +77,25 @@ async def sync_download_artifact_to_local(
             )
 
             async def progress_cb(percent: int, text: str) -> None:
-                value = max(0, min(100, int(percent or 0)))
-                message = text or f"本地下载 {value}%"
+                downloaded_size = 0
+                try:
+                    downloaded_size = target_file.stat().st_size if target_file.exists() else 0
+                except OSError:
+                    downloaded_size = 0
+                calculated = int(downloaded_size * 100 / total_size) if total_size > 0 and downloaded_size > 0 else 0
+                value = max(0, min(100, max(int(percent or 0), calculated)))
+                message = text or f"本地整理 {value}%"
                 ts = now()
                 with connect() as progress_conn:
                     progress_conn.execute(
                         """
                         UPDATE download_jobs
-                        SET status='downloading',
+                        SET status='local_copying',
+                            phase='local_copying',
                             progress=?,
                             progress_text=?,
+                            total_size=CASE WHEN ? > 0 THEN ? ELSE total_size END,
+                            downloaded_size=?,
                             updated_at=?,
                             last_seen_at=?
                         WHERE entry_id=? AND episode_number=? AND provider=?
@@ -81,6 +103,9 @@ async def sync_download_artifact_to_local(
                         (
                             value,
                             message[:500],
+                            total_size,
+                            total_size,
+                            downloaded_size,
                             ts,
                             ts,
                             int(row["entry_id"] or 0),
@@ -104,13 +129,29 @@ async def sync_download_artifact_to_local(
                 await runtime_store.update_task_progress(context.task_id, value, message)
 
             await progress_cb(1, "本地下载启动")
-            await download_remote_file_to_local(
-                str(row["provider_file_id"] or ""),
-                str(row["remote_path"] or ""),
-                target,
-                settings,
-                progress_cb=progress_cb,
-            )
+            stop_monitor = asyncio.Event()
+
+            async def monitor_local_size() -> None:
+                while not stop_monitor.is_set():
+                    if total_size > 0:
+                        await progress_cb(0, "")
+                    try:
+                        await asyncio.wait_for(stop_monitor.wait(), timeout=1)
+                    except asyncio.TimeoutError:
+                        pass
+
+            monitor_task = asyncio.create_task(monitor_local_size())
+            try:
+                await download_remote_file_to_local(
+                    str(row["provider_file_id"] or ""),
+                    str(row["remote_path"] or ""),
+                    target,
+                    settings,
+                    progress_cb=progress_cb,
+                )
+            finally:
+                stop_monitor.set()
+                await monitor_task
     except Exception as exc:
         return ProcessorResult.retryable(str(exc)[:2000], task_retry_after(settings, context.attempts + 1))
 
@@ -161,13 +202,17 @@ async def sync_download_artifact_to_local(
             """
             UPDATE download_jobs
             SET status='completed',
+                phase='completed',
                 progress=100,
                 progress_text='本地下载完成',
+                target_local_path=?,
+                downloaded_size=CASE WHEN total_size > 0 THEN total_size ELSE downloaded_size END,
                 updated_at=?,
                 last_seen_at=?
             WHERE entry_id=? AND episode_number=? AND provider=?
             """,
             (
+                target,
                 ts,
                 ts,
                 int(row["entry_id"] or 0),

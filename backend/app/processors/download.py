@@ -4,6 +4,7 @@ from pathlib import Path, PurePosixPath
 
 from ..database import connect
 from ..db import get_settings, log, now
+from ..download_task_service import canonical_download_status, download_phase, provider_index_from_key
 from ..downloader_service import (
     failover_exhausted,
     list_tasks,
@@ -20,6 +21,7 @@ from ..scanner import extract_file_id, extract_task_id, is_rate_limited_error, r
 from ..sync_service import (
     download_file_id,
     find_existing_remote_episode,
+    local_episode_path,
     synthetic_task_id,
     task_retry_after,
     upsert_download_artifact_for_release,
@@ -31,7 +33,7 @@ def _release_row(release_id: int):
         return conn.execute(
             """
             SELECT r.*, e.display_title, e.title_raw, e.title_cn, e.bangumi_id, e.tmdb_id,
-                   e.year, e.season_number
+                   e.year, e.season_number, e.media_type, e.target_library_id
             FROM releases r
             JOIN entries e ON e.id=r.entry_id
             WHERE r.id=?
@@ -55,12 +57,16 @@ def _submission_for_release(release_id: int):
             JOIN releases r ON r.entry_id=cs.entry_id AND r.episode_number=cs.episode_number
             WHERE r.id=?
             ORDER BY CASE cs.status
-              WHEN 'completed' THEN 0
-              WHEN 'submitted' THEN 1
-              WHEN 'running' THEN 2
-              WHEN 'pending' THEN 3
-              WHEN 'failed' THEN 4
-              ELSE 5
+              WHEN 'local_copying' THEN 0
+              WHEN 'remote_completed' THEN 1
+              WHEN 'remote_downloading' THEN 2
+              WHEN 'submitting' THEN 3
+              WHEN 'pending' THEN 4
+              WHEN 'completed' THEN 5
+              WHEN 'failed' THEN 6
+              WHEN 'submitted' THEN 7
+              WHEN 'running' THEN 8
+              ELSE 8
             END, cs.updated_at DESC, cs.id DESC
             LIMIT 1
             """,
@@ -79,66 +85,127 @@ def _upsert_submission(
     provider_file_id: str = "",
     retry_after: str = "",
     last_error: str = "",
+    total_size: int = 0,
 ) -> None:
     ts = now()
     provider = provider_key(settings)
-    progress = 100 if status == "completed" else 0
+    if status == "completed":
+        status = "remote_completed"
+    status = canonical_download_status(status)
+    phase = download_phase(status)
+    progress = {
+        "pending": 0,
+        "submitting": 8,
+        "remote_downloading": 20,
+        "remote_completed": 45,
+        "local_copying": 50,
+        "completed": 100,
+        "failed": 0,
+        "cancelled": 0,
+    }.get(status, 0)
     progress_text = {
         "pending": "等待提交下载器",
-        "running": "正在提交下载器",
-        "submitted": "下载器已提交，等待完成",
-        "completed": "下载器产物已完成",
+        "submitting": "正在提交下载器",
+        "remote_downloading": "下载器已提交，等待完成",
+        "remote_completed": "下载器产物已完成，等待整理到本地",
+        "local_copying": "正在整理到本地",
+        "completed": "本地下载完成",
         "failed": last_error or "下载失败",
         "cancelled": "已取消",
     }.get(status, "")
     resource_status = {
         "pending": "queued",
-        "running": "queued",
-        "submitted": "downloading",
-        "completed": "remote_completed",
+        "submitting": "queued",
+        "remote_downloading": "downloading",
+        "remote_completed": "remote_completed",
+        "local_copying": "downloading",
+        "completed": "downloaded",
         "failed": "failed",
         "cancelled": "cancelled",
     }.get(status, "")
+    source_ref = str(release["magnet"] or release["torrent_url"] or "")
+    remote_path = str(PurePosixPath(target_directory) / normalized_name)
+    target_local_path = local_episode_path(
+        {"artifact_name": normalized_name, "episode_number": int(release["episode_number"] or 0)},
+        dict(release),
+        settings,
+    )
     with connect() as conn:
+        episode = conn.execute(
+            "SELECT id FROM episodes WHERE entry_id=? AND episode_number=? ORDER BY id DESC LIMIT 1",
+            (int(release["entry_id"] or 0), int(release["episode_number"] or 0)),
+        ).fetchone()
+        resource = conn.execute(
+            """
+            SELECT id
+            FROM episode_resources
+            WHERE entry_id=? AND episode_number=?
+            ORDER BY selected DESC, id DESC
+            LIMIT 1
+            """,
+            (int(release["entry_id"] or 0), int(release["episode_number"] or 0)),
+        ).fetchone()
         conn.execute(
             """
             INSERT INTO download_jobs
-              (series_id, entry_id, episode_number, release_id, provider, download_task_id, status,
-               attempts, submission_id, provider_file_id, target_dir, normalized_name,
-               retry_after, last_error, progress, progress_text, created_at, updated_at, last_seen_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              (series_id, entry_id, episode_resource_id, episode_id, episode_number, release_id,
+               provider, provider_index, provider_key, download_task_id, status, phase,
+               attempts, submission_id, provider_file_id, target_dir, remote_path, target_local_path,
+               normalized_name, source_ref, media_type, retry_after, last_error, progress,
+               progress_text, total_size, created_at, updated_at, last_seen_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(entry_id, episode_number, provider) DO UPDATE SET
               release_id=excluded.release_id,
               series_id=excluded.series_id,
+              episode_resource_id=excluded.episode_resource_id,
+              episode_id=excluded.episode_id,
               download_task_id=excluded.download_task_id,
               status=excluded.status,
+              phase=excluded.phase,
+              provider_index=excluded.provider_index,
+              provider_key=excluded.provider_key,
               submission_id=CASE WHEN excluded.submission_id!='' THEN excluded.submission_id ELSE download_jobs.submission_id END,
               provider_file_id=CASE WHEN excluded.provider_file_id!='' THEN excluded.provider_file_id ELSE download_jobs.provider_file_id END,
               target_dir=excluded.target_dir,
+              remote_path=excluded.remote_path,
+              target_local_path=excluded.target_local_path,
               normalized_name=excluded.normalized_name,
+              source_ref=excluded.source_ref,
+              media_type=excluded.media_type,
               retry_after=excluded.retry_after,
               last_error=excluded.last_error,
               progress=excluded.progress,
               progress_text=excluded.progress_text,
+              total_size=CASE WHEN excluded.total_size>0 THEN excluded.total_size ELSE download_jobs.total_size END,
               updated_at=excluded.updated_at,
               last_seen_at=excluded.last_seen_at
             """,
             (
                 int(release["series_id"] or 0),
                 int(release["entry_id"] or 0),
+                int(resource["id"] or 0) if resource else 0,
+                int(episode["id"] or 0) if episode else 0,
                 int(release["episode_number"] or 0),
                 int(release["id"]),
                 provider,
+                provider_index_from_key(provider),
+                provider,
                 synthetic_task_id(f"release:{int(release['id'])}"),
                 status,
+                phase,
                 submission_id,
                 provider_file_id,
                 target_directory,
+                remote_path,
+                target_local_path,
                 normalized_name,
+                source_ref,
+                str(release["media_type"] or "anime"),
                 retry_after,
                 last_error[:2000],
                 progress,
                 progress_text[:500],
+                max(0, int(total_size or 0)),
                 ts,
                 ts,
                 ts,
@@ -256,10 +323,11 @@ async def process_download_presence(context: ProcessorContext, payload: dict) ->
         _upsert_submission(
             settings=settings,
             release=release,
-            status="completed",
+            status="remote_completed",
             target_directory=remote_target,
             normalized_name=str(existing_remote.get("name") or remote_name),
             provider_file_id=download_file_id(existing_remote),
+            total_size=int(existing_remote.get("size") or existing_remote.get("Size") or 0),
         )
         log(
             "info",
@@ -349,6 +417,7 @@ async def process_download_submit(context: ProcessorContext, payload: dict) -> P
             target_directory=remote_target,
             normalized_name=str(existing_remote.get("name") or remote_name),
             provider_file_id=download_file_id(existing_remote),
+            total_size=int(existing_remote.get("size") or existing_remote.get("Size") or 0),
         )
         log(
             "info",
@@ -369,8 +438,8 @@ async def process_download_submit(context: ProcessorContext, payload: dict) -> P
         )
 
     existing_submission = _submission_for_release(release_id)
-    if existing_submission and existing_submission["status"] in {"submitted", "running", "completed"}:
-        status = str(existing_submission["status"] or "")
+    if existing_submission and canonical_download_status(str(existing_submission["status"] or "")) in {"submitting", "remote_downloading", "remote_completed", "completed"}:
+        status = canonical_download_status(str(existing_submission["status"] or ""))
         log(
             "info",
             f"下载提交复用同集记录: release_id={release_id} entry_id={release['entry_id']} "
@@ -391,7 +460,7 @@ async def process_download_submit(context: ProcessorContext, payload: dict) -> P
     _upsert_submission(
         settings=settings,
         release=release,
-        status="running",
+        status="submitting",
         target_directory=remote_target,
         normalized_name=remote_name,
     )
@@ -422,7 +491,7 @@ async def process_download_submit(context: ProcessorContext, payload: dict) -> P
             return ProcessorResult.terminal(f"{message}；已尝试所有可执行下载器，需要手动处理")
         return ProcessorResult.retryable(message, retry_after)
 
-    status = "completed" if file_id and not task_id and not needs_poll(settings) else "submitted"
+    status = "remote_completed" if file_id and not task_id and not needs_poll(settings) else "remote_downloading"
     _upsert_submission(
         settings=settings,
         release=release,
@@ -438,7 +507,7 @@ async def process_download_submit(context: ProcessorContext, payload: dict) -> P
         f"target_dir={remote_target} normalized_name={remote_name} pikpak_task_id={task_id or '-'} file_id={file_id or '-'}",
     )
     return ProcessorResult.success(
-        "下载提交完成" if status == "completed" else "下载任务已提交",
+        "下载提交完成" if status == "remote_completed" else "下载任务已提交",
         data={"release_id": release_id, "entry_id": int(release["entry_id"]), "status": status},
         next_payload={
             "_subject_type": "release",
@@ -474,7 +543,8 @@ async def process_download(context: ProcessorContext, payload: dict) -> Processo
         )
 
     submission = _submission_for_release(release_id)
-    if not submission or str(submission["status"] or "") not in {"submitted", "running", "completed"}:
+    submission_status = canonical_download_status(str(submission["status"] or "")) if submission else ""
+    if not submission or submission_status not in {"submitting", "remote_downloading", "remote_completed", "completed"}:
         submit_result = await process_download_submit(context, payload)
         if submit_result.status == "failed_retryable":
             return submit_result
@@ -548,21 +618,21 @@ async def process_download_poll(context: ProcessorContext, payload: dict) -> Pro
     await runtime_store.update_task_progress(context.task_id, 20, "正在轮询下载器完成状态")
     remote_target = str(submission["target_dir"] or target_dir(dict(release), settings))
     remote_name = str(submission["normalized_name"] or render_episode_name(dict(release), int(release["episode_number"] or 0), "", settings))
-    status = str(submission["status"] or "submitted")
+    status = canonical_download_status(str(submission["status"] or "remote_downloading"))
     file_id = str(submission["provider_file_id"] or "")
     matched = None
     message = ""
     try:
-        if status != "completed":
+        if status != "remote_completed":
             if needs_poll(settings):
                 matched = await find_existing_remote_episode(settings, remote_target, remote_name, int(release["episode_number"] or 0))
                 if matched:
                     file_id = download_file_id(matched)
-                    status = "completed"
+                    status = "remote_completed"
                 else:
                     message = "下载器已提交，目标目录暂未发现完成文件"
             elif file_id and not str(submission["submission_id"] or ""):
-                status = "completed"
+                status = "remote_completed"
             else:
                 remote_tasks = await list_tasks(settings)
                 remote = next((item for item in remote_tasks if item.get("id") == submission["submission_id"]), None)
@@ -572,7 +642,7 @@ async def process_download_poll(context: ProcessorContext, payload: dict) -> Pro
                     phase = remote.get("phase", "")
                     file_id = str(remote.get("file_id") or remote.get("reference_resource", {}).get("id", "") or file_id)
                     if phase == "PHASE_TYPE_COMPLETE":
-                        status = "completed"
+                        status = "remote_completed"
                         matched = remote
                     elif phase == "PHASE_TYPE_ERROR":
                         status = "failed"
@@ -582,12 +652,12 @@ async def process_download_poll(context: ProcessorContext, payload: dict) -> Pro
     except Exception as exc:
         return ProcessorResult.retryable(str(exc)[:2000], task_retry_after(settings, context.attempts + 1))
 
-    if status != "completed":
+    if status != "remote_completed":
         retry_after = task_retry_after(settings, context.attempts + 1)
         _upsert_submission(
             settings=settings,
             release=release,
-            status="failed" if status == "failed" else "submitted",
+            status="failed" if status == "failed" else "remote_downloading",
             target_directory=remote_target,
             normalized_name=remote_name,
             submission_id=str(submission["submission_id"] or ""),
@@ -613,11 +683,12 @@ async def process_download_poll(context: ProcessorContext, payload: dict) -> Pro
     _upsert_submission(
         settings=settings,
         release=release,
-        status="completed",
+        status="remote_completed",
         target_directory=remote_target,
         normalized_name=actual_name,
         submission_id=str(submission["submission_id"] or ""),
         provider_file_id=download_file_id(item) or file_id,
+        total_size=int(item.get("size") or item.get("Size") or 0),
     )
     log(
         "info",
@@ -648,7 +719,7 @@ async def process_download_artifact_register(context: ProcessorContext, payload:
         return ProcessorResult.terminal(f"发布不存在: {release_id}")
     submission = _submission_for_release(release_id)
     settings = settings_for_provider(base_settings, str(submission["provider"] or "")) if submission else settings_for_attempt(base_settings, context.attempts)
-    if not submission or submission["status"] != "completed":
+    if not submission or canonical_download_status(str(submission["status"] or "")) not in {"remote_completed", "completed"}:
         return ProcessorResult.retryable("下载尚未完成，等待后登记产物", task_retry_after(settings, context.attempts + 1))
     item = _asset_item(
         str(submission["target_dir"] or target_dir(dict(release), settings)),

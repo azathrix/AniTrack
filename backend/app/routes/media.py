@@ -42,6 +42,17 @@ async def api_update_media_entry(media_type: str, entry_id: int, payload: EntryP
     return save_entry_payload(entry_id, payload, expected_domain=None)
 
 
+@router.delete("/api/media/{media_type}/{entry_id}")
+async def api_delete_media_entry(media_type: str, entry_id: int) -> dict[str, str]:
+    normalized = normalize_api_media_type(media_type)
+    return hide_entry(
+        entry_id,
+        expected_media_type=normalized,
+        success_message="已删除媒体条目，本地文件不会被删除",
+        log_prefix="已删除媒体条目",
+    )
+
+
 @router.post("/api/media/{media_type}/{entry_id}/metadata/fetch")
 async def api_fetch_media_metadata(media_type: str, entry_id: int, payload: MetadataFetchPayload) -> dict:
     normalize_api_media_type(media_type)

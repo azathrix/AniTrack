@@ -15,7 +15,6 @@ from .rss import process_rss_candidate_persist, process_rss_fetch
 from .selection import process_selection
 from .sync import process_local_presence, process_local_sync
 from .sync_plan import process_sync_plan
-from .upload import process_upload
 from ..processor_registry import register_processor
 
 
@@ -33,7 +32,6 @@ def register_builtin_processors() -> None:
     register_processor("download_submit", process_download_submit)
     register_processor("download_poll", process_download_poll)
     register_processor("download_artifact_register", process_download_artifact_register)
-    register_processor("upload", process_upload)
     register_processor("local_sync", process_local_sync)
     register_processor("sync_plan", process_sync_plan)
     register_processor("local_presence", process_local_presence)

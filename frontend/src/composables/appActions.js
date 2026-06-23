@@ -7,11 +7,7 @@ import {
   isValidSubtitleReference,
   jsonFromListText,
   listTextFromJson,
-  mediaTypeLabel,
   numberFromInput,
-  regionLabel,
-  resourceReferenceKind,
-  sourceModeText,
   splitTextLines,
   titleFromResourceSeed,
 } from './viewHelpers'
@@ -27,7 +23,6 @@ export function createAppActions(app, deps) {
     putAction,
     saveMediaItem,
     saveSettings,
-    uploadFile,
   } = deps
   let metadataProgressTimer = null
 
@@ -163,10 +158,8 @@ export function createAppActions(app, deps) {
     app.episodeResourceForm.subtitle_id = row.subtitle_id || 0
     app.episodeResourceForm.episode_number = row.episode_number || ''
     app.episodeResourceForm.title = row.resource_title || ''
-    app.episodeResourceForm.source_type = row.source_type || 'manual'
+    app.episodeResourceForm.source_type = row.source_type === 'upload' ? 'manual' : (row.source_type || 'manual')
     app.episodeResourceForm.source_ref = row.source_ref || row.magnet || row.torrent_url || ''
-    app.episodeResourceForm.local_upload_temp_path = ''
-    app.episodeResourceForm.local_upload_file_name = ''
     app.episodeResourceForm.subtitle_group = row.subtitle_group || ''
     app.episodeResourceForm.resolution = row.resolution || ''
     app.episodeResourceForm.language = row.language || ''
@@ -201,17 +194,6 @@ export function createAppActions(app, deps) {
         file_name: app.episodeResourceForm.subtitle_file_name,
         selected: true,
       })
-      if (app.episodeResourceForm.source_type === 'upload' && app.episodeResourceForm.local_upload_temp_path && app.selectedEntry?.id) {
-        await postAction(`/entries/${app.selectedEntry.id}/uploads/import`, {
-          uploads: [{
-            temp_path: app.episodeResourceForm.local_upload_temp_path,
-            file_name: app.episodeResourceForm.local_upload_file_name,
-            episode_number: Number(app.episodeResourceForm.episode_number || 0),
-          }],
-          subtitle_format: app.episodeResourceForm.subtitle_format || '',
-          language: app.episodeResourceForm.language || '',
-        })
-      }
       ElMessage.success('集数资源已保存')
       app.episodeResourceDialogOpen = false
       if (app.selectedEntry?.id) {
@@ -232,23 +214,6 @@ export function createAppActions(app, deps) {
     app.expandedResourceKeys = current.includes(key)
       ? current.filter(item => item !== key)
       : [...current, key]
-  }
-
-  async function handleEpisodeResourceFilePicked(file) {
-    const raw = file?.raw || file
-    if (!raw) return
-    app.episodeResourceForm.source_type = 'upload'
-    app.episodeResourceForm.local_upload_file_name = file?.name || raw?.name || ''
-    app.episodeResourceForm.source_ref = app.episodeResourceForm.local_upload_file_name
-    try {
-      const result = await uploadFile('/uploads/local', raw)
-      app.episodeResourceForm.local_upload_temp_path = result.temp_path || ''
-      app.episodeResourceForm.local_upload_file_name = result.file_name || app.episodeResourceForm.local_upload_file_name
-      app.episodeResourceForm.source_ref = result.file_name || app.episodeResourceForm.source_ref
-      ElMessage.success('本地文件已上传到临时区，保存后会进入整理队列')
-    } catch (error) {
-      ElMessage.error(apiErrorMessage(error))
-    }
   }
 
   async function deleteEpisodeResource(row) {
@@ -337,15 +302,36 @@ export function createAppActions(app, deps) {
     }
   }
 
-  async function pauseEpisodeDownload(row) {
+  async function cancelDownloadTask(row) {
     try {
-      const episodeId = Number(row?.episode_id || 0)
-      if (!episodeId) return
-      await postAction(`/episodes/${episodeId}/download/pause`)
-      ElMessage.success('已暂停该集下载')
-      if (app.selectedEntry?.id) {
-        await app.openEntry(app.selectedEntry.id, app.selectedEntryDomain, app.selectedEntryMediaType)
-      }
+      const taskId = Number(row?.id || row?.download_job_id || 0)
+      if (!taskId) return
+      const result = await postAction(`/download-tasks/${taskId}/cancel`)
+      ElMessage.success(result?.message || '下载任务已取消')
+      await app.reload()
+    } catch (error) {
+      ElMessage.error(apiErrorMessage(error))
+    }
+  }
+
+  async function retryDownloadTask(row) {
+    try {
+      const taskId = Number(row?.id || row?.download_job_id || 0)
+      if (!taskId) return
+      const result = await postAction(`/download-tasks/${taskId}/retry`)
+      ElMessage.success(result?.message || '下载任务已重试')
+      await app.reload()
+    } catch (error) {
+      ElMessage.error(apiErrorMessage(error))
+    }
+  }
+
+  async function deleteDownloadTask(row) {
+    try {
+      const taskId = Number(row?.id || row?.download_job_id || 0)
+      if (!taskId) return
+      const result = await deleteAction(`/download-tasks/${taskId}`)
+      ElMessage.success(result?.message || '下载任务已删除')
       await app.reload()
     } catch (error) {
       ElMessage.error(apiErrorMessage(error))
@@ -412,7 +398,6 @@ export function createAppActions(app, deps) {
     app.mediaWizardStep = 0
     app.mediaWizardSeed = ''
     app.mediaWizardCandidates = []
-    app.mediaWizardFiles = []
     app.mediaWizardResourceItems = []
     app.mediaWizardSubtitleItems = []
     Object.assign(app.mediaWizardDraft, {
@@ -445,7 +430,7 @@ export function createAppActions(app, deps) {
   async function advanceMediaWizard() {
     if (app.mediaWizardStep === 0) {
       addMediaWizardResourceLines(false)
-      const titleSeed = titleFromResourceSeed(app.mediaWizardDraft.resource_input || app.mediaWizardDraft.resources_text || app.mediaWizardFiles?.[0]?.name || '')
+      const titleSeed = titleFromResourceSeed(app.mediaWizardDraft.resource_input || app.mediaWizardDraft.resources_text || '')
       if (titleSeed && !app.mediaWizardDraft.title) {
         app.mediaWizardDraft.title = titleSeed
       }
@@ -541,30 +526,6 @@ export function createAppActions(app, deps) {
     app.mediaWizardDraft.subtitles_text = app.mediaWizardSubtitleItems.map(item => item.subtitle_ref || item.file_name).join('\n')
     if (showMessage) ElMessage.success(`已添加 ${next.length} 条字幕`)
     return true
-  }
-
-  function syncMediaWizardFileResources(_file, fileList = app.mediaWizardFiles) {
-    app.mediaWizardFiles = fileList || []
-    const linkItems = app.mediaWizardResourceItems.filter(item => item.source_mode !== 'local')
-    const localItems = app.mediaWizardFiles.map((file, index) => {
-      const name = file.name || file.file_name || file.raw?.name || `upload-${index + 1}`
-      return {
-        id: `local-${name}-${index}`,
-        source_mode: 'local',
-        source_ref: name,
-        file_name: name,
-        title: titleFromResourceSeed(name) || name,
-        episode_number: inferEpisodeFromText(name, mediaWizardEpisodeFallback(index)),
-        subtitle_ref: '',
-        subtitle_source_mode: 'link',
-        subtitle_format: app.mediaWizardDraft.subtitle_format || '',
-        language: app.mediaWizardDraft.language || '',
-      }
-    })
-    app.mediaWizardResourceItems = [...linkItems, ...localItems]
-    if (!app.mediaWizardDraft.title && localItems.length) {
-      app.mediaWizardDraft.title = titleFromResourceSeed(localItems[0].file_name) || ''
-    }
   }
 
   function removeMediaWizardResourceItem(index) {
@@ -694,7 +655,7 @@ export function createAppActions(app, deps) {
     app.metadataSearchTarget = target
     app.metadataSearchKeyword = target === 'entry'
       ? (app.entryEditForm.title_cn || app.entryEditForm.title_raw || '')
-      : (app.mediaWizardDraft.title || titleFromResourceSeed(app.mediaWizardDraft.resource_input || app.mediaWizardSeed || app.mediaWizardDraft.resources_text || app.mediaWizardFiles?.[0]?.name || '') || '')
+      : (app.mediaWizardDraft.title || titleFromResourceSeed(app.mediaWizardDraft.resource_input || app.mediaWizardSeed || app.mediaWizardDraft.resources_text || '') || '')
     app.metadataSearchResults = { bangumi: [], tmdb: [] }
     app.metadataSelectedBangumi = null
     app.metadataSelectedTmdb = null
@@ -724,30 +685,14 @@ export function createAppActions(app, deps) {
     }
   }
 
-  async function uploadMediaWizardFiles() {
-    const uploaded = []
-    const localItems = app.mediaWizardResourceItems.filter(item => item.source_mode === 'local')
-    for (const file of app.mediaWizardFiles) {
-      const raw = file.raw || file
-      if (!raw) continue
-      const result = await uploadFile('/uploads/local', raw)
-      const matched = localItems.find(item => item.file_name === (file.name || raw.name))
-      uploaded.push({
-        ...result,
-        episode_number: Number(matched?.episode_number || 0),
-      })
-    }
-    return uploaded
-  }
-
   async function commitMediaWizard() {
     app.mediaWizardSaving = true
     try {
       addMediaWizardResourceLines(false)
       addMediaWizardSubtitleLines(false)
-      const linkItems = app.mediaWizardResourceItems.filter(item => item.source_mode !== 'local' && item.source_ref)
+      const linkItems = app.mediaWizardResourceItems.filter(item => item.source_ref)
       const resourcesText = linkItems.map(item => item.source_ref).join('\n')
-      const sourceMode = app.mediaWizardFiles.length ? 'local' : (linkItems.length ? 'link' : 'metadata')
+      const sourceMode = linkItems.length ? 'link' : 'metadata'
       const release = parseMonthField(app.mediaWizardDraft.release_month)
       const payload = {
         mode: sourceMode,
@@ -787,14 +732,6 @@ export function createAppActions(app, deps) {
             subtitle_url: item.subtitle_ref || '',
           })),
           subtitles_text: app.mediaWizardSubtitleItems.map(item => item.subtitle_ref || item.file_name).filter(Boolean).join('\n'),
-          subtitle_format: app.mediaWizardDraft.subtitle_format || '',
-          language: app.mediaWizardDraft.language || '',
-        })
-      }
-      if (entryId && app.mediaWizardFiles.length) {
-        const uploaded = await uploadMediaWizardFiles()
-        await postAction(`/entries/${entryId}/uploads/import`, {
-          uploads: uploaded,
           subtitle_format: app.mediaWizardDraft.subtitle_format || '',
           language: app.mediaWizardDraft.language || '',
         })
@@ -1049,65 +986,41 @@ export function createAppActions(app, deps) {
     await app.reload()
   }
 
+  async function deleteCurrentEntry() {
+    const id = Number(app.selectedEntry?.id || 0)
+    const mediaType = app.selectedEntryMediaType || app.currentMediaType || 'anime'
+    if (!id) return
+    try {
+      const result = await deleteAction(`/media/${mediaType}/${id}`)
+      ElMessage.success(result?.message || '媒体条目已删除')
+      app.entryDrawerOpen = false
+      app.selectedEntryDetail = null
+      await app.reload()
+    } catch (error) {
+      ElMessage.error(apiErrorMessage(error))
+    }
+  }
+
+  async function repairLocalPaths() {
+    try {
+      const result = await postAction('/maintenance/repair-local-paths')
+      ElMessage.success(result?.message || '本地路径已修复')
+      await app.reload()
+    } catch (error) {
+      ElMessage.error(apiErrorMessage(error))
+    }
+  }
+
   return {
-    addDownloader,
-    addMediaWizardResourceLines,
-    addMediaWizardSubtitleLines,
-    advanceMediaWizard,
-    apiErrorMessage,
-    applyMetadataToWizard,
-    archiveCurrentEntry,
-    cancelAllDownloads,
-    cancelEpisodeDownload,
-    cancelQueueDownload,
-    commitEpisodeImport,
-    commitMediaWizard,
-    deleteEpisodeResource,
-    deleteRssSubscription,
-    downloadCurrentEntryResources,
-    downloadEpisodeResource,
-    editRssSubscription,
-    entryEditPayload,
-    exportLogs,
-    fetchEntryMetadata,
-    handleEpisodeResourceFilePicked,
-    loadRssSubscriptions,
-    normalizeSettingsShape,
-    openEntry,
-    openEntryEditDialog,
-    openEpisodeResourceEditor,
-    openMediaWizard,
-    openMetadataSearch,
-    openProcessorSettings,
-    openQueueEntry,
-    openRssDialog,
-    openScheduledSettings,
-    pauseEpisodeDownload,
-    refreshEpisodeResource,
-    removeDownloader,
-    removeMediaWizardResourceItem,
-    removeMediaWizardSubtitleItem,
-    resetRssForm,
-    resetSelectionRules,
-    runAction,
-    runMetadataSearch,
-    saveAllSettings,
-    saveBatchSubtitles,
-    saveEntryEditForm,
-    saveEpisodeResource,
-    saveProcessorSettings,
-    saveRssSubscription,
-    saveScheduledJob,
-    searchWizardMetadata,
-    confirmMetadataMatch,
-    selectedMetadataCandidate,
-    selectMetadataCandidate,
-    skipMetadataProvider,
-    syncMediaWizardFileResources,
-    toggleEntryResourceRow,
-    startMetadataProgress,
-    stopMetadataProgress,
-    syncScheduledJobForm,
-    uploadMediaWizardFiles,
+    addDownloader, addMediaWizardResourceLines, addMediaWizardSubtitleLines, advanceMediaWizard, apiErrorMessage, applyMetadataToWizard,
+    archiveCurrentEntry, cancelAllDownloads, cancelDownloadTask, cancelEpisodeDownload, cancelQueueDownload, commitEpisodeImport, commitMediaWizard,
+    deleteCurrentEntry, deleteDownloadTask, deleteEpisodeResource, deleteRssSubscription, downloadCurrentEntryResources, downloadEpisodeResource,
+    editRssSubscription, entryEditPayload, exportLogs, fetchEntryMetadata, loadRssSubscriptions, normalizeSettingsShape, openEntry,
+    openEntryEditDialog, openEpisodeResourceEditor, openMediaWizard, openMetadataSearch, openProcessorSettings, openQueueEntry, openRssDialog,
+    openScheduledSettings, repairLocalPaths, retryDownloadTask, refreshEpisodeResource, removeDownloader, removeMediaWizardResourceItem,
+    removeMediaWizardSubtitleItem, resetRssForm, resetSelectionRules, runAction, runMetadataSearch, saveAllSettings, saveBatchSubtitles,
+    saveEntryEditForm, saveEpisodeResource, saveProcessorSettings, saveRssSubscription, saveScheduledJob, searchWizardMetadata,
+    confirmMetadataMatch, selectedMetadataCandidate, selectMetadataCandidate, skipMetadataProvider, toggleEntryResourceRow,
+    startMetadataProgress, stopMetadataProgress, syncScheduledJobForm,
   }
 }

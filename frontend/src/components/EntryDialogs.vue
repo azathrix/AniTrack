@@ -64,22 +64,13 @@ export default appContextComponent()
           <el-form-item label="资源类型">
             <el-select v-model="episodeResourceForm.source_type">
               <el-option label="磁力 / 下载链接" value="manual" />
-              <el-option label="本地上传" value="upload" />
               <el-option label="仅占位" value="metadata" />
             </el-select>
           </el-form-item>
         </div>
         <el-form-item label="当前资源标题"><el-input v-model="episodeResourceForm.title" /></el-form-item>
-        <el-form-item v-if="episodeResourceForm.source_type !== 'upload'" label="资源链接">
+        <el-form-item label="资源链接">
           <el-input v-model="episodeResourceForm.source_ref" placeholder="magnet:? / https://... / 可留空作为占位资源" />
-        </el-form-item>
-        <el-form-item v-else label="本地上传">
-          <el-upload action="#" :auto-upload="false" :limit="1" :on-change="handleEpisodeResourceFilePicked">
-            <el-button type="primary" plain>选择本地媒体文件</el-button>
-            <template #tip>
-              <div class="el-upload__tip">{{ episodeResourceForm.local_upload_file_name || episodeResourceForm.source_ref || '选择后先上传临时区，保存配置时按作品/季/集整理。' }}</div>
-            </template>
-          </el-upload>
         </el-form-item>
         <div class="form-row">
           <el-form-item label="分辨率"><el-input v-model="episodeResourceForm.resolution" placeholder="1080p" /></el-form-item>
@@ -99,19 +90,6 @@ export default appContextComponent()
             <el-input v-model="episodeResourceForm.subtitle_url" placeholder="https://... / magnet:? / 其它字幕下载地址" />
           </el-form-item>
         </div>
-        <div class="form-row">
-          <el-form-item label="上传本地字幕">
-            <el-upload action="#" :auto-upload="false" :limit="1" :on-change="handleSubtitleFilePicked">
-              <el-button plain>选择字幕文件</el-button>
-              <template #tip>
-                <div class="el-upload__tip">{{ episodeResourceForm.subtitle_file_name || '选择后会上传到服务端临时区，保存配置时写入该集字幕信息。' }}</div>
-              </template>
-            </el-upload>
-          </el-form-item>
-          <el-form-item label="本地字幕路径">
-            <el-input v-model="episodeResourceForm.subtitle_path" placeholder="可选，已存在的字幕路径" />
-          </el-form-item>
-        </div>
       </el-form>
       <template #footer>
         <el-button @click="episodeResourceDialogOpen = false">取消</el-button>
@@ -127,18 +105,10 @@ export default appContextComponent()
           <el-step title="确认写入" />
         </el-steps>
         <div v-if="batchSubtitleStep === 0" class="guided-step">
-          <el-alert type="info" show-icon :closable="false" title="粘贴字幕下载链接，或选择本地字幕文件；文件名里包含集数时会自动匹配到对应集。" />
+          <el-alert type="info" show-icon :closable="false" title="粘贴字幕下载链接；文件名或链接里包含集数时会自动匹配到对应集。" />
           <el-form :model="batchSubtitleForm" label-position="top">
             <el-form-item label="字幕链接 / 文件名">
               <el-input v-model="batchSubtitleForm.subtitles_text" type="textarea" :rows="8" placeholder="https://example.com/show.05.ass&#10;[Subtitle] Show - 06.srt" />
-            </el-form-item>
-            <el-form-item label="本地字幕文件">
-              <el-upload action="#" :auto-upload="false" multiple :on-change="handleBatchSubtitlePicked">
-                <el-button plain>选择字幕文件</el-button>
-                <template #tip>
-                  <div class="el-upload__tip">{{ batchSubtitleForm.file_names.length ? batchSubtitleForm.file_names.join('，') : '选择后会上传到服务端临时区，并按文件名集数自动匹配。' }}</div>
-                </template>
-              </el-upload>
             </el-form-item>
           </el-form>
         </div>
@@ -417,23 +387,9 @@ export default appContextComponent()
         <template v-if="mediaWizardStep === 0">
           <div class="wizard-intro">
             <strong>选择收录来源</strong>
-            <span>可以先给本地文件或磁力链接，系统会用文件名/链接提取作品线索；也可以只手动登记作品。</span>
+            <span>可以先给磁力或下载链接，系统会用链接提取作品线索；也可以只手动登记作品。</span>
           </div>
           <el-tabs v-model="mediaWizardDraft.source_mode" class="wizard-source-tabs">
-            <el-tab-pane label="本地文件上传" name="local">
-              <el-upload
-                v-model:file-list="mediaWizardFiles"
-                drag
-                action="#"
-                :auto-upload="false"
-                multiple
-                :on-change="syncMediaWizardFileResources"
-                :on-remove="syncMediaWizardFileResources"
-              >
-                <p>选择本地媒体文件</p>
-                <small>选择后会自动进入集数资源列表；电影未识别集数时默认第 1 集。</small>
-              </el-upload>
-            </el-tab-pane>
             <el-tab-pane label="磁力 / 下载链接" name="link">
               <el-form label-position="top" class="wizard-form">
                 <el-form-item label="资源链接">
@@ -495,12 +451,6 @@ export default appContextComponent()
             <span>一行就是一集资源。自动识别只是初稿，集数、标题、来源都可以手动修正。</span>
           </div>
           <el-tabs v-model="mediaWizardDraft.source_mode" class="wizard-source-tabs">
-            <el-tab-pane label="本地文件上传" name="local">
-              <el-upload v-model:file-list="mediaWizardFiles" drag action="#" :auto-upload="false" multiple :on-change="syncMediaWizardFileResources" :on-remove="syncMediaWizardFileResources">
-                <p>继续添加本地媒体文件</p>
-                <small>文件会按下方集数信息整理为规范文件名。</small>
-              </el-upload>
-            </el-tab-pane>
             <el-tab-pane label="磁力 / 下载链接" name="link">
               <div class="wizard-resource-input">
                 <el-input v-model="mediaWizardDraft.resource_input" type="textarea" :rows="4" placeholder="每行一个资源链接" />
@@ -517,9 +467,9 @@ export default appContextComponent()
             </div>
             <div v-for="(item, index) in mediaWizardResourceItems" :key="item.id" class="wizard-resource-row">
               <el-input-number v-model="item.episode_number" :min="1" :max="999" controls-position="right" />
-              <el-tag :type="item.source_mode === 'local' ? 'success' : 'primary'">{{ item.source_mode === 'local' ? '本地' : '下载' }}</el-tag>
+              <el-tag type="primary">下载</el-tag>
               <el-input v-model="item.title" placeholder="资源标题" />
-              <el-input v-model="item.source_ref" :disabled="item.source_mode === 'local'" placeholder="资源链接或本地文件名" />
+              <el-input v-model="item.source_ref" placeholder="magnet:? / https://... / 种子链接" />
               <el-button type="danger" plain @click="removeMediaWizardResourceItem(index)">删除</el-button>
               <div class="wizard-resource-subline">
                 <el-select v-model="item.subtitle_format" clearable placeholder="字幕类型">
@@ -532,7 +482,7 @@ export default appContextComponent()
                 <el-input v-model="item.subtitle_ref" placeholder="这一集的字幕链接 / 字幕文件名，可留空" />
               </div>
             </div>
-            <el-empty v-if="!mediaWizardResourceRows.length" description="还没有集数资源；可以只登记作品，也可以先添加链接或本地文件。" />
+            <el-empty v-if="!mediaWizardResourceRows.length" description="还没有集数资源；可以只登记作品，也可以先添加磁链、种子或下载链接。" />
           </div>
         </template>
         <template v-else-if="mediaWizardStep === 3">
@@ -541,9 +491,6 @@ export default appContextComponent()
             <span>字幕会按文件名或链接里的集数自动匹配到对应集。识别不准时可以直接修改集数。</span>
           </div>
           <el-tabs class="wizard-source-tabs">
-            <el-tab-pane label="本地字幕上传" name="local-subtitle">
-              <el-alert type="info" show-icon :closable="false" title="批量上传字幕文件会在下一轮接入；当前可先填字幕文件名或字幕链接。" />
-            </el-tab-pane>
             <el-tab-pane label="字幕链接 / 文件名" name="link-subtitle">
               <div class="wizard-resource-input">
                 <el-input v-model="mediaWizardDraft.subtitle_input" type="textarea" :rows="4" placeholder="每行一个字幕链接或字幕文件名" />
@@ -584,7 +531,6 @@ export default appContextComponent()
               <div><span>资源</span><code>{{ mediaWizardResourceRows.length ? `${mediaWizardResourceRows.length} 条` : '只登记作品' }}</code></div>
               <div><span>字幕链接</span><code>{{ mediaWizardSubtitleRows.length ? `${mediaWizardSubtitleRows.length} 条` : '未填写字幕' }}</code></div>
               <div><span>字幕规则</span><code>{{ subtitleFormatText(mediaWizardDraft.subtitle_format) || '-' }} · {{ mediaWizardDraft.language || '-' }}</code></div>
-              <div><span>本地文件</span><code>{{ mediaWizardFiles.length ? `${mediaWizardFiles.length} 个` : '-' }}</code></div>
             </div>
           </div>
         </template>
@@ -597,4 +543,3 @@ export default appContextComponent()
       </template>
     </el-dialog>
 </template>
-
