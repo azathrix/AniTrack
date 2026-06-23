@@ -138,6 +138,8 @@ const metadataSearchKeyword = ref('')
 const metadataSearchLoading = ref(false)
 const metadataSearchResults = ref({ bangumi: [], tmdb: [] })
 const metadataSearchTarget = ref('wizard')
+const metadataSelectedBangumi = ref(null)
+const metadataSelectedTmdb = ref(null)
 const episodeResourceDialogOpen = ref(false)
 const entryEditDialogOpen = ref(false)
 const batchSubtitleDialogOpen = ref(false)
@@ -941,6 +943,8 @@ exposeAppContext({
   metadataSearchProvider,
   metadataSearchResults,
   metadataSearchTarget,
+  metadataSelectedBangumi,
+  metadataSelectedTmdb,
   numberFromInput,
   openBatchSubtitleDialog,
   openEpisodeImportDialog,
@@ -1012,7 +1016,6 @@ const {
   addDownloader,
   advanceMediaWizard,
   apiErrorMessage,
-  applyMetadataSearchItem,
   applyMetadataToWizard,
   archiveCurrentEntry,
   cancelAllDownloads,
@@ -1054,6 +1057,10 @@ const {
   saveRssSubscription,
   saveScheduledJob,
   searchWizardMetadata,
+  confirmMetadataMatch,
+  selectedMetadataCandidate,
+  selectMetadataCandidate,
+  skipMetadataProvider,
   startMetadataProgress,
   stopMetadataProgress,
   syncScheduledJobForm,
@@ -1075,7 +1082,6 @@ exposeAppContext({
   addDownloader,
   advanceMediaWizard,
   apiErrorMessage,
-  applyMetadataSearchItem,
   applyMetadataToWizard,
   archiveCurrentEntry,
   cancelAllDownloads,
@@ -1117,6 +1123,10 @@ exposeAppContext({
   saveRssSubscription,
   saveScheduledJob,
   searchWizardMetadata,
+  confirmMetadataMatch,
+  selectedMetadataCandidate,
+  selectMetadataCandidate,
+  skipMetadataProvider,
   startMetadataProgress,
   stopMetadataProgress,
   syncScheduledJobForm,

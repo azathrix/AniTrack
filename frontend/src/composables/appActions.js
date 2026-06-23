@@ -422,38 +422,81 @@ export function createAppActions(app, deps) {
     app.mediaWizardStep = Math.min(3, app.mediaWizardStep + 1)
   }
 
+  function hasFieldValue(value) {
+    if (value === null || value === undefined) return false
+    return String(value).trim() !== '' && String(value).trim() !== '0'
+  }
+
+  function fillIfEmpty(target, key, value) {
+    if (!hasFieldValue(value) || hasFieldValue(target[key])) return
+    target[key] = value
+  }
+
+  function fillListIfEmpty(target, key, value) {
+    if (hasFieldValue(target[key])) return
+    const text = listTextFromJson(value)
+    if (text) target[key] = text
+  }
+
   function applyMetadataToWizard(item) {
-    app.mediaWizardDraft.title = item.title || item.original_title || app.mediaWizardDraft.title
-    app.mediaWizardDraft.year = item.year || app.mediaWizardDraft.year
-    app.mediaWizardDraft.month = item.month || app.mediaWizardDraft.month
-    app.mediaWizardDraft.region = item.region || app.mediaWizardDraft.region
-    app.mediaWizardDraft.poster_url = item.poster_url || app.mediaWizardDraft.poster_url
-    app.mediaWizardDraft.summary = item.summary || app.mediaWizardDraft.summary
-    if (item.tags_json || item.tags) app.mediaWizardDraft.tags_text = listTextFromJson(item.tags_json || item.tags)
-    if (item.genres_json || item.genres) app.mediaWizardDraft.genres_text = listTextFromJson(item.genres_json || item.genres)
-    if (item.provider === 'bangumi') app.mediaWizardDraft.bangumi_id = String(item.id || '')
-    if (item.provider === 'tmdb') app.mediaWizardDraft.tmdb_id = String(item.id || '')
+    fillIfEmpty(app.mediaWizardDraft, 'title', item.title || item.original_title)
+    fillIfEmpty(app.mediaWizardDraft, 'year', item.year)
+    fillIfEmpty(app.mediaWizardDraft, 'month', item.month)
+    fillIfEmpty(app.mediaWizardDraft, 'region', item.region)
+    fillIfEmpty(app.mediaWizardDraft, 'poster_url', item.poster_url)
+    fillIfEmpty(app.mediaWizardDraft, 'summary', item.summary)
+    fillListIfEmpty(app.mediaWizardDraft, 'tags_text', item.tags_json || item.tags)
+    if (item.provider === 'bangumi') fillIfEmpty(app.mediaWizardDraft, 'bangumi_id', String(item.id || ''))
+    if (item.provider === 'tmdb') fillIfEmpty(app.mediaWizardDraft, 'tmdb_id', String(item.id || ''))
   }
 
   function applyMetadataToEntryEdit(item) {
-    app.entryEditForm.title_cn = item.title || item.original_title || app.entryEditForm.title_cn
-    app.entryEditForm.title_raw = item.original_title || app.entryEditForm.title_raw
-    app.entryEditForm.year = item.year || app.entryEditForm.year
-    app.entryEditForm.month = item.month || app.entryEditForm.month
-    app.entryEditForm.region = item.region || app.entryEditForm.region
-    app.entryEditForm.poster_url = item.poster_url || app.entryEditForm.poster_url
-    app.entryEditForm.summary = item.summary || app.entryEditForm.summary
-    if (item.tags_json || item.tags) app.entryEditForm.tags_text = listTextFromJson(item.tags_json || item.tags)
-    if (item.genres_json || item.genres) app.entryEditForm.genres_text = listTextFromJson(item.genres_json || item.genres)
-    if (item.provider === 'bangumi') app.entryEditForm.bangumi_id = String(item.id || '')
-    if (item.provider === 'tmdb') app.entryEditForm.tmdb_id = String(item.id || '')
+    fillIfEmpty(app.entryEditForm, 'title_cn', item.title || item.original_title)
+    fillIfEmpty(app.entryEditForm, 'title_raw', item.original_title)
+    fillIfEmpty(app.entryEditForm, 'year', item.year)
+    fillIfEmpty(app.entryEditForm, 'month', item.month)
+    fillIfEmpty(app.entryEditForm, 'region', item.region)
+    fillIfEmpty(app.entryEditForm, 'poster_url', item.poster_url)
+    fillIfEmpty(app.entryEditForm, 'summary', item.summary)
+    fillListIfEmpty(app.entryEditForm, 'tags_text', item.tags_json || item.tags)
+    if (item.provider === 'bangumi') fillIfEmpty(app.entryEditForm, 'bangumi_id', String(item.id || ''))
+    if (item.provider === 'tmdb') fillIfEmpty(app.entryEditForm, 'tmdb_id', String(item.id || ''))
   }
 
-  function applyMetadataSearchItem(item) {
-    if (app.metadataSearchTarget === 'entry') applyMetadataToEntryEdit(item)
-    else applyMetadataToWizard(item)
+  function selectedMetadataCandidate(provider = app.metadataSearchProvider) {
+    return provider === 'tmdb' ? app.metadataSelectedTmdb : app.metadataSelectedBangumi
+  }
+
+  function selectMetadataCandidate(item) {
+    if (!item) return
+    if (item.provider === 'tmdb') {
+      app.metadataSelectedTmdb = item
+    } else {
+      app.metadataSelectedBangumi = item
+      app.metadataSearchProvider = 'tmdb'
+    }
+  }
+
+  function skipMetadataProvider() {
+    if (app.metadataSearchProvider === 'bangumi') {
+      app.metadataSearchProvider = 'tmdb'
+      return
+    }
+    confirmMetadataMatch()
+  }
+
+  function confirmMetadataMatch() {
+    const selected = [app.metadataSelectedBangumi, app.metadataSelectedTmdb].filter(Boolean)
+    if (!selected.length) {
+      ElMessage.warning('请先选择一个匹配结果，或取消匹配')
+      return
+    }
+    for (const item of selected) {
+      if (app.metadataSearchTarget === 'entry') applyMetadataToEntryEdit(item)
+      else applyMetadataToWizard(item)
+    }
     app.metadataSearchDialogOpen = false
-    ElMessage.success('已填入作品信息')
+    ElMessage.success('已按空字段优先填入作品信息')
   }
 
   async function searchWizardMetadata(provider, keyword, autoApply = false) {
@@ -476,6 +519,8 @@ export function createAppActions(app, deps) {
       ? (app.entryEditForm.title_cn || app.entryEditForm.title_raw || '')
       : (app.mediaWizardDraft.title || titleFromResourceSeed(app.mediaWizardSeed || app.mediaWizardDraft.resources_text || '') || '')
     app.metadataSearchResults = { bangumi: [], tmdb: [] }
+    app.metadataSelectedBangumi = null
+    app.metadataSelectedTmdb = null
     app.metadataSearchDialogOpen = true
     if (app.metadataSearchKeyword) await runMetadataSearch()
   }
@@ -811,7 +856,6 @@ export function createAppActions(app, deps) {
     addDownloader,
     advanceMediaWizard,
     apiErrorMessage,
-    applyMetadataSearchItem,
     applyMetadataToWizard,
     archiveCurrentEntry,
     cancelAllDownloads,
@@ -853,6 +897,10 @@ export function createAppActions(app, deps) {
     saveRssSubscription,
     saveScheduledJob,
     searchWizardMetadata,
+    confirmMetadataMatch,
+    selectedMetadataCandidate,
+    selectMetadataCandidate,
+    skipMetadataProvider,
     startMetadataProgress,
     stopMetadataProgress,
     syncScheduledJobForm,

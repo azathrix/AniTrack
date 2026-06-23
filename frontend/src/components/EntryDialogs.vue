@@ -39,16 +39,12 @@ export default appContextComponent()
         <el-form-item label="标签">
           <el-input v-model="entryEditForm.tags_text" type="textarea" :rows="3" placeholder="一行一个标签，或用逗号分隔" />
         </el-form-item>
-        <el-form-item label="类型 / 题材">
-          <el-input v-model="entryEditForm.genres_text" type="textarea" :rows="2" placeholder="一行一个类型，或用逗号分隔" />
-        </el-form-item>
         <el-form-item label="简介"><el-input v-model="entryEditForm.summary" type="textarea" :rows="4" /></el-form-item>
         <el-progress v-if="metadataFetching || metadataFetchProgress" :percentage="metadataFetchProgress" :status="metadataFetchProgress >= 100 ? 'success' : undefined" />
       </el-form>
       <template #footer>
         <el-button @click="entryEditDialogOpen = false">取消</el-button>
         <el-button plain @click="openMetadataSearch('bangumi', 'entry')">匹配</el-button>
-        <el-button plain :loading="metadataFetching" @click="fetchEntryMetadata">扒信息</el-button>
         <el-button type="primary" @click="saveEntryEditForm">保存</el-button>
       </template>
     </el-dialog>
@@ -315,6 +311,10 @@ export default appContextComponent()
 
     <el-dialog v-model="metadataSearchDialogOpen" title="作品匹配" width="900px">
       <div class="metadata-search-dialog">
+        <el-steps :active="metadataSearchProvider === 'bangumi' ? 0 : 1" finish-status="success" simple class="metadata-match-steps">
+          <el-step title="匹配 Bangumi" />
+          <el-step title="匹配 TMDB" />
+        </el-steps>
         <div class="metadata-search-bar">
           <el-input v-model="metadataSearchKeyword" clearable placeholder="输入作品名" @keyup.enter="runMetadataSearch" />
           <el-button type="primary" :loading="metadataSearchLoading" @click="runMetadataSearch">匹配</el-button>
@@ -329,7 +329,12 @@ export default appContextComponent()
         <el-tabs v-model="metadataSearchProvider" class="metadata-result-tabs">
           <el-tab-pane label="Bangumi" name="bangumi">
             <div class="metadata-result-list" v-loading="metadataSearchLoading">
-              <article v-for="item in metadataSearchResults.bangumi" :key="`${item.provider}-${item.id}`" class="metadata-result-card">
+              <article
+                v-for="item in metadataSearchResults.bangumi"
+                :key="`${item.provider}-${item.id}`"
+                :class="['metadata-result-card', { active: selectedMetadataCandidate('bangumi')?.id === item.id }]"
+                @click="selectMetadataCandidate(item)"
+              >
                 <img v-if="item.poster_url" :src="item.poster_url" />
                 <span v-else>{{ (item.title || item.original_title || '候选').slice(0, 2) }}</span>
                 <div>
@@ -337,15 +342,20 @@ export default appContextComponent()
                   <small>{{ item.original_title || '-' }}</small>
                   <p>{{ item.summary || '暂无简介' }}</p>
                   <code>{{ item.provider }} · {{ item.id }} · {{ item.year || '年份未知' }}</code>
+                  <em v-if="selectedMetadataCandidate('bangumi')?.id === item.id">已选中，下一步匹配 TMDB</em>
                 </div>
-                <el-button type="primary" @click="applyMetadataSearchItem(item)">填入</el-button>
               </article>
               <el-empty v-if="!metadataSearchLoading && !metadataSearchResults.bangumi.length" description="暂无 Bangumi 匹配结果" />
             </div>
           </el-tab-pane>
           <el-tab-pane label="TMDB" name="tmdb">
             <div class="metadata-result-list" v-loading="metadataSearchLoading">
-              <article v-for="item in metadataSearchResults.tmdb" :key="`${item.provider}-${item.id}`" class="metadata-result-card">
+              <article
+                v-for="item in metadataSearchResults.tmdb"
+                :key="`${item.provider}-${item.id}`"
+                :class="['metadata-result-card', { active: selectedMetadataCandidate('tmdb')?.id === item.id }]"
+                @click="selectMetadataCandidate(item)"
+              >
                 <img v-if="item.poster_url" :src="item.poster_url" />
                 <span v-else>{{ (item.title || item.original_title || '候选').slice(0, 2) }}</span>
                 <div>
@@ -353,14 +363,20 @@ export default appContextComponent()
                   <small>{{ item.original_title || '-' }}</small>
                   <p>{{ item.summary || '暂无简介' }}</p>
                   <code>{{ item.provider }} · {{ item.id }} · {{ item.year || '年份未知' }}</code>
+                  <em v-if="selectedMetadataCandidate('tmdb')?.id === item.id">已选中</em>
                 </div>
-                <el-button type="primary" @click="applyMetadataSearchItem(item)">填入</el-button>
               </article>
               <el-empty v-if="!metadataSearchLoading && !metadataSearchResults.tmdb.length" description="暂无 TMDB 匹配结果" />
             </div>
           </el-tab-pane>
         </el-tabs>
       </div>
+      <template #footer>
+        <el-button @click="metadataSearchDialogOpen = false">取消</el-button>
+        <el-button plain @click="skipMetadataProvider">{{ metadataSearchProvider === 'bangumi' ? '跳过 Bangumi' : '跳过 TMDB' }}</el-button>
+        <el-button v-if="metadataSearchProvider === 'bangumi'" type="primary" @click="metadataSearchProvider = 'tmdb'">下一步 TMDB</el-button>
+        <el-button v-else type="primary" @click="confirmMetadataMatch">确认填入</el-button>
+      </template>
     </el-dialog>
 
     <el-dialog v-model="mediaWizardOpen" :title="mediaWizardTitle" width="760px">
@@ -426,7 +442,7 @@ export default appContextComponent()
           </div>
           <el-form :model="mediaWizardDraft" label-position="top" class="wizard-form">
             <div class="wizard-form-grid labeled">
-              <el-form-item label="作品标题">
+              <el-form-item label="作品标题" class="full-row">
                 <div class="field-with-action">
                   <el-input v-model="mediaWizardDraft.title" placeholder="例如 欢迎来到实力至上主义的教室 第四季" />
                   <el-button type="primary" plain @click="openMetadataSearch('bangumi', 'wizard')">匹配</el-button>
@@ -452,8 +468,7 @@ export default appContextComponent()
               </el-form-item>
               <el-form-item label="海报 URL"><el-input v-model="mediaWizardDraft.poster_url" placeholder="可选，匹配后会自动填入" /></el-form-item>
               <el-form-item label="标签"><el-input v-model="mediaWizardDraft.tags_text" type="textarea" :rows="2" placeholder="一行一个标签" /></el-form-item>
-              <el-form-item label="类型 / 题材"><el-input v-model="mediaWizardDraft.genres_text" type="textarea" :rows="2" placeholder="一行一个类型" /></el-form-item>
-              <el-form-item label="简介"><el-input v-model="mediaWizardDraft.summary" type="textarea" :rows="4" /></el-form-item>
+              <el-form-item label="简介" class="full-row"><el-input v-model="mediaWizardDraft.summary" type="textarea" :rows="4" /></el-form-item>
             </div>
           </el-form>
         </template>

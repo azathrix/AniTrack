@@ -71,8 +71,15 @@ async def search_tmdb(keyword: str, token: str, proxy: str = "") -> list[dict[st
         )
         resp.raise_for_status()
         data = resp.json()
+        rows = data.get("results", [])[:20]
+        keyword_map: dict[str, list[str]] = {}
+        for row in rows[:10]:
+            media_type = row.get("media_type") or ""
+            item_id = str(row.get("id") or "")
+            if media_type in {"movie", "tv"} and item_id:
+                keyword_map[item_id] = await fetch_tmdb_keywords(client, media_type, item_id)
     items: list[dict[str, Any]] = []
-    for row in data.get("results", [])[:20]:
+    for row in rows:
         media_type = row.get("media_type") or ""
         if media_type not in {"movie", "tv"}:
             continue
@@ -95,9 +102,26 @@ async def search_tmdb(keyword: str, token: str, proxy: str = "") -> list[dict[st
                 "region": region,
                 "poster_url": f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else "",
                 "summary": row.get("overview") or "",
+                "tags_json": json.dumps(keyword_map.get(str(row.get("id") or ""), []), ensure_ascii=False),
             }
         )
     return items
+
+
+async def fetch_tmdb_keywords(client: httpx.AsyncClient, media_type: str, item_id: str) -> list[str]:
+    try:
+        resp = await client.get(f"{TMDB_API}/{media_type}/{item_id}/keywords")
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception:
+        return []
+    rows = data.get("results") if media_type == "tv" else data.get("keywords")
+    names = []
+    for row in rows or []:
+        name = str(row.get("name") or "").strip()
+        if name:
+            names.append(name)
+    return list(dict.fromkeys(names))[:16]
 
 
 def subject_cn_name(subject: dict[str, Any]) -> str:

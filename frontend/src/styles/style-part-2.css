@@ -56,6 +56,10 @@
   grid-template-columns: minmax(0, 1fr) auto;
 }
 
+.metadata-match-steps {
+  margin-bottom: 12px;
+}
+
 .metadata-result-list,
 .metadata-candidate-list {
   display: grid;
@@ -118,7 +122,12 @@
 }
 
 .metadata-result-card {
-  grid-template-columns: 88px minmax(0, 1fr) auto;
+  grid-template-columns: 88px minmax(0, 1fr);
+}
+
+.metadata-result-card.active {
+  border-color: rgba(79, 124, 255, .76);
+  box-shadow: 0 14px 36px rgba(79, 124, 255, .16);
 }
 
 .metadata-result-card img,
@@ -165,11 +174,24 @@
   -webkit-line-clamp: 3;
 }
 
+.metadata-result-card em {
+  color: #4f7cff;
+  display: inline-flex;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+  margin-top: 6px;
+}
+
 .metadata-result-list code {
   color: #64748b;
   display: block;
   font-size: 12px;
   margin-top: 6px;
+}
+
+.wizard-form-grid.labeled .full-row {
+  grid-column: 1 / -1;
 }
 
 .field-with-action {
