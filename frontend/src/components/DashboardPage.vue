@@ -95,7 +95,15 @@ export default appContextComponent()
                         <el-button size="small" type="danger" plain>取消全部</el-button>
                       </template>
                     </el-popconfirm>
-                    <el-button v-if="selectedQueueAction" size="small" plain @click="runAction(selectedQueueAction)">立即执行该队列</el-button>
+                    <el-button
+                      v-if="selectedQueueAction"
+                      size="small"
+                      plain
+                      :disabled="!Number(selectedQueue.pending || 0) && !Number(selectedQueue.waiting || 0) && !Number(selectedQueue.running || 0)"
+                      @click="runAction(selectedQueueAction)"
+                    >
+                      {{ Number(selectedQueue.waiting || 0) ? '立即重试该队列' : '立即执行该队列' }}
+                    </el-button>
                   </div>
                 </div>
                 <div class="detail-summary-grid">

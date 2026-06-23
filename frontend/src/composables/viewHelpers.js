@@ -221,6 +221,7 @@ export function queueBadge(queue) {
   if (Number(queue.failed || 0) > 0) return `${queue.failed} 失败`
   if (Number(queue.running || 0) > 0) return `${queue.running} 运行`
   if (Number(queue.pending || 0) > 0) return `${queue.pending} 待处理`
+  if (Number(queue.waiting || 0) > 0) return `${queue.waiting} 重试`
   return '空闲'
 }
 

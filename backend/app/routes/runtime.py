@@ -77,11 +77,24 @@ async def api_trigger_queue(queue_name: str) -> dict[str, str]:
     if requested_name == "rss":
         return await api_scan()
     name = canonical_queue_key(requested_name)
+    reset_count = await runtime_store.retry_queue_tasks("" if name == "processor" else name)
     if name not in queue_handlers:
         trigger_queue("processor", delay=0)
-        return {"status": "started", "message": f"已触发 Runtime 处理器处理 {requested_name}"}
+        if reset_count:
+            log("info", f"已立即重试队列: queue={requested_name} tasks={reset_count}")
+            return {"status": "started", "count": str(reset_count), "message": f"已立即重试该队列: {reset_count} 个等待任务"}
+        ready = runtime_store.ready_count(name)
+        if ready <= 0:
+            return {"status": "idle", "count": "0", "message": "该队列没有到期可执行任务；等待重试任务需要点击重试或等待倒计时结束"}
+        return {"status": "started", "count": str(ready), "message": f"已触发该队列: {ready} 个可执行任务"}
     trigger_queue(name, delay=0)
-    return {"status": "started", "message": f"队列 {requested_name} 已立即触发"}
+    if reset_count:
+        log("info", f"已立即重试队列: queue={requested_name} tasks={reset_count}")
+        return {"status": "started", "count": str(reset_count), "message": f"已立即重试该队列: {reset_count} 个等待任务"}
+    ready = runtime_store.ready_count()
+    if ready <= 0:
+        return {"status": "idle", "count": "0", "message": "当前没有到期可执行任务"}
+    return {"status": "started", "count": str(ready), "message": f"队列 {requested_name} 已立即触发"}
 
 
 @router.post("/api/tasks/process")

@@ -357,6 +357,24 @@ class RuntimeStore:
             await self.bump()
         return cancelled
 
+    async def retry_queue_tasks(self, queue_key: str = "", include_failed: bool = False) -> int:
+        reset = 0
+        async with self._lock:
+            now_value = utc_now()
+            for task in self.tasks.values():
+                if queue_key and task.queue_key != queue_key:
+                    continue
+                if task.status == "waiting" or (include_failed and task.status == "failed"):
+                    task.status = "pending"
+                    task.retry_at = ""
+                    task.error = ""
+                    task.message = "手动立即重试"
+                    task.updated_at = now_value
+                    reset += 1
+        if reset:
+            await self.bump()
+        return reset
+
     def has_active_episode_task(self, entry_id: int, episode_number: int, processor_keys: set[str] | None = None) -> bool:
         for task in self.tasks.values():
             if task.status in TASK_TERMINAL_STATUSES:
