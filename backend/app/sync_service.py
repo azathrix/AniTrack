@@ -8,7 +8,7 @@ from .database import connect
 from .downloader_service import download_to_local, list_remote_files, provider_key, remote_file_id
 from .db import log, now
 from .library import expected_local_episode_path, media_root_for_type
-from .parser import normalize_title_key, parse_episode
+from .parser import normalize_title_key
 
 
 
@@ -116,8 +116,6 @@ async def find_existing_remote_episode(
         if Path(name).suffix.lower() not in VIDEO_SUFFIXES:
             continue
         if normalized_expected and normalize_title_key(name) == normalized_expected:
-            return item
-        if episode_number > 0 and parse_episode(name) == episode_number:
             return item
     return None
 

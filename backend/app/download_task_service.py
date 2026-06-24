@@ -385,6 +385,11 @@ def list_download_tasks(limit: int = 200) -> list[dict[str, Any]]:
         item["downloaded_size"] = downloaded_size
         item["downloaded_size_text"] = human_size(downloaded_size)
         item["total_size_text"] = human_size(total_size)
+        if status == "local_copying" and downloaded_size <= 0:
+            status = "remote_downloading"
+            item["status"] = status
+            item["phase"] = "remote_downloading"
+            item["status_text"] = download_status_text(status)
         if status in ACTIVE_DOWNLOAD_STATUSES:
             if total_size > 0 and downloaded_size > 0:
                 item["progress"] = min(99, max(1, int(downloaded_size * 100 / total_size)))

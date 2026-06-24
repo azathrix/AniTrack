@@ -24,6 +24,7 @@ from ..sync_service import (
     local_episode_path,
     synthetic_task_id,
     task_retry_after,
+    task_retry_after_minutes,
     upsert_download_artifact_for_release,
 )
 
@@ -237,6 +238,28 @@ def _asset_item(target_directory: str, normalized_name: str, provider_file_id: s
     }
 
 
+def _remote_item_size(item: dict | None) -> int:
+    if not item:
+        return 0
+    try:
+        return max(0, int(item.get("size") or item.get("Size") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _remote_item_stable(submission, item: dict | None) -> bool:
+    current_size = _remote_item_size(item)
+    if current_size <= 0:
+        return False
+    if not submission:
+        return False
+    try:
+        previous_size = max(0, int(submission["total_size"] or 0))
+    except (TypeError, ValueError):
+        previous_size = 0
+    return previous_size > 0 and previous_size == current_size
+
+
 def _local_asset_for_episode(entry_id: int, episode_number: int):
     with connect() as conn:
         return conn.execute(
@@ -314,6 +337,21 @@ async def process_download_presence(context: ProcessorContext, payload: dict) ->
         )
 
     if existing_remote:
+        existing_submission = _submission_for_release(release_id)
+        if not _remote_item_stable(existing_submission, existing_remote):
+            retry_after = task_retry_after_minutes(1)
+            _upsert_submission(
+                settings=settings,
+                release=release,
+                status="remote_downloading",
+                target_directory=remote_target,
+                normalized_name=str(existing_remote.get("name") or remote_name),
+                provider_file_id=download_file_id(existing_remote),
+                retry_after=retry_after,
+                last_error="远端文件已出现，等待文件大小稳定后再整理",
+                total_size=_remote_item_size(existing_remote),
+            )
+            return ProcessorResult.retryable("远端文件已出现，等待文件大小稳定后再整理", retry_after)
         asset_id = upsert_download_artifact_for_release(release_id, existing_remote, settings) or 0
         if asset_id <= 0:
             return ProcessorResult.retryable(
@@ -404,6 +442,26 @@ async def process_download_submit(context: ProcessorContext, payload: dict) -> P
             task_retry_after(settings, context.attempts + 1),
         )
     if existing_remote:
+        existing_submission = _submission_for_release(release_id)
+        if not _remote_item_stable(existing_submission, existing_remote):
+            retry_after = task_retry_after_minutes(1)
+            _upsert_submission(
+                settings=settings,
+                release=release,
+                status="remote_downloading",
+                target_directory=remote_target,
+                normalized_name=str(existing_remote.get("name") or remote_name),
+                provider_file_id=download_file_id(existing_remote),
+                retry_after=retry_after,
+                last_error="远端文件已出现，等待文件大小稳定后再整理",
+                total_size=_remote_item_size(existing_remote),
+            )
+            log(
+                "info",
+                f"下载提交前命中远端文件但暂不整理: release_id={release_id} entry_id={release['entry_id']} "
+                f"episode={release['episode_number']} size={_remote_item_size(existing_remote)}",
+            )
+            return ProcessorResult.retryable("远端文件已出现，等待文件大小稳定后再整理", retry_after)
         asset_id = upsert_download_artifact_for_release(release_id, existing_remote, settings) or 0
         if asset_id <= 0:
             return ProcessorResult.retryable(
@@ -628,7 +686,10 @@ async def process_download_poll(context: ProcessorContext, payload: dict) -> Pro
                 matched = await find_existing_remote_episode(settings, remote_target, remote_name, int(release["episode_number"] or 0))
                 if matched:
                     file_id = download_file_id(matched)
-                    status = "remote_completed"
+                    if _remote_item_stable(submission, matched):
+                        status = "remote_completed"
+                    else:
+                        message = "远端文件已出现，等待文件大小稳定后再整理"
                 else:
                     message = "下载器已提交，目标目录暂未发现完成文件"
             elif file_id and not str(submission["submission_id"] or ""):
@@ -654,6 +715,8 @@ async def process_download_poll(context: ProcessorContext, payload: dict) -> Pro
 
     if status != "remote_completed":
         retry_after = task_retry_after(settings, context.attempts + 1)
+        if matched:
+            retry_after = task_retry_after_minutes(1)
         _upsert_submission(
             settings=settings,
             release=release,
@@ -664,6 +727,7 @@ async def process_download_poll(context: ProcessorContext, payload: dict) -> Pro
             provider_file_id=file_id,
             retry_after=retry_after,
             last_error=message,
+            total_size=_remote_item_size(matched) if matched else 0,
         )
         log(
             "info" if status != "failed" else "warn",
