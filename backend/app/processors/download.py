@@ -95,10 +95,10 @@ def _upsert_submission(
     phase = download_phase(status)
     progress = {
         "pending": 0,
-        "submitting": 8,
-        "remote_downloading": 20,
-        "remote_completed": 45,
-        "local_copying": 50,
+        "submitting": 0,
+        "remote_downloading": 0,
+        "remote_completed": 0,
+        "local_copying": 0,
         "completed": 100,
         "failed": 0,
         "cancelled": 0,

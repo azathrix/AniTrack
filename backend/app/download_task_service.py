@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any
 import hashlib
 
@@ -17,7 +17,7 @@ FINAL_DOWNLOAD_STATUSES = {"completed", "failed", "cancelled"}
 DOWNLOAD_STATUS_MAP = {
     "running": "submitting",
     "submitted": "remote_downloading",
-    "downloading": "local_copying",
+    "downloading": "remote_downloading",
 }
 
 
@@ -53,6 +53,22 @@ def download_status_text(value: str) -> str:
         "failed": "失败",
         "cancelled": "已取消",
     }.get(download_phase(value), value or "等待下载")
+
+
+def human_size(value: int | str | None) -> str:
+    try:
+        size = max(0, int(value or 0))
+    except (TypeError, ValueError):
+        size = 0
+    if size <= 0:
+        return ""
+    units = ["B", "KB", "MB", "GB", "TB"]
+    amount = float(size)
+    for unit in units:
+        if amount < 1024 or unit == units[-1]:
+            return f"{int(amount)} B" if unit == "B" else f"{amount:.1f} {unit}"
+        amount /= 1024
+    return f"{size} B"
 
 
 def provider_index_from_key(value: str) -> int:
@@ -324,9 +340,15 @@ def list_download_tasks(limit: int = 200) -> list[dict[str, Any]]:
             LEFT JOIN episodes ep ON ep.id=dj.episode_id
             LEFT JOIN episode_resources er ON er.id=dj.episode_resource_id
             LEFT JOIN local_assets la
-              ON la.entry_id=dj.entry_id
-             AND la.episode_number=dj.episode_number
-             AND la.status='synced'
+              ON la.id=(
+                SELECT id
+                FROM local_assets
+                WHERE entry_id=dj.entry_id
+                  AND episode_number=dj.episode_number
+                  AND status='synced'
+                ORDER BY updated_at DESC, id DESC
+                LIMIT 1
+              )
             ORDER BY CASE dj.status
               WHEN 'local_copying' THEN 0
               WHEN 'remote_completed' THEN 1
@@ -337,7 +359,7 @@ def list_download_tasks(limit: int = 200) -> list[dict[str, Any]]:
               WHEN 'cancelled' THEN 6
               WHEN 'completed' THEN 7
               ELSE 8
-            END, dj.updated_at DESC, dj.id DESC
+            END, dj.created_at ASC, dj.id ASC
             LIMIT ?
             """,
             (max(1, min(500, int(limit or 200))),),
@@ -349,6 +371,29 @@ def list_download_tasks(limit: int = 200) -> list[dict[str, Any]]:
         item["status"] = status
         item["phase"] = download_phase(str(item.get("phase") or status))
         item["status_text"] = download_status_text(status)
+        target_path = str(item.get("target_local_path") or item.get("local_asset_path") or "")
+        current_size = 0
+        if target_path:
+            try:
+                path = Path(target_path)
+                if path.exists() and path.is_file():
+                    current_size = path.stat().st_size
+            except OSError:
+                current_size = 0
+        total_size = int(item.get("total_size") or 0)
+        downloaded_size = max(int(item.get("downloaded_size") or 0), current_size)
+        item["downloaded_size"] = downloaded_size
+        item["downloaded_size_text"] = human_size(downloaded_size)
+        item["total_size_text"] = human_size(total_size)
+        if status in ACTIVE_DOWNLOAD_STATUSES:
+            if total_size > 0 and downloaded_size > 0:
+                item["progress"] = min(99, max(1, int(downloaded_size * 100 / total_size)))
+                item["progress_text"] = f"{item['downloaded_size_text']} / {item['total_size_text']}"
+            elif downloaded_size > 0:
+                item["progress"] = 0
+                item["progress_text"] = f"{item['status_text']} · 本地 {item['downloaded_size_text']}"
+            else:
+                item["progress"] = 0
         if status == "completed":
             item["progress"] = 0
             item["progress_text"] = "可观看"
