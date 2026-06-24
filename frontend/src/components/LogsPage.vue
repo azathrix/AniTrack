@@ -32,43 +32,6 @@ export default appContextComponent()
               <pre class="server-log">{{ filteredServerLogText }}</pre>
             </div>
           </el-card>
-
-          <el-card class="console-card maintenance-card">
-            <template #header>
-              <div class="card-header-row">
-                <div>
-                  <strong>维护</strong>
-                  <span>手动触发、失败重试和数据清理</span>
-                </div>
-              </div>
-            </template>
-            <div class="detail-summary-grid maintenance-summary-grid">
-              <div><span>待处理任务</span><strong>{{ dashboard.console_overview?.pending_task_count || 0 }}</strong></div>
-              <div><span>失败任务</span><strong>{{ dashboard.console_overview?.failed_task_count || 0 }}</strong></div>
-              <div><span>等待重试</span><strong>{{ dashboard.console_overview?.waiting_retry_count || 0 }}</strong></div>
-              <div><span>运行队列</span><strong>{{ dashboard.console_overview?.running_queue_count || 0 }}</strong></div>
-            </div>
-            <div class="maintenance-actions maintenance-pane">
-              <el-button type="primary" plain @click="runAction('/tasks/process?force=true')">立即处理任务队列</el-button>
-              <el-button :icon="Refresh" @click="runAction('/tasks/poll')">刷新下载状态</el-button>
-              <el-button type="warning" @click="runAction('/tasks/retry-failed')">重试失败任务</el-button>
-              <el-popconfirm title="会把已识别到的旧本地文件移动到新命名路径，并同步修复数据库状态。确定执行？" @confirm="repairLocalPaths">
-                <template #reference>
-                  <el-button type="primary">修复全部本地路径</el-button>
-                </template>
-              </el-popconfirm>
-              <el-popconfirm title="会清理无法识别集数的发布、资源、字幕和下载记录。确定执行？" @confirm="runAction('/maintenance/cleanup-invalid-episodes')">
-                <template #reference>
-                  <el-button type="warning">清理无效集数</el-button>
-                </template>
-              </el-popconfirm>
-              <el-popconfirm title="会清空番剧、候选、任务、下载记录、本地资源记录和日志。确定？" @confirm="runAction('/system/clear-data')">
-                <template #reference>
-                  <el-button type="danger" plain>清除所有数据</el-button>
-                </template>
-              </el-popconfirm>
-            </div>
-          </el-card>
         </div>
       </section>
 

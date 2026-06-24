@@ -109,6 +109,37 @@ nav button:hover {
   color: #3456d1;
 }
 
+.el-button.el-button--primary:not(.is-link):not(.is-text),
+.el-button.el-button--success:not(.is-link):not(.is-text),
+.el-button.el-button--warning:not(.is-link):not(.is-text),
+.el-button.el-button--danger:not(.is-link):not(.is-text),
+.el-button.el-button--info:not(.is-link):not(.is-text) {
+  color: #fff;
+}
+
+.el-button.el-button--primary:not(.is-link):not(.is-text) span,
+.el-button.el-button--success:not(.is-link):not(.is-text) span,
+.el-button.el-button--warning:not(.is-link):not(.is-text) span,
+.el-button.el-button--danger:not(.is-link):not(.is-text) span,
+.el-button.el-button--info:not(.is-link):not(.is-text) span {
+  color: #fff;
+}
+
+.el-button.el-button--primary.is-plain:not(.is-link):not(.is-text) {
+  background: var(--ani-blue);
+  border-color: var(--ani-blue);
+}
+
+.el-button.el-button--warning.is-plain:not(.is-link):not(.is-text) {
+  background: #e6a23c;
+  border-color: #e6a23c;
+}
+
+.el-button.el-button--danger.is-plain:not(.is-link):not(.is-text) {
+  background: #f56c6c;
+  border-color: #f56c6c;
+}
+
 .main {
   margin-left: 236px;
   min-width: 0;

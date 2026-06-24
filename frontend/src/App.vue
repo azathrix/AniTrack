@@ -156,6 +156,7 @@ const selectedEntryDetail = ref(null)
 const selectedEntryDomain = ref('seasonal')
 const selectedEntryMediaType = ref('anime')
 const expandedResourceKeys = ref([])
+const expandedDownloadTaskKeys = ref([])
 const dashboard = reactive({
   seasonal_items: [],
   library_items: [],
@@ -197,6 +198,7 @@ const episodeResourceForm = reactive({
   subtitle_path: '',
   subtitle_url: '',
   subtitle_file_name: '',
+  local_path: '',
   resources_text: '',
   subtitles_text: '',
 })
@@ -446,62 +448,44 @@ const mediaWizardTitle = computed(() => {
 })
 const entryResourceRows = computed(() => {
   const detail = selectedEntryDetail.value || {}
-  const rows = new Map()
-  const episodeIds = new Map()
-  for (const episode of detail.episodes || []) {
-    episodeIds.set(Number(episode.episode_number || 0), Number(episode.id || 0))
-  }
-  for (const resource of detail.episode_resources || []) {
-    const episode = Number(resource.episode_number || 0)
+  const rows = []
+  for (const item of detail.episodes || []) {
+    const episode = Number(item.episode_number || 0)
     if (episode <= 0) continue
-    const key = `episode:${episode}`
-    rows.set(key, {
-      key,
-      episode_id: Number(resource.episode_id || episodeIds.get(episode) || 0),
-      resource_id: Number(resource.id || 0),
+    rows.push({
+      key: `episode:${Number(item.id || episode)}`,
+      episode_id: Number(item.id || 0),
+      resource_id: 0,
       subtitle_id: 0,
       episode_number: episode || '-',
-      release_id: resource.release_id || 0,
-      resource_title: resource.title || resource.source_ref || '-',
-      source_type: resource.source_type || 'manual',
-      source_ref: resource.source_ref || '',
-      torrent_url: resource.torrent_url || '',
-      magnet: resource.magnet || '',
-      subtitle_group: resource.subtitle_group || '-',
-      resolution: resource.resolution || '-',
-      language: resource.language || '-',
-      subtitle_format: resource.subtitle_format || '',
-      subtitle_file: '-',
-      subtitle_url: '',
+      release_id: item.release_id || 0,
+      resource_title: item.source_title || item.resource_ref || '-',
+      source_type: item.source_type || 'magnet',
+      source_ref: item.resource_ref || '',
+      torrent_url: item.resource_ref && String(item.resource_ref).startsWith('http') ? item.resource_ref : '',
+      magnet: item.resource_ref && String(item.resource_ref).startsWith('magnet:') ? item.resource_ref : '',
+      subtitle_group: item.subtitle_group || '-',
+      resolution: item.resolution || '-',
+      language: item.language || '-',
+      subtitle_format: item.subtitle_format || '',
+      subtitle_file: item.subtitle_path || '-',
+      subtitle_url: item.subtitle_ref || '',
       subtitle_file_name: '',
-      downloaded: Boolean(resource.downloaded) || Boolean(resource.local_asset_id),
-      local_path: resource.local_path || '',
-      status: resource.status || '',
-      download_status: resource.download_status || '',
-      download_progress: Number(resource.download_progress || 0),
-      download_progress_text: resource.download_progress_text || '',
-      download_job_id: Number(resource.download_job_id || 0),
-      download_error: resource.download_error || '',
-      download_retry_after: resource.download_retry_after || '',
-      local_asset_id: Number(resource.local_asset_id || 0),
-      nfo_status: resource.local_nfo_status || '',
-      selected: Boolean(resource.selected),
+      downloaded: Boolean(item.watchable) || Boolean(item.local_asset_id),
+      local_path: item.local_asset_path || item.local_path || '',
+      status: item.status || '',
+      download_status: item.download_status || '',
+      download_progress: Number(item.download_progress || 0),
+      download_progress_text: item.download_progress_text || '',
+      download_job_id: Number(item.download_job_id || item.last_download_job_id || 0),
+      download_error: item.download_error || '',
+      download_retry_after: item.download_retry_after || '',
+      local_asset_id: Number(item.local_asset_id || 0),
+      nfo_status: '',
+      selected: true,
     })
   }
-  for (const subtitle of detail.episode_subtitles || []) {
-    const episode = Number(subtitle.episode_number || 0)
-    if (episode <= 0) continue
-    const key = `episode:${episode}`
-    const row = rows.get(key)
-    if (!row) continue
-    row.subtitle_id = Number(subtitle.id || 0)
-    row.subtitle_file = subtitle.subtitle_path || row.subtitle_file
-    row.subtitle_url = subtitle.subtitle_url || row.subtitle_url
-    row.subtitle_file_name = subtitle.file_name || row.subtitle_file_name
-    row.subtitle_format = subtitle.subtitle_format || row.subtitle_format
-    row.language = subtitle.language || row.language
-  }
-  return Array.from(rows.values()).sort((a, b) => Number(a.episode_number || 0) - Number(b.episode_number || 0))
+  return rows.sort((a, b) => Number(a.episode_number || 0) - Number(b.episode_number || 0))
 })
 const batchSubtitlePreviewRows = computed(() => {
   return [
@@ -788,6 +772,7 @@ exposeAppContext({
   episodeResourceDialogOpen,
   episodeResourceForm,
   errorMessage,
+  expandedDownloadTaskKeys,
   expandedResourceKeys,
   filteredSeries,
   filteredServerLogs,
@@ -893,11 +878,12 @@ provide('appContext', appContext)
 
 const {
   addDownloader, addMediaWizardResourceLines, addMediaWizardSubtitleLines, advanceMediaWizard, apiErrorMessage, applyMetadataToWizard,
-  archiveCurrentEntry, cancelAllDownloads, cancelDownloadTask, cancelEpisodeDownload, cancelQueueDownload, commitEpisodeImport, commitMediaWizard,
+  archiveCurrentEntry, cancelAllDownloads, cancelDownloadTask, cancelEpisodeDownload, cancelQueueDownload, clearCompletedDownloadTasks,
+  commitEpisodeImport, commitMediaWizard,
   deleteCurrentEntry, deleteDownloadTask, deleteEpisodeResource, deleteRssSubscription, downloadCurrentEntryResources, downloadEpisodeResource,
   editRssSubscription, entryEditPayload, exportLogs, fetchEntryMetadata, loadRssSubscriptions, normalizeSettingsShape, openEntry,
   openEntryEditDialog, openEpisodeResourceEditor, openMediaWizard, openMetadataSearch, openProcessorSettings, openQueueEntry, openRssDialog,
-  openScheduledSettings, repairLocalPaths, retryDownloadTask, refreshEpisodeResource, removeDownloader, removeMediaWizardResourceItem,
+  openScheduledSettings, migrateEpisodeModel, refreshAllLocalStatus, refreshCurrentEntryLocalStatus, repairLocalPaths, retryDownloadTask, refreshEpisodeResource, removeDownloader, removeMediaWizardResourceItem,
   removeMediaWizardSubtitleItem, resetRssForm, resetSelectionRules, runAction, runMetadataSearch, saveAllSettings, saveBatchSubtitles,
   saveEntryEditForm, saveEpisodeResource, saveProcessorSettings, saveRssSubscription, saveScheduledJob, searchWizardMetadata,
   confirmMetadataMatch, selectedMetadataCandidate, selectMetadataCandidate, skipMetadataProvider, toggleEntryResourceRow,
@@ -916,11 +902,12 @@ const {
 
 exposeAppContext({
   addDownloader, addMediaWizardResourceLines, addMediaWizardSubtitleLines, advanceMediaWizard, apiErrorMessage, applyMetadataToWizard,
-  archiveCurrentEntry, cancelAllDownloads, cancelDownloadTask, cancelEpisodeDownload, cancelQueueDownload, commitEpisodeImport, commitMediaWizard,
+  archiveCurrentEntry, cancelAllDownloads, cancelDownloadTask, cancelEpisodeDownload, cancelQueueDownload, clearCompletedDownloadTasks,
+  commitEpisodeImport, commitMediaWizard,
   deleteCurrentEntry, deleteDownloadTask, deleteEpisodeResource, deleteRssSubscription, downloadCurrentEntryResources, downloadEpisodeResource,
   editRssSubscription, entryEditPayload, exportLogs, fetchEntryMetadata, loadRssSubscriptions, normalizeSettingsShape, openEntry,
   openEntryEditDialog, openEpisodeResourceEditor, openMediaWizard, openMetadataSearch, openProcessorSettings, openQueueEntry, openRssDialog,
-  openScheduledSettings, repairLocalPaths, retryDownloadTask, refreshEpisodeResource, removeDownloader, removeMediaWizardResourceItem,
+  openScheduledSettings, migrateEpisodeModel, refreshAllLocalStatus, refreshCurrentEntryLocalStatus, repairLocalPaths, retryDownloadTask, refreshEpisodeResource, removeDownloader, removeMediaWizardResourceItem,
   removeMediaWizardSubtitleItem, resetRssForm, resetSelectionRules, runAction, runMetadataSearch, saveAllSettings, saveBatchSubtitles,
   saveEntryEditForm, saveEpisodeResource, saveProcessorSettings, saveRssSubscription, saveScheduledJob, searchWizardMetadata,
   confirmMetadataMatch, selectedMetadataCandidate, selectMetadataCandidate, skipMetadataProvider, toggleEntryResourceRow,

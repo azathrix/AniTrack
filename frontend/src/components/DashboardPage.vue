@@ -68,6 +68,7 @@ export default appContextComponent()
             <el-tag type="warning">进行中 {{ dashboard.download_overview?.active || 0 }}</el-tag>
             <el-tag v-if="dashboard.download_overview?.failed" type="danger">失败 {{ dashboard.download_overview.failed }}</el-tag>
             <el-button size="small" plain @click="openProcessorSettings">设置</el-button>
+            <el-button size="small" type="primary" plain @click="clearCompletedDownloadTasks">清除已完成</el-button>
             <el-popconfirm title="取消全部下载任务？" @confirm="cancelAllDownloads">
               <template #reference>
                 <el-button size="small" type="danger" plain>取消全部</el-button>
@@ -76,7 +77,15 @@ export default appContextComponent()
           </div>
         </div>
       </template>
-      <el-table :data="dashboard.download_tasks || []" height="560" class="candidate-table download-task-table" empty-text="暂无下载任务">
+      <el-table
+        :data="dashboard.download_tasks || []"
+        row-key="id"
+        :expand-row-keys="expandedDownloadTaskKeys"
+        height="560"
+        class="candidate-table download-task-table"
+        empty-text="暂无下载任务"
+        @expand-change="(row, expandedRows) => { expandedDownloadTaskKeys = expandedRows.map(item => item.id) }"
+      >
         <el-table-column type="expand" width="44">
           <template #default="{ row }">
             <div class="queue-task-expand">
@@ -101,7 +110,7 @@ export default appContextComponent()
         <el-table-column prop="display_title" label="作品" min-width="220" show-overflow-tooltip />
         <el-table-column prop="episode_number" label="集" width="70" />
         <el-table-column label="阶段" width="130">
-          <template #default="{ row }">{{ row.phase || row.status || '-' }}</template>
+          <template #default="{ row }">{{ row.status_text || taskStatusText(row) || '-' }}</template>
         </el-table-column>
         <el-table-column label="进度" width="190">
           <template #default="{ row }">

@@ -70,8 +70,8 @@ export default appContextComponent()
           <el-tab-pane label="集数资源">
             <div class="resource-toolbar">
               <el-button type="primary" @click="downloadCurrentEntryResources">批量下载</el-button>
+              <el-button plain @click="refreshCurrentEntryLocalStatus">刷新本地状态</el-button>
               <el-button plain @click="openEpisodeImportDialog">手动导入集数</el-button>
-              <el-button type="primary" @click="openBatchSubtitleDialog">字幕批量配置</el-button>
             </div>
             <el-table
               :data="entryResourceRows"
@@ -91,43 +91,28 @@ export default appContextComponent()
                       <div><span>分辨率</span><code>{{ row.resolution || '-' }}</code></div>
                       <div><span>语言</span><code>{{ row.language || '-' }}</code></div>
                       <div><span>字幕类型</span><code>{{ subtitleFormatText(row.subtitle_format) }}</code></div>
-                      <div><span>来源类型</span><code>{{ sourceModeText(row.source_type) }}</code></div>
                       <div><span>资源链接</span><code>{{ row.source_ref || row.magnet || row.torrent_url || '-' }}</code></div>
                     </section>
                     <section class="resource-expand-section">
                       <strong>字幕与本地文件</strong>
                       <div><span>字幕链接</span><code>{{ row.subtitle_url || '-' }}</code></div>
-                      <div><span>上传字幕</span><code>{{ row.subtitle_file_name || '-' }}</code></div>
                       <div><span>字幕文件路径</span><code>{{ row.subtitle_file || '-' }}</code></div>
                       <div><span>本地文件路径</span><code>{{ row.local_path || '-' }}</code></div>
-                    </section>
-                    <section class="resource-expand-section">
-                      <strong>状态与操作</strong>
-                      <div><span>资源状态</span><code>{{ row.status || '-' }}</code></div>
-                      <div><span>下载状态</span><code>{{ episodeDownloadText(row) }}</code></div>
-                      <div><span>下载进度</span><code>{{ row.download_progress ? `${row.download_progress}%` : '-' }}</code></div>
-                      <div><span>进度详情</span><code>{{ row.download_progress_text || '-' }}</code></div>
-                      <div><span>下载错误</span><code>{{ row.download_error || '-' }}</code></div>
-                      <div class="resource-expand-actions">
-                        <el-button size="small" plain @click="openEpisodeResourceEditor(row)">配置</el-button>
-                        <el-button size="small" plain :disabled="row.downloaded || !row.release_id" @click="downloadEpisodeResource(row)">下载</el-button>
-                        <el-button size="small" plain :disabled="!episodeCanCancel(row)" @click="cancelEpisodeDownload(row)">取消</el-button>
-                        <el-button size="small" plain @click="refreshEpisodeResource(row)">刷新</el-button>
-                        <el-popconfirm title="删除该资源配置？已下载或正在下载的资源需要先清理任务。" @confirm="deleteEpisodeResource(row)">
-                          <template #reference>
-                            <el-button size="small" type="danger">删除</el-button>
-                          </template>
-                        </el-popconfirm>
-                      </div>
                     </section>
                   </div>
                 </template>
               </el-table-column>
               <el-table-column prop="episode_number" label="集" width="58" />
-              <el-table-column prop="resource_title" label="当前选中资源" min-width="420" show-overflow-tooltip />
+              <el-table-column prop="resource_title" label="资源" min-width="300" show-overflow-tooltip />
+              <el-table-column prop="local_path" label="本地路径" min-width="260" show-overflow-tooltip />
               <el-table-column label="可观看" width="94">
                 <template #default="{ row }">
                   <el-tag :type="episodeDownloadTag(row)" size="small">{{ row.downloaded ? '可观看' : '未缓存' }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="90">
+                <template #default="{ row }">
+                  <el-button size="small" type="primary" :disabled="row.downloaded || !row.source_ref" @click.stop="downloadEpisodeResource(row)">下载</el-button>
                 </template>
               </el-table-column>
             </el-table>

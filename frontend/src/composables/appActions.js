@@ -167,6 +167,7 @@ export function createAppActions(app, deps) {
     app.episodeResourceForm.subtitle_path = row.subtitle_file || ''
     app.episodeResourceForm.subtitle_url = row.subtitle_url || ''
     app.episodeResourceForm.subtitle_file_name = row.subtitle_file_name || ''
+    app.episodeResourceForm.local_path = row.local_path || ''
     app.episodeResourceDialogOpen = true
   }
 
@@ -174,25 +175,16 @@ export function createAppActions(app, deps) {
     try {
       const episodeId = Number(app.episodeResourceForm.episode_id || 0)
       if (!episodeId) return
-      await putAction(`/episodes/${episodeId}/resource`, {
-        resource_id: Number(app.episodeResourceForm.resource_id || 0),
-        title: app.episodeResourceForm.title,
-        source_type: app.episodeResourceForm.source_type,
-        source_ref: app.episodeResourceForm.source_ref,
+      await putAction(`/episodes/${episodeId}`, {
+        source_title: app.episodeResourceForm.title,
+        resource_ref: app.episodeResourceForm.source_ref,
         subtitle_group: app.episodeResourceForm.subtitle_group,
         resolution: app.episodeResourceForm.resolution,
         language: app.episodeResourceForm.language,
         subtitle_format: app.episodeResourceForm.subtitle_format,
-        selected: true,
-      })
-      await putAction(`/episodes/${episodeId}/subtitle`, {
-        subtitle_id: Number(app.episodeResourceForm.subtitle_id || 0),
-        language: app.episodeResourceForm.language,
-        subtitle_format: app.episodeResourceForm.subtitle_format,
+        local_path: app.episodeResourceForm.local_path || '',
         subtitle_path: app.episodeResourceForm.subtitle_path,
-        subtitle_url: app.episodeResourceForm.subtitle_url,
-        file_name: app.episodeResourceForm.subtitle_file_name,
-        selected: true,
+        subtitle_ref: app.episodeResourceForm.subtitle_url || app.episodeResourceForm.subtitle_file_name || '',
       })
       ElMessage.success('集数资源已保存')
       app.episodeResourceDialogOpen = false
@@ -225,6 +217,49 @@ export function createAppActions(app, deps) {
       if (app.selectedEntry?.id) {
         await app.openEntry(app.selectedEntry.id, app.selectedEntryDomain, app.selectedEntryMediaType)
       }
+      await app.reload()
+    } catch (error) {
+      ElMessage.error(apiErrorMessage(error))
+    }
+  }
+
+  async function clearCompletedDownloadTasks() {
+    try {
+      const result = await postAction('/download-tasks/clear-completed')
+      ElMessage.success(result?.message || '已清除完成任务')
+      await app.reload()
+    } catch (error) {
+      ElMessage.error(apiErrorMessage(error))
+    }
+  }
+
+  async function refreshCurrentEntryLocalStatus() {
+    try {
+      const entryId = Number(app.selectedEntry?.id || 0)
+      if (!entryId) return
+      const result = await postAction(`/entries/${entryId}/refresh-local-status`)
+      ElMessage.success(result?.message || '本地状态已刷新')
+      await app.openEntry(entryId, app.selectedEntryDomain, app.selectedEntryMediaType)
+      await app.reload()
+    } catch (error) {
+      ElMessage.error(apiErrorMessage(error))
+    }
+  }
+
+  async function refreshAllLocalStatus() {
+    try {
+      const result = await postAction('/maintenance/refresh-local-status')
+      ElMessage.success(result?.message || '全部本地状态已刷新')
+      await app.reload()
+    } catch (error) {
+      ElMessage.error(apiErrorMessage(error))
+    }
+  }
+
+  async function migrateEpisodeModel() {
+    try {
+      const result = await postAction('/maintenance/migrate-episode-model')
+      ElMessage.success(result?.message || '集数模型迁移完成')
       await app.reload()
     } catch (error) {
       ElMessage.error(apiErrorMessage(error))
@@ -1013,11 +1048,12 @@ export function createAppActions(app, deps) {
 
   return {
     addDownloader, addMediaWizardResourceLines, addMediaWizardSubtitleLines, advanceMediaWizard, apiErrorMessage, applyMetadataToWizard,
-    archiveCurrentEntry, cancelAllDownloads, cancelDownloadTask, cancelEpisodeDownload, cancelQueueDownload, commitEpisodeImport, commitMediaWizard,
+    archiveCurrentEntry, cancelAllDownloads, cancelDownloadTask, cancelEpisodeDownload, cancelQueueDownload, clearCompletedDownloadTasks,
+    commitEpisodeImport, commitMediaWizard,
     deleteCurrentEntry, deleteDownloadTask, deleteEpisodeResource, deleteRssSubscription, downloadCurrentEntryResources, downloadEpisodeResource,
     editRssSubscription, entryEditPayload, exportLogs, fetchEntryMetadata, loadRssSubscriptions, normalizeSettingsShape, openEntry,
     openEntryEditDialog, openEpisodeResourceEditor, openMediaWizard, openMetadataSearch, openProcessorSettings, openQueueEntry, openRssDialog,
-    openScheduledSettings, repairLocalPaths, retryDownloadTask, refreshEpisodeResource, removeDownloader, removeMediaWizardResourceItem,
+    openScheduledSettings, migrateEpisodeModel, refreshAllLocalStatus, refreshCurrentEntryLocalStatus, repairLocalPaths, retryDownloadTask, refreshEpisodeResource, removeDownloader, removeMediaWizardResourceItem,
     removeMediaWizardSubtitleItem, resetRssForm, resetSelectionRules, runAction, runMetadataSearch, saveAllSettings, saveBatchSubtitles,
     saveEntryEditForm, saveEpisodeResource, saveProcessorSettings, saveRssSubscription, saveScheduledJob, searchWizardMetadata,
     confirmMetadataMatch, selectedMetadataCandidate, selectMetadataCandidate, skipMetadataProvider, toggleEntryResourceRow,
