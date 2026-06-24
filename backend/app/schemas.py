@@ -121,8 +121,10 @@ class EpisodeDownloadActionPayload(BaseModel):
 
 class EpisodeImportItemPayload(BaseModel):
     source_ref: str = ""
+    local_path: str = ""
     episode_number: int = 0
     title: str = ""
+    source_type: str = "manual"
     language: str = ""
     subtitle_format: str = ""
     subtitle_url: str = ""

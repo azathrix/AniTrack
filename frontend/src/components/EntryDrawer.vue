@@ -78,12 +78,26 @@ export default appContextComponent()
           </el-tab-pane>
           <el-tab-pane label="集数资源">
             <div class="resource-toolbar">
-              <el-button type="primary" @click="downloadCurrentEntryResources">批量下载</el-button>
-              <el-button plain @click="refreshCurrentEntryLocalStatus">刷新</el-button>
-              <el-button plain @click="backfillCurrentEntrySeason">补全本季</el-button>
-              <el-button plain @click="openServerFileBrowser('match')">批量匹配本地资源</el-button>
-              <el-button plain @click="organizeCurrentEntryLocalFiles">整理</el-button>
-              <el-button plain @click="openEpisodeImportDialog">手动导入集数</el-button>
+              <el-dropdown trigger="click" @command="command => {
+                if (command === 'download') downloadCurrentEntryResources()
+                if (command === 'refresh') refreshCurrentEntryLocalStatus()
+                if (command === 'backfill') backfillCurrentEntrySeason()
+                if (command === 'match') openServerFileBrowser('match')
+                if (command === 'organize') organizeCurrentEntryLocalFiles()
+                if (command === 'import') openEpisodeImportDialog()
+              }">
+                <el-button type="primary">操作</el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="download">批量下载</el-dropdown-item>
+                    <el-dropdown-item command="refresh">刷新本地状态</el-dropdown-item>
+                    <el-dropdown-item command="backfill">补全本季</el-dropdown-item>
+                    <el-dropdown-item command="match">批量匹配本地资源</el-dropdown-item>
+                    <el-dropdown-item command="organize">整理本地资源</el-dropdown-item>
+                    <el-dropdown-item command="import">手动导入集数</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </div>
             <el-table
               :data="entryResourceRows"

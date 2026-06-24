@@ -392,6 +392,15 @@ export function createAppActions(app, deps) {
       }
       await postAction(`/entries/${entryId}/resources/import`, {
         resources_text: app.episodeImportForm.resources_text,
+        resources: (app.episodeImportResourceRows || []).map(item => ({
+          source_ref: item.source_ref || '',
+          local_path: item.local_path || '',
+          source_type: item.source_type || 'manual',
+          episode_number: Number(item.episode || item.episode_number || 0),
+          title: item.text || '',
+          language: app.episodeImportForm.language || '',
+          subtitle_format: app.episodeImportForm.subtitle_format || '',
+        })),
         subtitles_text: app.episodeImportForm.subtitles_text,
         subtitle_format: app.episodeImportForm.subtitle_format,
         language: app.episodeImportForm.language,

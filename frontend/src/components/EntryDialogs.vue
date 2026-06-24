@@ -119,7 +119,7 @@ export default appContextComponent()
       </template>
     </el-dialog>
 
-    <el-dialog v-model="fileBrowser.open" :title="fileBrowser.mode === 'match' ? '批量匹配本地资源' : fileBrowser.mode === 'subtitle' ? '选择本地字幕文件' : '选择本地视频文件'" width="760px" top="6vh">
+    <el-dialog v-model="fileBrowser.open" :title="fileBrowser.mode === 'match' ? '批量匹配本地资源' : fileBrowser.mode === 'episode-import-local' ? '选择导入用本地视频' : fileBrowser.mode === 'subtitle' ? '选择本地字幕文件' : '选择本地视频文件'" width="760px" top="6vh">
       <div class="file-browser">
         <div class="file-browser-toolbar">
           <el-button :disabled="!fileBrowser.parent" @click="browseServerFiles(fileBrowser.parent)">上一级</el-button>
@@ -141,13 +141,14 @@ export default appContextComponent()
           <el-table-column prop="path" label="路径" min-width="280" show-overflow-tooltip />
           <el-table-column label="操作" width="90">
             <template #default="{ row }">
-              <el-button size="small" type="primary" @click="selectServerFile(row)">{{ row.kind === 'directory' ? '进入' : fileBrowser.mode === 'match' ? '匹配' : '选择' }}</el-button>
+              <el-button size="small" type="primary" @click="selectServerFile(row)">{{ row.kind === 'directory' ? '进入' : fileBrowser.mode === 'match' ? '匹配' : fileBrowser.mode === 'episode-import-local' ? '加入' : '选择' }}</el-button>
             </template>
           </el-table-column>
         </el-table>
       </div>
       <template #footer>
         <el-button v-if="fileBrowser.mode === 'match'" type="primary" @click="selectServerFile({ kind: 'directory', path: fileBrowser.current, selectCurrent: true })">匹配当前目录</el-button>
+        <el-button v-if="fileBrowser.mode === 'episode-import-local'" type="primary" @click="selectServerFile({ kind: 'directory', path: fileBrowser.current, selectCurrent: true })">加入当前目录视频</el-button>
         <el-button @click="fileBrowser.open = false">关闭</el-button>
       </template>
     </el-dialog>
@@ -220,12 +221,30 @@ export default appContextComponent()
           <el-step title="确认导入" />
         </el-steps>
         <div v-if="episodeImportStep === 0" class="guided-step">
-          <el-alert type="info" show-icon :closable="false" title="每行一个磁链、种子链接或下载链接。明显不是链接的内容会被拦截，避免误把备注写成资源。" />
-          <el-form :model="episodeImportForm" label-position="top">
-            <el-form-item label="资源链接">
-              <el-input v-model="episodeImportForm.resources_text" type="textarea" :rows="9" placeholder="magnet:?xt=urn:btih:...&#10;https://example.com/show.S01E05.torrent&#10;https://example.com/download/show-06.mkv" />
-            </el-form-item>
-          </el-form>
+          <el-alert type="info" show-icon :closable="false" title="可以粘贴磁力/种子链接，也可以选择服务器 /media 里的已有视频文件。文件名或链接会自动识别集数。" />
+          <el-tabs v-model="episodeImportForm.source_mode" class="wizard-source-tabs">
+            <el-tab-pane label="磁力 / 下载链接" name="link">
+              <el-form :model="episodeImportForm" label-position="top">
+                <el-form-item label="资源链接">
+                  <el-input v-model="episodeImportForm.resources_text" type="textarea" :rows="7" placeholder="magnet:?xt=urn:btih:...&#10;https://example.com/show.S01E05.torrent&#10;https://example.com/download/show-06.mkv" />
+                </el-form-item>
+              </el-form>
+            </el-tab-pane>
+            <el-tab-pane label="服务器本地资源" name="local">
+              <div class="wizard-toolbar">
+                <el-button type="primary" @click="openServerFileBrowser('episode-import-local')">选择本地视频</el-button>
+                <span>只允许选择 /media 下的视频文件；选中后会按文件名自动匹配集数。</span>
+              </div>
+              <div class="wizard-resource-list" v-if="episodeImportLocalItems.length">
+                <div v-for="(item, index) in episodeImportLocalItems" :key="item.id || item.path" class="wizard-resource-row">
+                  <el-input-number v-model="item.episode_number" :min="1" :max="999" controls-position="right" />
+                  <code>{{ item.path }}</code>
+                  <el-button size="small" type="danger" plain @click="episodeImportLocalItems.splice(index, 1)">删除</el-button>
+                </div>
+              </div>
+              <el-empty v-else description="还没有选择本地视频文件" />
+            </el-tab-pane>
+          </el-tabs>
           <div class="guide-preview">
             <strong>资源识别</strong>
             <div v-for="item in episodeImportResourceRows" :key="item.key" :class="['guide-preview-row', { invalid: !item.valid }]">

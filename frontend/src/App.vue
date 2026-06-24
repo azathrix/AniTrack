@@ -234,11 +234,13 @@ const batchSubtitleForm = reactive({
   language: '',
 })
 const episodeImportForm = reactive({
+  source_mode: 'link',
   resources_text: '',
   subtitles_text: '',
   subtitle_format: 'external',
   language: '',
 })
+const episodeImportLocalItems = ref([])
 const mediaWizardDraft = reactive({
   source_mode: 'link',
   title: '',
@@ -528,7 +530,7 @@ const batchSubtitleCanAdvance = computed(() => {
   return true
 })
 const batchSubtitleCanSave = computed(() => batchSubtitlePreviewRows.value.length > 0 && batchSubtitleInvalidRows.value.length === 0)
-const episodeImportResourceRows = computed(() => splitTextLines(episodeImportForm.resources_text).map((text, index) => {
+const episodeImportLinkRows = computed(() => splitTextLines(episodeImportForm.resources_text).map((text, index) => {
   const valid = isValidResourceReference(text)
   return {
     key: `resource:${index}:${text}`,
@@ -537,8 +539,26 @@ const episodeImportResourceRows = computed(() => splitTextLines(episodeImportFor
     valid,
     kind: resourceReferenceKind(text),
     reason: valid ? '' : '不是下载链接',
+    source_type: 'manual',
+    source_ref: text,
+    local_path: '',
   }
 }))
+const episodeImportLocalRows = computed(() => episodeImportLocalItems.value.map((item, index) => {
+  const text = item.path || item.name || ''
+  return {
+    key: item.id || `local-resource:${index}:${text}`,
+    text,
+    episode: Number(item.episode_number || 0) || inferEpisodeFromText(text, index + 1),
+    valid: Boolean(text),
+    kind: '本地文件',
+    reason: text ? '' : '未选择文件',
+    source_type: 'local',
+    source_ref: '',
+    local_path: text,
+  }
+}))
+const episodeImportResourceRows = computed(() => [...episodeImportLinkRows.value, ...episodeImportLocalRows.value])
 const episodeImportSubtitleRows = computed(() => splitTextLines(episodeImportForm.subtitles_text).map((text, index) => {
   const valid = isValidSubtitleReference(text)
   return {
@@ -671,10 +691,12 @@ function openBatchSubtitleDialog() {
 }
 
 function openEpisodeImportDialog() {
+  episodeImportForm.source_mode = 'link'
   episodeImportForm.resources_text = ''
   episodeImportForm.subtitles_text = ''
   episodeImportForm.subtitle_format = 'external'
   episodeImportForm.language = ''
+  episodeImportLocalItems.value = []
   episodeImportStep.value = 0
   episodeImportDialogOpen.value = true
 }
@@ -794,6 +816,7 @@ exposeAppContext({
   episodeImportDialogOpen,
   episodeImportForm,
   episodeImportInvalidCount,
+  episodeImportLocalItems,
   episodeImportResourceRows,
   episodeImportStep,
   episodeImportSubtitleRows,

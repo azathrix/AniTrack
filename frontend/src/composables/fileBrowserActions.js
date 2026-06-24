@@ -3,6 +3,22 @@ import { ElMessage } from 'element-plus'
 export function createFileBrowserActions(app, deps) {
   const { getAction, postAction, apiErrorMessage } = deps
 
+  function appendEpisodeImportFiles(items) {
+    const existing = new Set((app.episodeImportLocalItems || []).map(item => item.path))
+    const next = [...(app.episodeImportLocalItems || [])]
+    for (const item of items) {
+      if (!item?.path || item.kind !== 'video' || existing.has(item.path)) continue
+      existing.add(item.path)
+      next.push({
+        id: `local:${Date.now()}:${next.length}:${item.path}`,
+        name: item.name || item.path,
+        path: item.path,
+        size: item.size || 0,
+      })
+    }
+    app.episodeImportLocalItems = next
+  }
+
   async function browseServerFiles(path = '') {
     app.fileBrowser.loading = true
     try {
@@ -41,6 +57,26 @@ export function createFileBrowserActions(app, deps) {
           await app.reload()
         })
         .catch(error => ElMessage.error(apiErrorMessage(error)))
+      return
+    }
+    if (app.fileBrowser.mode === 'episode-import-local') {
+      if (item.kind === 'directory' && item.selectCurrent) {
+        appendEpisodeImportFiles(app.fileBrowser.items || [])
+        ElMessage.success('已加入当前目录的视频文件')
+        app.fileBrowser.open = false
+        return
+      }
+      if (item.kind === 'directory') {
+        browseServerFiles(item.path)
+        return
+      }
+      if (item.kind !== 'video') {
+        ElMessage.warning('请选择视频文件')
+        return
+      }
+      appendEpisodeImportFiles([item])
+      ElMessage.success('已加入本地视频文件')
+      app.fileBrowser.open = false
       return
     }
     if (item.kind === 'directory') {

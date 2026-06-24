@@ -8,9 +8,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 from ..database import connect
-from ..db import get_settings, log, now
+from ..db import log, now
 from ..download_task_service import queue_download_for_episode, queue_download_for_release
-from ..library import expected_local_episode_path
 from ..config import MEDIA_ROOT
 from ..maintenance import match_entry_local_files, organize_local_files, refresh_local_status
 from ..media_service import build_entry_response, reset_orphaned_download_jobs_in_conn
@@ -60,13 +59,15 @@ def _validated_media_path(value: str) -> Path:
 async def api_import_entry_resources(entry_id: int, payload: EpisodeImportPayload) -> dict[str, Any]:
     resource_lines = split_input_lines(payload.resources_text)
     subtitle_lines = split_input_lines(payload.subtitles_text)
-    resource_items = [item for item in payload.resources if item.source_ref.strip()]
+    resource_items = [item for item in payload.resources if item.source_ref.strip() or item.local_path.strip()]
     if not resource_items:
         resource_items = [
             SimpleNamespace(
                 source_ref=line,
+                local_path="",
                 episode_number=0,
                 title=line,
+                source_type="manual",
                 language="",
                 subtitle_format="",
                 subtitle_url="",
@@ -76,7 +77,7 @@ async def api_import_entry_resources(entry_id: int, payload: EpisodeImportPayloa
         ]
     if not resource_items:
         raise HTTPException(status_code=400, detail="请至少填写一个资源链接")
-    invalid_resources = [item.source_ref.strip() for item in resource_items if not is_valid_resource_reference(item.source_ref)]
+    invalid_resources = [item.source_ref.strip() for item in resource_items if item.source_ref.strip() and not is_valid_resource_reference(item.source_ref)]
     if invalid_resources:
         raise HTTPException(status_code=400, detail=f"资源链接格式无效: {invalid_resources[0]}")
     invalid_subtitles = [line for line in subtitle_lines if not is_valid_subtitle_reference(line)]
@@ -91,11 +92,19 @@ async def api_import_entry_resources(entry_id: int, payload: EpisodeImportPayloa
         entry_media_type = str(entry["media_type"] or "")
         for index, item in enumerate(resource_items, start=1):
             line = item.source_ref.strip()
-            episode_number = int(item.episode_number or 0) or parsed_episode_required(line)
+            local_path = item.local_path.strip()
+            local_file = Path(local_path) if local_path else None
+            if local_file:
+                resolved_local = _validated_media_path(local_path)
+                if not resolved_local.is_file():
+                    raise HTTPException(status_code=400, detail=f"请选择具体视频文件: {local_path}")
+                local_path = str(resolved_local)
+            seed = line or local_path
+            episode_number = int(item.episode_number or 0) or parsed_episode_required(seed)
             if episode_number <= 0 and entry_media_type == "movie":
                 episode_number = 1
             if episode_number <= 0:
-                raise HTTPException(status_code=400, detail=f"资源无法识别集数: {line}")
+                raise HTTPException(status_code=400, detail=f"资源无法识别集数: {seed}")
             conn.execute(
                 """
                 INSERT INTO episodes (series_id, entry_id, episode_number, title, status, created_at, updated_at)
@@ -114,7 +123,7 @@ async def api_import_entry_resources(entry_id: int, payload: EpisodeImportPayloa
             episode_id = int(episode["id"] or 0) if episode else 0
             torrent_url = line if line.startswith("http") else ""
             magnet = line if line.startswith("magnet:") else ""
-            digest = hashlib.sha1(line.encode("utf-8", errors="ignore")).hexdigest()[:20]
+            digest = hashlib.sha1(seed.encode("utf-8", errors="ignore")).hexdigest()[:20]
             guid = f"manual:{entry_id}:{episode_number}:{digest}"
             release_id = 0
             if torrent_url or magnet:
@@ -151,34 +160,42 @@ async def api_import_entry_resources(entry_id: int, payload: EpisodeImportPayloa
                 )
                 release = conn.execute("SELECT id FROM releases WHERE guid=?", (guid,)).fetchone()
                 release_id = int(release["id"] or 0) if release else 0
-            suffix = Path(line).suffix if Path(line).suffix.lower() in {".mkv", ".mp4", ".avi", ".mov", ".wmv", ".ts", ".m2ts", ".flv", ".webm"} else ".mkv"
-            local_path = expected_local_episode_path(dict(entry), episode_number, suffix, get_settings())
+            planned_local_path = local_path
+            source_type = "local" if local_path else (item.source_type.strip() or "manual")
+            source_ref = line or local_path
+            downloaded = 1 if local_path else 0
+            status = "downloaded" if local_path else "available"
             conn.execute(
                 """
                 UPDATE episodes
                 SET resource_ref=?,
                     source_title=?,
-                    source_type='magnet',
+                    source_type=?,
                     subtitle_group=CASE WHEN subtitle_group='' THEN ? ELSE subtitle_group END,
                     resolution=CASE WHEN resolution='' THEN ? ELSE resolution END,
                     language=CASE WHEN language='' THEN ? ELSE language END,
                     subtitle_format=CASE WHEN subtitle_format='' THEN ? ELSE subtitle_format END,
-                    local_path=CASE WHEN local_path='' THEN ? ELSE local_path END,
+                    local_path=CASE WHEN ?=1 THEN ? ELSE local_path END,
                     release_id=CASE WHEN ? > 0 THEN ? ELSE release_id END,
-                    status='available',
+                    watchable=CASE WHEN ?=1 THEN 1 ELSE watchable END,
+                    status=?,
                     updated_at=?
                 WHERE id=?
                 """,
                 (
-                    line,
-                    item.title.strip() or line,
+                    source_ref,
+                    item.title.strip() or seed,
+                    source_type,
                     "",
                     "",
                     (item.language or payload.language).strip(),
                     (item.subtitle_format or payload.subtitle_format).strip(),
-                    local_path,
+                    downloaded,
+                    planned_local_path,
                     release_id,
                     release_id,
+                    downloaded,
+                    status,
                     ts,
                     episode_id,
                 ),
@@ -188,8 +205,8 @@ async def api_import_entry_resources(entry_id: int, payload: EpisodeImportPayloa
                 """
                 INSERT INTO episode_resources
                   (entry_id, episode_id, episode_number, source_type, source_ref, release_id, title,
-                   language, subtitle_format, torrent_url, magnet, selected, status, created_at, updated_at)
-                VALUES (?, ?, ?, 'manual', ?, ?, ?, ?, ?, ?, ?, 1, 'available', ?, ?)
+                   language, subtitle_format, torrent_url, magnet, selected, downloaded, local_path, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
                 ON CONFLICT(entry_id, episode_number, source_type, source_ref) DO UPDATE SET
                   episode_id=excluded.episode_id,
                   release_id=excluded.release_id,
@@ -199,23 +216,44 @@ async def api_import_entry_resources(entry_id: int, payload: EpisodeImportPayloa
                   torrent_url=excluded.torrent_url,
                   magnet=excluded.magnet,
                   selected=1,
+                  downloaded=excluded.downloaded,
+                  local_path=excluded.local_path,
+                  status=excluded.status,
                   updated_at=excluded.updated_at
                 """,
                 (
                     entry_id,
                     episode_id,
                     episode_number,
-                    line,
+                    source_type,
+                    source_ref,
                     release_id,
-                    item.title.strip() or line,
+                    item.title.strip() or seed,
                     (item.language or payload.language).strip(),
                     (item.subtitle_format or payload.subtitle_format).strip(),
                     torrent_url,
                     magnet,
+                    downloaded,
+                    planned_local_path if local_path else "",
+                    status,
                     ts,
                     ts,
                 ),
             )
+            if local_path:
+                conn.execute(
+                    """
+                    INSERT INTO local_assets
+                      (download_artifact_id, release_id, series_id, entry_id, episode_number, local_path,
+                       nfo_status, status, created_at, updated_at)
+                    VALUES (?, 0, ?, ?, ?, ?, 'disabled', 'synced', ?, ?)
+                    ON CONFLICT(download_artifact_id) DO UPDATE SET
+                      local_path=excluded.local_path,
+                      status='synced',
+                      updated_at=excluded.updated_at
+                    """,
+                    (-abs(episode_id), entry_id, entry_id, episode_number, local_path, ts, ts),
+                )
             subtitle_ref = (item.subtitle_url or item.subtitle_file_name or "").strip()
             if subtitle_ref:
                 if not is_valid_subtitle_reference(subtitle_ref):
