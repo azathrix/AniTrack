@@ -84,7 +84,12 @@ async def sync_download_artifact_to_local(
                     downloaded_size = 0
                 calculated = int(downloaded_size * 100 / total_size) if total_size > 0 and downloaded_size > 0 else 0
                 value = max(0, min(100, max(int(percent or 0), calculated)))
-                message = text or f"本地整理 {value}%"
+                if total_size > 0 and downloaded_size > 0:
+                    message = text or f"复制到本地 {value}%"
+                elif downloaded_size > 0:
+                    message = text or f"复制到本地，已写入 {downloaded_size} 字节"
+                else:
+                    message = "正在复制到本地"
                 ts = now()
                 with connect() as progress_conn:
                     progress_conn.execute(
@@ -128,7 +133,7 @@ async def sync_download_artifact_to_local(
                     )
                 await runtime_store.update_task_progress(context.task_id, value, message)
 
-            await progress_cb(1, "本地下载启动")
+            await progress_cb(0, "正在复制到本地")
             stop_monitor = asyncio.Event()
 
             async def monitor_local_size() -> None:

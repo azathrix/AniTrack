@@ -109,10 +109,7 @@ export default appContextComponent()
         </el-table-column>
         <el-table-column prop="display_title" label="作品" min-width="220" show-overflow-tooltip />
         <el-table-column prop="episode_number" label="集" width="70" />
-        <el-table-column label="阶段" width="130">
-          <template #default="{ row }">{{ row.status_text || taskStatusText(row) || '-' }}</template>
-        </el-table-column>
-        <el-table-column label="进度" width="190">
+        <el-table-column label="进度" min-width="210" show-overflow-tooltip>
           <template #default="{ row }">
             <el-progress
               v-if="Number(row.progress || 0) > 0"

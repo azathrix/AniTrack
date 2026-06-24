@@ -397,8 +397,12 @@ def list_download_tasks(limit: int = 200) -> list[dict[str, Any]]:
             elif downloaded_size > 0:
                 item["progress"] = 0
                 item["progress_text"] = f"{item['status_text']} · 本地 {item['downloaded_size_text']}"
+            elif total_size > 0:
+                item["progress"] = 0
+                item["progress_text"] = f"{item['status_text']} · 远端 {item['total_size_text']}"
             else:
                 item["progress"] = 0
+                item["progress_text"] = item["status_text"]
         if status == "completed":
             item["progress"] = 0
             item["progress_text"] = "可观看"

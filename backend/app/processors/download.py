@@ -241,10 +241,38 @@ def _asset_item(target_directory: str, normalized_name: str, provider_file_id: s
 def _remote_item_size(item: dict | None) -> int:
     if not item:
         return 0
-    try:
-        return max(0, int(item.get("size") or item.get("Size") or 0))
-    except (TypeError, ValueError):
-        return 0
+    keys = (
+        "size",
+        "Size",
+        "file_size",
+        "fileSize",
+        "total_size",
+        "totalSize",
+        "bytes",
+        "total_bytes",
+        "totalBytes",
+    )
+    reference = item.get("reference_resource")
+    nested = reference if isinstance(reference, dict) else {}
+    candidates = [item.get(key) for key in keys] + [nested.get(key) for key in keys]
+    for value in candidates:
+        if value in (None, ""):
+            continue
+        try:
+            return max(0, int(value))
+        except (TypeError, ValueError):
+            continue
+    progress = item.get("progress")
+    if isinstance(progress, dict):
+        for key in keys:
+            value = progress.get(key)
+            if value in (None, ""):
+                continue
+            try:
+                return max(0, int(value))
+            except (TypeError, ValueError):
+                continue
+    return 0
 
 
 def _remote_item_stable(submission, item: dict | None) -> bool:
@@ -702,9 +730,9 @@ async def process_download_poll(context: ProcessorContext, payload: dict) -> Pro
                 else:
                     phase = remote.get("phase", "")
                     file_id = str(remote.get("file_id") or remote.get("reference_resource", {}).get("id", "") or file_id)
+                    matched = remote
                     if phase == "PHASE_TYPE_COMPLETE":
                         status = "remote_completed"
-                        matched = remote
                     elif phase == "PHASE_TYPE_ERROR":
                         status = "failed"
                         message = str(remote.get("message") or "PikPak 离线任务失败")
