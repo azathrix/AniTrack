@@ -112,7 +112,7 @@ export default appContextComponent()
           <el-table-column label="操作" width="240" fixed="right">
             <template #default="{ row }">
               <el-button v-if="row.entry_id" size="small" plain @click="openQueueEntry(row)">打开</el-button>
-              <el-button v-if="row.source !== 'operation' && ['pending','running','waiting'].includes(row.status)" size="small" type="danger" plain @click="cancelGenericTask(row)">取消</el-button>
+              <el-button v-if="['pending','running','waiting'].includes(row.status)" size="small" type="danger" plain @click="cancelGenericTask(row)">取消</el-button>
               <el-button v-if="row.source !== 'operation' && ['pending','running','waiting'].includes(row.status)" size="small" plain @click="pauseGenericTask(row)">暂停</el-button>
               <el-button v-if="row.source !== 'operation' && row.status === 'paused'" size="small" type="primary" plain @click="resumeGenericTask(row)">继续</el-button>
               <el-button v-if="row.source === 'download' && ['failed','cancelled'].includes(row.status)" size="small" type="primary" plain @click="retryDownloadTask({ id: row.raw_id })">重试</el-button>

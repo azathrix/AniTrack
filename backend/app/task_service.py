@@ -152,6 +152,10 @@ async def cancel_task(task_id: str) -> bool:
     kind, _, raw = task_id.partition(":")
     if kind == "runtime" and raw.isdigit():
         return await runtime_store.cancel_task(int(raw))
+    if kind == "operation" and raw.isdigit():
+        from .runtime_service import cancel_operation
+
+        return await cancel_operation(int(raw))
     if kind == "download" and raw.isdigit():
         with connect() as conn:
             conn.execute(
@@ -192,6 +196,8 @@ async def delete_task(task_id: str) -> bool:
     kind, _, raw = task_id.partition(":")
     if kind == "runtime" and raw.isdigit():
         return await runtime_store.delete_task(int(raw))
+    if kind == "operation" and raw.isdigit():
+        return runtime_store.delete_operation_sync(int(raw))
     if kind == "download" and raw.isdigit():
         with connect() as conn:
             conn.execute("DELETE FROM download_jobs WHERE id=? AND status NOT IN ('submitting','remote_downloading','local_copying')", (int(raw),))

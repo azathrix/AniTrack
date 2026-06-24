@@ -329,7 +329,7 @@ export default appContextComponent()
           type="info"
           show-icon
           :closable="false"
-          :title="selectedScheduledJob?.job_key === 'rss_scan' ? '配置 RSS 自动扫描。关闭后只会在手动触发时扫描。' : '配置运行时队列恢复调度。通常保持开启即可。'"
+          :title="selectedScheduledJob?.action === 'rss_scan' || selectedScheduledJob?.job_key === 'rss_scan' ? '配置 RSS 自动扫描。关闭后只会在手动触发时扫描。' : '配置缓存清理等后台定时动作。关闭后仍可手动触发。'"
           class="settings-alert"
         />
         <div class="form-row">
@@ -338,7 +338,7 @@ export default appContextComponent()
         </div>
       </el-form>
       <template #footer>
-        <el-button @click="scheduledSettingsDialogOpen = false">取消</el-button>
+        <el-button @click="scheduledSettingsDialogOpen = false; scheduleEditingId = 0">取消</el-button>
         <el-button type="primary" @click="saveScheduledJob">保存设置</el-button>
       </template>
     </el-dialog>

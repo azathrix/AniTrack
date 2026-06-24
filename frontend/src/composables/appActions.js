@@ -44,21 +44,50 @@ export function createAppActions(app, deps) {
     app.scheduledJobForm.interval_minutes = Math.max(1, Number(job?.interval_minutes || 1))
   }
 
-  function openScheduledSettings() {
-    syncScheduledJobForm()
+  function openScheduledSettings(job = null) {
+    if (job?.id) {
+      app.scheduleEditingId = Number(job.id || 0)
+    }
+    syncScheduledJobForm(job || app.selectedScheduledJob)
     app.scheduledSettingsDialogOpen = true
   }
 
   async function saveScheduledJob() {
     const job = app.selectedScheduledJob
-    if (!job?.job_key) return
+    if (!job) return
     try {
-      await putAction(`/scheduled-jobs/${job.job_key}`, {
-        enabled: Boolean(app.scheduledJobForm.enabled),
-        interval_minutes: Number(app.scheduledJobForm.interval_minutes || 1),
-      })
+      if (job.id && job.action) {
+        await putAction(`/schedules/${job.id}`, {
+          key: job.key || job.action,
+          name: job.name || job.action_name || job.action,
+          action: job.action,
+          enabled: Boolean(app.scheduledJobForm.enabled),
+          interval_minutes: Number(app.scheduledJobForm.interval_minutes || 1),
+          config: job.config || {},
+        })
+      } else if (job.job_key) {
+        await putAction(`/scheduled-jobs/${job.job_key}`, {
+          enabled: Boolean(app.scheduledJobForm.enabled),
+          interval_minutes: Number(app.scheduledJobForm.interval_minutes || 1),
+        })
+      } else {
+        return
+      }
       ElMessage.success('定时任务设置已保存')
       app.scheduledSettingsDialogOpen = false
+      app.scheduleEditingId = 0
+      await app.reload()
+    } catch (error) {
+      ElMessage.error(apiErrorMessage(error))
+    }
+  }
+
+  async function triggerSchedule(job) {
+    const id = Number(job?.id || 0)
+    if (!id) return
+    try {
+      const result = await postAction(`/schedules/${id}/trigger`)
+      ElMessage.success(result?.message || '定时器动作已触发')
       await app.reload()
     } catch (error) {
       ElMessage.error(apiErrorMessage(error))
@@ -1108,6 +1137,6 @@ export function createAppActions(app, deps) {
     removeMediaWizardSubtitleItem, resetRssForm, resetSelectionRules, runAction, runMetadataSearch, saveAllSettings, saveBatchSubtitles,
     saveEntryEditForm, saveEpisodeResource, saveProcessorSettings, saveRssSubscription, saveScheduledJob, searchWizardMetadata, selectServerFile, setCurrentEntryFollowing,
     confirmMetadataMatch, selectedMetadataCandidate, selectMetadataCandidate, skipMetadataProvider, toggleEntryResourceRow,
-    startMetadataProgress, stopMetadataProgress, syncScheduledJobForm,
+    startMetadataProgress, stopMetadataProgress, syncScheduledJobForm, triggerSchedule,
   }
 }

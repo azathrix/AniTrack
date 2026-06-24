@@ -40,7 +40,7 @@ queue_debounce_tasks: dict[str, asyncio.Task] = {}
 active_queue_tasks: set[asyncio.Task] = set()
 queue_running: set[str] = set()
 queue_rerun_requested: set[str] = set()
-active_operation_tasks: set[asyncio.Task] = set()
+active_operation_tasks: dict[int, asyncio.Task] = {}
 QUEUE_KEY_ALIASES: dict[str, str] = {}
 
 def canonical_queue_key(name: str) -> str:
@@ -189,12 +189,12 @@ async def cancel_runtime_activity() -> None:
     queue_running.clear()
     queue_rerun_requested.clear()
 
-    for task in list(active_operation_tasks):
+    for task in list(active_operation_tasks.values()):
         if task and not task.done():
             task.cancel()
 
     if active_operation_tasks:
-        await asyncio.gather(*list(active_operation_tasks), return_exceptions=True)
+        await asyncio.gather(*list(active_operation_tasks.values()), return_exceptions=True)
     active_operation_tasks.clear()
 
 async def dispatch_ready_queues() -> None:
@@ -275,8 +275,8 @@ def run_operation(name: str, coro_factory, start_message: str = "") -> int:
         log("info", f"{name} 完成: {message or '完成'}")
 
     task = asyncio.create_task(runner())
-    active_operation_tasks.add(task)
-    task.add_done_callback(lambda finished: active_operation_tasks.discard(finished))
+    active_operation_tasks[operation_id] = task
+    task.add_done_callback(lambda finished, op_id=operation_id: active_operation_tasks.pop(op_id, None))
     return operation_id
 
 def run_progress_operation(name: str, coro_factory, start_message: str = "") -> int:
@@ -297,6 +297,19 @@ def run_progress_operation(name: str, coro_factory, start_message: str = "") -> 
         log("info", f"{name} 完成: {message or '完成'}")
 
     task = asyncio.create_task(runner())
-    active_operation_tasks.add(task)
-    task.add_done_callback(lambda finished: active_operation_tasks.discard(finished))
+    active_operation_tasks[operation_id] = task
+    task.add_done_callback(lambda finished, op_id=operation_id: active_operation_tasks.pop(op_id, None))
     return operation_id
+
+
+async def cancel_operation(operation_id: int) -> bool:
+    task = active_operation_tasks.get(operation_id)
+    if not task or task.done():
+        return False
+    task.cancel()
+    runtime_store.finish_operation_sync(operation_id, "cancelled", "用户取消操作")
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    return True

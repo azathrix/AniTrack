@@ -114,6 +114,7 @@ const appVersion = APP_VERSION
 const appBuild = APP_BUILD
 const selectedConsoleSection = ref('')
 const selectedTaskType = ref('')
+const scheduleEditingId = ref(0)
 const logKeyword = ref('')
 const loading = ref(false)
 const savingSettings = ref(false)
@@ -171,6 +172,7 @@ const dashboard = reactive({
   seasonal_update_calendar: [],
   operations: [],
   scheduled_jobs: [],
+  schedules: [],
   scheduled_runs: [],
   server_logs: [],
   queue_summary: [],
@@ -435,6 +437,9 @@ const selectedSectionMeta = computed(() => {
   return scheduledConsoleSections.value.find(item => item.key === selectedConsoleSection.value) || null
 })
 const selectedScheduledJob = computed(() => {
+  if (Number(scheduleEditingId.value || 0) > 0) {
+    return (dashboard.schedules || []).find(item => Number(item.id || 0) === Number(scheduleEditingId.value || 0)) || null
+  }
   const section = selectedSectionMeta.value
   if (!section || section.kind !== 'scheduled') return null
   return (dashboard.scheduled_jobs || []).find(item => item.job_key === section.job_key) || null
@@ -931,6 +936,7 @@ exposeAppContext({
   scheduledConsoleSections,
   scheduledJobForm,
   scheduledSettingsDialogOpen,
+  scheduleEditingId,
   seasonalCalendarCards,
   seasonalRows,
   selectedConsoleSection,
@@ -975,7 +981,7 @@ const {
   removeMediaWizardSubtitleItem, resetRssForm, resetSelectionRules, runAction, runMetadataSearch, saveAllSettings, saveBatchSubtitles,
   saveEntryEditForm, saveEpisodeResource, saveProcessorSettings, saveRssSubscription, saveScheduledJob, searchWizardMetadata, selectServerFile, setCurrentEntryFollowing,
   confirmMetadataMatch, selectedMetadataCandidate, selectMetadataCandidate, skipMetadataProvider, toggleEntryResourceRow,
-  startMetadataProgress, stopMetadataProgress, syncScheduledJobForm,
+  startMetadataProgress, stopMetadataProgress, syncScheduledJobForm, triggerSchedule,
 } = createAppActions(appContext, {
   deleteAction,
   getAction,
@@ -1001,7 +1007,7 @@ exposeAppContext({
   removeMediaWizardSubtitleItem, resetRssForm, resetSelectionRules, runAction, runMetadataSearch, saveAllSettings, saveBatchSubtitles,
   saveEntryEditForm, saveEpisodeResource, saveProcessorSettings, saveRssSubscription, saveScheduledJob, searchWizardMetadata, selectServerFile, setCurrentEntryFollowing,
   confirmMetadataMatch, selectedMetadataCandidate, selectMetadataCandidate, skipMetadataProvider, toggleEntryResourceRow,
-  startMetadataProgress, stopMetadataProgress, syncScheduledJobForm,
+  startMetadataProgress, stopMetadataProgress, syncScheduledJobForm, triggerSchedule,
 })
 
 watch(selectedScheduledJob, job => {

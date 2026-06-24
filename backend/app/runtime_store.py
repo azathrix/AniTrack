@@ -544,6 +544,14 @@ class RuntimeStore:
         self.bump_sync()
         return len(removable)
 
+    def delete_operation_sync(self, operation_id: int) -> bool:
+        operation = self.operations.get(operation_id)
+        if not operation or str(operation.get("status") or "") == "running":
+            return False
+        self.operations.pop(operation_id, None)
+        self.bump_sync()
+        return True
+
     def snapshot(self) -> dict[str, Any]:
         tasks = list(self.tasks.values())
         queues: dict[str, dict[str, Any]] = {}

@@ -150,6 +150,29 @@ export default appContextComponent({ draggable, PriorityList })
                 <el-form-item label="电影命名模板"><el-input v-model="settings.movie_name_template" /></el-form-item>
                 <el-form-item label="电视剧命名模板"><el-input v-model="settings.tv_name_template" /></el-form-item>
               </el-tab-pane>
+              <el-tab-pane label="定时器">
+                <el-alert
+                  type="info"
+                  show-icon
+                  :closable="false"
+                  title="定时器只负责触发动作；具体执行会显示在控制台任务列表。"
+                  class="settings-alert"
+                />
+                <div class="schedule-settings-list">
+                  <div v-for="item in dashboard.schedules || []" :key="item.id" class="schedule-settings-row">
+                    <div>
+                      <strong>{{ item.name || item.action_name || item.action }}</strong>
+                      <span>{{ item.action_name || item.action }} · {{ Number(item.interval_minutes || 0) }} 分钟</span>
+                    </div>
+                    <el-tag :type="Number(item.enabled || 0) ? 'success' : 'info'">{{ Number(item.enabled || 0) ? '启用' : '关闭' }}</el-tag>
+                    <el-tag v-if="item.last_status" :type="item.last_status === 'failed' ? 'danger' : 'info'">{{ item.last_status }}</el-tag>
+                    <span class="schedule-run-at">{{ item.last_run_at || '未执行' }}</span>
+                    <el-button plain @click="triggerSchedule(item)">立即执行</el-button>
+                    <el-button type="primary" plain @click="openScheduledSettings(item)">设置</el-button>
+                  </div>
+                  <el-empty v-if="!(dashboard.schedules || []).length" description="暂无定时器" />
+                </div>
+              </el-tab-pane>
               <el-tab-pane label="维护">
                 <div class="detail-summary-grid maintenance-summary-grid">
                   <div><span>待处理任务</span><strong>{{ dashboard.console_overview?.pending_task_count || 0 }}</strong></div>
