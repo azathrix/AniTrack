@@ -4,7 +4,7 @@ import shutil
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 
 from ..database import connect
@@ -24,6 +24,11 @@ from ..utils import (
 
 
 router = APIRouter()
+
+
+def _safe_upload_session(value: str) -> str:
+    text = "".join(ch for ch in str(value or "").strip() if ch.isalnum() or ch in {"-", "_"})
+    return text[:80]
 
 
 async def save_upload_file(file: UploadFile, subdir: str = "") -> dict[str, Any]:
@@ -53,8 +58,8 @@ async def save_upload_file(file: UploadFile, subdir: str = "") -> dict[str, Any]
 
 
 @router.post("/api/uploads/local")
-async def api_upload_local_file(file: UploadFile = File(...)) -> dict[str, Any]:
-    return await save_upload_file(file)
+async def api_upload_local_file(file: UploadFile = File(...), session_id: str = Form("")) -> dict[str, Any]:
+    return await save_upload_file(file, _safe_upload_session(session_id))
 
 
 @router.post("/api/subtitles/upload")
@@ -66,6 +71,25 @@ async def api_upload_subtitle_file(file: UploadFile = File(...)) -> dict[str, An
     result = await save_upload_file(file, "subtitles")
     log("info", f"字幕文件已上传: name={result['file_name']} size={result['size']}")
     return result
+
+
+@router.post("/api/uploads/session/{session_id}/clear")
+async def api_clear_upload_session(session_id: str) -> dict[str, Any]:
+    safe_session = _safe_upload_session(session_id)
+    if not safe_session:
+        raise HTTPException(status_code=400, detail="缺少上传会话 ID")
+    root = (upload_root() / safe_session).resolve()
+    upload_base = upload_root().resolve()
+    if upload_base not in root.parents and root != upload_base:
+        raise HTTPException(status_code=400, detail="上传会话路径无效")
+    removed = 0
+    if root.exists():
+        for item in root.rglob("*"):
+            if item.is_file():
+                removed += 1
+        await run_in_threadpool(shutil.rmtree, root, True)
+    log("info", f"上传临时会话已清理: session_id={safe_session} files={removed}")
+    return {"status": "cleared", "session_id": safe_session, "removed": removed}
 
 
 @router.post("/api/entries/{entry_id}/subtitles/uploads/import")

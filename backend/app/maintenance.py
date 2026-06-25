@@ -534,6 +534,7 @@ def _candidate_existing_path(*values: str) -> str:
 
 
 VIDEO_SUFFIXES = (".mkv", ".mp4", ".avi", ".mov", ".wmv", ".ts", ".m2ts", ".flv", ".webm")
+SUBTITLE_SUFFIXES = (".ass", ".srt", ".ssa", ".vtt", ".sup", ".sub")
 
 
 def _expected_existing_path(entry: dict[str, Any], episode_number: int, suffix: str, settings: dict[str, str]) -> str:
@@ -824,6 +825,144 @@ def organize_local_files(entry_id: int = 0) -> dict[str, Any]:
             _bind_episode_local_path(conn, row, entry, str(expected_path), ts)
     scope = f"entry_id={entry_id}" if entry_id > 0 else "全部"
     message = f"本地资源整理完成({scope}): 检查 {summary['checked']} 集，移动 {summary['moved']} 个，缺失 {summary['missing']} 个"
+    log("info", message)
+    return {"status": "completed", "message": message, **summary}
+
+
+def organize_episode_file(episode_id: int) -> dict[str, Any]:
+    settings = get_settings()
+    ts = _now()
+    summary = {"checked": 1, "video_moved": 0, "subtitle_moved": 0, "missing": 0, "skipped": 0}
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT ep.*, e.display_title, e.title_raw, e.title_cn, e.bangumi_id, e.tmdb_id,
+                   e.year, e.season_number, e.media_type, e.target_library_id,
+                   la.local_path AS asset_local_path,
+                   er.local_path AS resource_local_path,
+                   es.subtitle_path AS selected_subtitle_path
+            FROM episodes ep
+            JOIN entries e ON e.id=ep.entry_id
+            LEFT JOIN local_assets la ON la.id=(
+              SELECT id FROM local_assets
+              WHERE entry_id=ep.entry_id AND episode_number=ep.episode_number AND status='synced'
+              ORDER BY updated_at DESC, id DESC
+              LIMIT 1
+            )
+            LEFT JOIN episode_resources er ON er.id=(
+              SELECT id FROM episode_resources
+              WHERE entry_id=ep.entry_id AND episode_number=ep.episode_number
+              ORDER BY selected DESC, id DESC
+              LIMIT 1
+            )
+            LEFT JOIN episode_subtitles es ON es.id=(
+              SELECT id FROM episode_subtitles
+              WHERE entry_id=ep.entry_id AND episode_number=ep.episode_number
+              ORDER BY selected DESC, id DESC
+              LIMIT 1
+            )
+            WHERE ep.id=? AND COALESCE(e.hidden, 0)=0
+            """,
+            (episode_id,),
+        ).fetchone()
+        if not row:
+            return {"status": "not_found", "message": "集数不存在", **summary}
+        entry = dict(row)
+        episode_number = int(row["episode_number"] or 0)
+        video_source = _candidate_existing_path(
+            str(row["local_path"] or ""),
+            str(row["asset_local_path"] or ""),
+            str(row["resource_local_path"] or ""),
+        )
+        final_video = ""
+        if video_source:
+            source_path = Path(video_source)
+            expected = expected_local_episode_path(entry, episode_number, source_path.suffix or ".mkv", settings)
+            expected_path = Path(expected)
+            if source_path.resolve() != expected_path.resolve():
+                expected_path.parent.mkdir(parents=True, exist_ok=True)
+                if expected_path.exists():
+                    expected_path.unlink()
+                shutil.move(str(source_path), str(expected_path))
+                summary["video_moved"] += 1
+            else:
+                summary["skipped"] += 1
+            final_video = str(expected_path)
+            _bind_episode_local_path(conn, row, entry, final_video, ts)
+
+        subtitle_source = _candidate_existing_path(str(row["subtitle_path"] or ""), str(row["selected_subtitle_path"] or ""))
+        final_subtitle = ""
+        if subtitle_source:
+            subtitle_path = Path(subtitle_source)
+            subtitle_suffix = subtitle_path.suffix.lower()
+            if subtitle_suffix in SUBTITLE_SUFFIXES:
+                video_suffix = Path(final_video).suffix if final_video else ".mkv"
+                expected_video = final_video or expected_local_episode_path(entry, episode_number, video_suffix, settings)
+                target_subtitle = Path(expected_video).with_suffix(subtitle_suffix)
+                if subtitle_path.resolve() != target_subtitle.resolve():
+                    target_subtitle.parent.mkdir(parents=True, exist_ok=True)
+                    if target_subtitle.exists():
+                        target_subtitle.unlink()
+                    shutil.move(str(subtitle_path), str(target_subtitle))
+                    summary["subtitle_moved"] += 1
+                else:
+                    summary["skipped"] += 1
+                final_subtitle = str(target_subtitle)
+                conn.execute(
+                    """
+                    UPDATE episodes
+                    SET subtitle_path=?, updated_at=?
+                    WHERE id=?
+                    """,
+                    (final_subtitle, ts, episode_id),
+                )
+                conn.execute(
+                    """
+                    UPDATE episode_subtitles
+                    SET subtitle_path=?, file_name=?, selected=1, updated_at=?
+                    WHERE id=(
+                      SELECT id FROM episode_subtitles
+                      WHERE entry_id=? AND episode_number=?
+                      ORDER BY selected DESC, id DESC
+                      LIMIT 1
+                    )
+                    """,
+                    (final_subtitle, Path(final_subtitle).name, ts, int(row["entry_id"] or 0), episode_number),
+                )
+                exists = conn.execute(
+                    """
+                    SELECT id
+                    FROM episode_subtitles
+                    WHERE entry_id=? AND episode_number=?
+                    ORDER BY selected DESC, id DESC
+                    LIMIT 1
+                    """,
+                    (int(row["entry_id"] or 0), episode_number),
+                ).fetchone()
+                if not exists:
+                    conn.execute(
+                        """
+                        INSERT INTO episode_subtitles
+                          (episode_id, episode_resource_id, entry_id, episode_number, language,
+                           subtitle_format, subtitle_path, subtitle_url, file_name, embedded, selected, created_at, updated_at)
+                        VALUES (?, 0, ?, ?, '', 'external', ?, '', ?, 0, 1, ?, ?)
+                        """,
+                        (
+                            episode_id,
+                            int(row["entry_id"] or 0),
+                            episode_number,
+                            final_subtitle,
+                            Path(final_subtitle).name,
+                            ts,
+                            ts,
+                        ),
+                    )
+        if not video_source and not subtitle_source:
+            summary["missing"] += 1
+    message = (
+        f"单集整理完成: episode_id={episode_id} "
+        f"视频移动 {summary['video_moved']} 个，字幕移动 {summary['subtitle_moved']} 个，缺失 {summary['missing']} 个"
+    )
     log("info", message)
     return {"status": "completed", "message": message, **summary}
 

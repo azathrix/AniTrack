@@ -79,6 +79,34 @@ export function createFileBrowserActions(app, deps) {
       app.fileBrowser.open = false
       return
     }
+    if (app.fileBrowser.mode === 'media-wizard' || app.fileBrowser.mode === 'media-wizard-video' || app.fileBrowser.mode === 'media-wizard-subtitle') {
+      if (item.kind === 'directory' && item.selectCurrent) {
+        const mode = app.fileBrowser.mode === 'media-wizard-subtitle' ? 'subtitle' : app.fileBrowser.mode === 'media-wizard-video' ? 'video' : 'auto'
+        for (const file of app.fileBrowser.items || []) {
+          if (file.kind === 'video' || file.kind === 'subtitle') app.addMediaWizardServerFile?.(file, mode)
+        }
+        ElMessage.success('已加入当前目录资源')
+        app.fileBrowser.open = false
+        return
+      }
+      if (item.kind === 'directory') {
+        browseServerFiles(item.path)
+        return
+      }
+      const mode = app.fileBrowser.mode === 'media-wizard-subtitle' ? 'subtitle' : app.fileBrowser.mode === 'media-wizard-video' ? 'video' : 'auto'
+      if (mode === 'video' && item.kind !== 'video') {
+        ElMessage.warning('请选择视频文件')
+        return
+      }
+      if (mode === 'subtitle' && item.kind !== 'subtitle') {
+        ElMessage.warning('请选择字幕文件')
+        return
+      }
+      app.addMediaWizardServerFile?.(item, mode)
+      ElMessage.success('已加入服务器文件')
+      app.fileBrowser.open = false
+      return
+    }
     if (item.kind === 'directory') {
       browseServerFiles(item.path)
       return

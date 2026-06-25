@@ -58,7 +58,7 @@
 import { computed, isRef, onMounted, onUnmounted, provide, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Calendar, Collection, DataBoard, Document, Refresh, Search, Setting } from '@element-plus/icons-vue'
-import { deleteAction, getAction, getCalendar, getCatalog, getDashboard, getDiagnostics, getLogs, getMediaItem, getSettings, postAction, putAction, saveMediaItem, saveSettings } from './api'
+import { deleteAction, getAction, getCalendar, getCatalog, getDashboard, getDiagnostics, getLogs, getMediaItem, getSettings, postAction, putAction, saveMediaItem, saveSettings, uploadFile } from './api'
 import { APP_BUILD, APP_VERSION } from './version'
 import { createAppActions } from './composables/appActions'
 import {
@@ -131,6 +131,8 @@ const mediaWizardMode = ref('import')
 const mediaWizardStep = ref(0)
 const mediaWizardSeed = ref('')
 const mediaWizardSaving = ref(false)
+const mediaWizardUploadProgress = ref(0)
+const mediaWizardUploading = ref(false)
 const mediaWizardCandidates = ref([])
 const mediaWizardResourceItems = ref([])
 const mediaWizardSubtitleItems = ref([])
@@ -589,21 +591,21 @@ const episodeImportCanAdvance = computed(() => {
 })
 const episodeImportCanSave = computed(() => episodeImportResourceRows.value.length > 0 && episodeImportInvalidCount.value === 0)
 const mediaWizardResourceRows = computed(() => mediaWizardResourceItems.value.map((item, index) => {
-  const text = item.source_ref || item.file_name || ''
-  const valid = isValidResourceReference(text)
+  const text = item.source_ref || item.local_path || item.file_name || ''
+  const valid = Boolean(item.local_path) || isValidResourceReference(text)
   return {
     ...item,
     key: item.id || `wizard-resource:${index}:${text}`,
     text,
     episode: Number(item.episode_number || 0) || inferEpisodeFromText(text, currentMediaType.value === 'movie' ? 1 : index + 1),
     valid,
-    kind: resourceReferenceKind(text),
+    kind: item.local_path ? '本地路径' : resourceReferenceKind(text),
     reason: valid ? '' : '不是可用资源',
   }
 }))
 const mediaWizardSubtitleRows = computed(() => mediaWizardSubtitleItems.value.map((item, index) => {
-  const text = item.subtitle_ref || item.file_name || ''
-  const valid = isValidSubtitleReference(text)
+  const text = item.subtitle_ref || item.subtitle_path || item.file_name || ''
+  const valid = Boolean(item.subtitle_path) || isValidSubtitleReference(text) || isValidResourceReference(text)
   return {
     ...item,
     key: item.id || `wizard-subtitle:${index}:${text}`,
@@ -960,6 +962,8 @@ exposeAppContext({
   mediaWizardSubtitleItems,
   mediaWizardSubtitleRows,
   mediaWizardTitle,
+  mediaWizardUploadProgress,
+  mediaWizardUploading,
   metadataFetchProgress,
   metadataFetching,
   metadataScores,
@@ -1030,7 +1034,7 @@ exposeAppContext({
 provide('appContext', appContext)
 
 const {
-  addDownloader, addMediaWizardResourceLines, addMediaWizardSubtitleLines, advanceMediaWizard, apiErrorMessage, applyMetadataToWizard,
+  addDownloader, addMediaWizardResourceLines, addMediaWizardServerFile, addMediaWizardSubtitleLines, advanceMediaWizard, apiErrorMessage, applyMetadataToWizard,
   browseServerFiles,
   archiveCurrentEntry, backfillCurrentEntrySeason, cancelAllDownloads, cancelDownloadTask, cancelEpisodeDownload, cancelQueueDownload, clearCompletedDownloadTasks, clearEntryEditForm,
   cancelGenericTask, clearGenericTask, pauseGenericTask, resumeGenericTask,
@@ -1042,7 +1046,7 @@ const {
   removeMediaWizardSubtitleItem, resetRssForm, resetSelectionRules, runAction, runMetadataSearch, saveAllSettings, saveBatchSubtitles,
   saveEntryEditForm, saveEpisodeResource, saveProcessorSettings, saveRssSubscription, saveScheduledJob, searchWizardMetadata, selectServerFile, setCurrentEntryFollowing,
   confirmMetadataMatch, selectedMetadataCandidate, selectMetadataCandidate, skipMetadataProvider, toggleEntryResourceRow,
-  startMetadataProgress, stopMetadataProgress, syncScheduledJobForm, triggerSchedule,
+  startMetadataProgress, stopMetadataProgress, syncScheduledJobForm, triggerSchedule, uploadMediaWizardFiles,
 } = createAppActions(appContext, {
   deleteAction,
   getAction,
@@ -1053,10 +1057,11 @@ const {
   putAction,
   saveMediaItem,
   saveSettings,
+  uploadFile,
 })
 
 exposeAppContext({
-  addDownloader, addMediaWizardResourceLines, addMediaWizardSubtitleLines, advanceMediaWizard, apiErrorMessage, applyMetadataToWizard,
+  addDownloader, addMediaWizardResourceLines, addMediaWizardServerFile, addMediaWizardSubtitleLines, advanceMediaWizard, apiErrorMessage, applyMetadataToWizard,
   browseServerFiles,
   archiveCurrentEntry, backfillCurrentEntrySeason, cancelAllDownloads, cancelDownloadTask, cancelEpisodeDownload, cancelQueueDownload, clearCompletedDownloadTasks, clearEntryEditForm,
   cancelGenericTask, clearGenericTask, pauseGenericTask, resumeGenericTask,
@@ -1068,7 +1073,7 @@ exposeAppContext({
   removeMediaWizardSubtitleItem, resetRssForm, resetSelectionRules, runAction, runMetadataSearch, saveAllSettings, saveBatchSubtitles,
   saveEntryEditForm, saveEpisodeResource, saveProcessorSettings, saveRssSubscription, saveScheduledJob, searchWizardMetadata, selectServerFile, setCurrentEntryFollowing,
   confirmMetadataMatch, selectedMetadataCandidate, selectMetadataCandidate, skipMetadataProvider, toggleEntryResourceRow,
-  startMetadataProgress, stopMetadataProgress, syncScheduledJobForm, triggerSchedule,
+  startMetadataProgress, stopMetadataProgress, syncScheduledJobForm, triggerSchedule, uploadMediaWizardFiles,
 })
 
 watch(selectedScheduledJob, job => {

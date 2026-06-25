@@ -15,7 +15,7 @@ from .library import parse_entry_labels
 from .parser import fingerprint
 from .runtime_service import ACTIVE_DOWNLOAD_STATUSES, DOWNLOAD_RUNTIME_PROCESSORS
 from .runtime_store import runtime_store
-from .schemas import EntryPayload, MediaCreatePayload
+from .schemas import CollectResourcePayload, EntryPayload, MediaCollectPayload, MediaCreatePayload
 from .utils import normalize_json_list_text, parsed_episode_required, row_to_dict, subtitle_embedded_value, rows_to_dicts, enrich_catalog_entry
 
 def normalize_api_media_type(value: str) -> str:
@@ -46,6 +46,65 @@ def media_library_key(media_type: str) -> str:
         "movie": "movies",
         "tv": "tv",
     }.get(media_type, "anime_library")
+
+VIDEO_SUFFIXES = {".mkv", ".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v", ".ts", ".m2ts"}
+SUBTITLE_SUFFIXES = {".ass", ".srt", ".ssa", ".vtt", ".sup", ".sub"}
+
+def _payload_copy(payload: MediaCreatePayload) -> MediaCreatePayload:
+    data = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
+    return MediaCreatePayload(**data)
+
+def _collect_ref(item: CollectResourcePayload) -> str:
+    return str(item.ref or item.file_name or item.title or "").strip()
+
+def _collect_is_path(value: str) -> bool:
+    text = str(value or "").strip()
+    return text.startswith(("/", "\\")) or (len(text) >= 3 and text[1:3] in {":\\", ":/"})
+
+def _collect_is_subtitle(item: CollectResourcePayload) -> bool:
+    text = _collect_ref(item).lower()
+    if str(item.media_kind or "").strip().lower() == "subtitle":
+        return True
+    return Path(text).suffix.lower() in SUBTITLE_SUFFIXES
+
+def _collect_episode_number(item: CollectResourcePayload, fallback: int, media_type: str) -> int:
+    explicit = int(item.episode_number or 0)
+    if explicit > 0:
+        return explicit
+    parsed = parsed_episode_required(" ".join([str(item.file_name or ""), str(item.title or ""), str(item.ref or "")]))
+    if parsed > 0:
+        return parsed
+    if media_type == "movie":
+        return 1
+    return max(1, fallback)
+
+def _ensure_episode(conn, entry_id: int, episode_number: int, ts: str):
+    conn.execute(
+        """
+        INSERT INTO episodes (series_id, entry_id, episode_number, title, status, created_at, updated_at)
+        VALUES (?, ?, ?, '', 'configured', ?, ?)
+        ON CONFLICT(series_id, episode_number) DO UPDATE SET
+          entry_id=excluded.entry_id,
+          status=excluded.status,
+          updated_at=excluded.updated_at
+        """,
+        (entry_id, entry_id, episode_number, ts, ts),
+    )
+    return conn.execute(
+        "SELECT * FROM episodes WHERE entry_id=? AND episode_number=? ORDER BY id DESC LIMIT 1",
+        (entry_id, episode_number),
+    ).fetchone()
+
+def _source_type_for_ref(value: str, kind: str) -> str:
+    text = str(value or "").strip()
+    mode = str(kind or "").strip().lower()
+    if mode in {"upload", "upload_temp"}:
+        return "upload_temp"
+    if _collect_is_path(text):
+        return "local"
+    if text.startswith("magnet:"):
+        return "magnet"
+    return "url" if text else "manual"
 
 def create_media_entry(media_type: str, payload: MediaCreatePayload) -> dict[str, Any]:
     media_type = normalize_api_media_type(media_type)
@@ -307,6 +366,132 @@ def create_media_entry(media_type: str, payload: MediaCreatePayload) -> dict[str
     detail = build_entry_response(entry_id)
     detail["download_task"] = queued_download
     return detail
+
+def collect_media_entry(media_type: str, payload: MediaCollectPayload) -> dict[str, Any]:
+    media_type = normalize_api_media_type(media_type)
+    entry_payload = _payload_copy(payload.entry)
+    entry_payload.source_ref = ""
+    entry_payload.resource_title = ""
+    entry_payload.episode_number = 0
+    detail = create_media_entry(media_type, entry_payload)
+    entry_id = int((detail.get("entry") or {}).get("id") or 0)
+    if entry_id <= 0:
+        raise HTTPException(status_code=400, detail="作品收录失败")
+
+    ts = now()
+    touched_episode_ids: set[int] = set()
+    video_items = [item for item in payload.resources if not _collect_is_subtitle(item)]
+    subtitle_items = [item for item in [*payload.subtitles, *[item for item in payload.resources if _collect_is_subtitle(item)]]]
+
+    with connect() as conn:
+        for index, item in enumerate(video_items, start=1):
+            ref = _collect_ref(item)
+            if not ref:
+                continue
+            episode_number = _collect_episode_number(item, index, media_type)
+            episode = _ensure_episode(conn, entry_id, episode_number, ts)
+            episode_id = int(episode["id"] or 0)
+            touched_episode_ids.add(episode_id)
+            kind = str(item.kind or "").strip().lower()
+            source_type = _source_type_for_ref(ref, kind)
+            is_path = _collect_is_path(ref) or source_type in {"local", "upload_temp"}
+            resource_ref = "" if is_path else ref
+            local_path = ref if is_path else str(episode["local_path"] or "")
+            title = str(item.title or item.file_name or ref)
+            torrent_url = resource_ref if resource_ref and not resource_ref.startswith("magnet:") else ""
+            magnet = resource_ref if resource_ref.startswith("magnet:") else ""
+            conn.execute(
+                "UPDATE episode_resources SET selected=0 WHERE entry_id=? AND episode_number=?",
+                (entry_id, episode_number),
+            )
+            conn.execute(
+                """
+                UPDATE episodes
+                SET resource_ref=?, local_path=?, source_type=?, source_title=?,
+                    watchable=CASE WHEN ?='' THEN watchable ELSE 0 END,
+                    release_id=CASE WHEN ?='' THEN release_id ELSE 0 END,
+                    updated_at=?
+                WHERE id=?
+                """,
+                (resource_ref, local_path, source_type, title, local_path, resource_ref, ts, episode_id),
+            )
+            conn.execute(
+                """
+                INSERT INTO episode_resources
+                  (entry_id, episode_id, episode_number, source_type, source_ref, release_id, title,
+                   torrent_url, magnet, selected, downloaded, local_path, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, 1, 0, ?, 'available', ?, ?)
+                ON CONFLICT(entry_id, episode_number, source_type, source_ref) DO UPDATE SET
+                  episode_id=excluded.episode_id,
+                  title=excluded.title,
+                  torrent_url=excluded.torrent_url,
+                  magnet=excluded.magnet,
+                  selected=1,
+                  local_path=excluded.local_path,
+                  status='available',
+                  updated_at=excluded.updated_at
+                """,
+                (entry_id, episode_id, episode_number, source_type, ref, title, torrent_url, magnet, local_path, ts, ts),
+            )
+
+        for index, item in enumerate(subtitle_items, start=1):
+            ref = _collect_ref(item)
+            if not ref:
+                continue
+            episode_number = _collect_episode_number(item, index, media_type)
+            episode = _ensure_episode(conn, entry_id, episode_number, ts)
+            episode_id = int(episode["id"] or 0)
+            touched_episode_ids.add(episode_id)
+            source_type = _source_type_for_ref(ref, str(item.kind or ""))
+            is_path = _collect_is_path(ref) or source_type in {"local", "upload_temp"}
+            subtitle_ref = "" if is_path else ref
+            subtitle_path = ref if is_path else str(episode["subtitle_path"] or "")
+            file_name = str(item.file_name or Path(ref).name or "")
+            conn.execute(
+                """
+                UPDATE episodes
+                SET subtitle_ref=?, subtitle_path=?, updated_at=?
+                WHERE id=?
+                """,
+                (subtitle_ref, subtitle_path, ts, episode_id),
+            )
+            conn.execute(
+                """
+                INSERT INTO episode_subtitles
+                  (episode_id, episode_resource_id, entry_id, episode_number, language, subtitle_format,
+                   subtitle_path, subtitle_url, file_name, embedded, selected, created_at, updated_at)
+                VALUES (?, 0, ?, ?, '', 'external', ?, ?, ?, 0, 1, ?, ?)
+                """,
+                (episode_id, entry_id, episode_number, subtitle_path, subtitle_ref, file_name, ts, ts),
+            )
+
+    organized: list[dict[str, Any]] = []
+    queued: list[dict[str, Any]] = []
+    if payload.auto_organize:
+        from .maintenance import organize_episode_file
+
+        for episode_id in sorted(touched_episode_ids):
+            result = organize_episode_file(episode_id)
+            organized.append({"episode_id": episode_id, **result})
+    if payload.auto_download:
+        for episode_id in sorted(touched_episode_ids):
+            result = queue_download_for_episode(episode_id)
+            if result.get("queued"):
+                queued.append({"episode_id": episode_id, **result})
+        if queued:
+            trigger_download_worker(delay=0)
+
+    log(
+        "info",
+        f"媒体收录完成: type={media_type} entry_id={entry_id} episodes={len(touched_episode_ids)} queued={len(queued)}",
+    )
+    response = build_media_entry_response(media_type, entry_id)
+    response["collect"] = {
+        "episodes": len(touched_episode_ids),
+        "queued": queued,
+        "organized": organized,
+    }
+    return response
 
 def empty_entry_response() -> dict[str, Any]:
     return {

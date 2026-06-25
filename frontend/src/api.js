@@ -61,12 +61,16 @@ export async function postAction(path, payload = undefined) {
   return (await api.post(path, payload)).data
 }
 
-export async function uploadFile(path, file) {
+export async function uploadFile(path, file, fields = {}, onProgress = null) {
   const form = new FormData()
   form.append('file', file)
+  for (const [key, value] of Object.entries(fields || {})) {
+    if (value !== undefined && value !== null) form.append(key, value)
+  }
   return (await api.post(path, form, {
     headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 0
+    timeout: 0,
+    onUploadProgress: onProgress || undefined,
   })).data
 }
 

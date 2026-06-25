@@ -460,6 +460,25 @@
   margin-top: -8px;
 }
 
+.wizard-source-summary,
+.wizard-upload-panel {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.wizard-upload-panel.compact {
+  margin-top: 0;
+}
+
+.wizard-upload-panel input[type="file"] {
+  border: 1px dashed var(--ani-line-strong);
+  border-radius: 12px;
+  padding: 10px;
+}
+
 .wizard-resource-list {
   display: grid;
   gap: 10px;
@@ -485,12 +504,12 @@
   border-radius: 14px;
   display: grid;
   gap: 10px;
-  grid-template-columns: 112px 72px minmax(160px, 1fr) minmax(220px, 1.4fr) auto;
+  grid-template-columns: 112px minmax(180px, .9fr) minmax(220px, 1.1fr) minmax(260px, 1.2fr) auto;
   padding: 12px;
 }
 
 .wizard-resource-row.subtitle-only {
-  grid-template-columns: 112px 72px minmax(240px, 1fr) 160px minmax(140px, .7fr) auto;
+  grid-template-columns: 112px 72px minmax(220px, 1fr) minmax(260px, 1.2fr) auto;
 }
 
 .wizard-resource-subline {
@@ -512,6 +531,13 @@
 
 .wizard-panel small {
   color: #64748b;
+}
+
+.dropdown-upload-item {
+  color: inherit;
+  cursor: pointer;
+  display: block;
+  min-width: 120px;
 }
 
 .rss-dialog-layout {

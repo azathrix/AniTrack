@@ -9,6 +9,7 @@ from ..media_service import (
     archive_seasonal_entry,
     build_entry_response,
     build_media_entry_response,
+    collect_media_entry,
     create_media_entry,
     hide_entry,
     media_items_response,
@@ -18,7 +19,7 @@ from ..media_service import (
 )
 from ..metadata import refresh_entry_metadata_by_ids
 from ..rss_scan_service import start_metadata_refresh_task
-from ..schemas import EntryPayload, MediaCreatePayload, MetadataFetchPayload
+from ..schemas import EntryPayload, MediaCollectPayload, MediaCreatePayload, MetadataFetchPayload
 
 
 router = APIRouter()
@@ -104,6 +105,11 @@ async def api_create_media_entry(media_type: str, payload: MediaCreatePayload) -
         )
         return build_media_entry_response(normalized_type, entry_id)
     return detail
+
+
+@router.post("/api/media/{media_type}/collect")
+async def api_collect_media_entry(media_type: str, payload: MediaCollectPayload) -> dict:
+    return collect_media_entry(media_type, payload)
 
 
 @router.get("/api/media/{media_type}/{entry_id}")

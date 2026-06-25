@@ -78,6 +78,22 @@ class MediaCreatePayload(BaseModel):
     genres_json: str = "[]"
     tags_json: str = "[]"
 
+class CollectResourcePayload(BaseModel):
+    kind: str = "link"
+    media_kind: str = "video"
+    ref: str = ""
+    file_name: str = ""
+    size: int = 0
+    episode_number: int = 0
+    title: str = ""
+
+class MediaCollectPayload(BaseModel):
+    entry: MediaCreatePayload = Field(default_factory=MediaCreatePayload)
+    resources: list[CollectResourcePayload] = Field(default_factory=list)
+    subtitles: list[CollectResourcePayload] = Field(default_factory=list)
+    auto_download: bool = True
+    auto_organize: bool = True
+
 class RssSubscriptionPayload(BaseModel):
     name: str = ""
     url: str = ""

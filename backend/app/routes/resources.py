@@ -12,7 +12,7 @@ from ..db import log, now, upsert_calendar_entry
 from ..download_task_service import queue_download_for_episode, queue_download_for_release
 from ..download_worker_service import cancel_all_download_workers, cancel_download_job_worker, trigger_download_worker
 from ..config import MEDIA_ROOT
-from ..maintenance import match_entry_local_files, organize_local_files, refresh_local_status
+from ..maintenance import match_entry_local_files, organize_episode_file, organize_local_files, refresh_local_status
 from ..media_service import build_entry_response, reset_orphaned_download_jobs_in_conn
 from ..runtime_service import ACTIVE_DOWNLOAD_STATUSES
 from ..pipeline_orchestrator import cancel_active_processor_tasks, start_pipeline
@@ -477,6 +477,7 @@ async def api_update_episode(episode_id: int, payload: EpisodePayload) -> dict[s
         if not episode:
             raise HTTPException(status_code=404, detail="集数不存在")
         resource_ref = payload.resource_ref.strip()
+        subtitle_ref = payload.subtitle_ref.strip()
         source_title = payload.source_title.strip()
         local_path = payload.local_path.strip()
         subtitle_path = payload.subtitle_path.strip()
@@ -484,43 +485,120 @@ async def api_update_episode(episode_id: int, payload: EpisodePayload) -> dict[s
             raise HTTPException(status_code=400, detail="本地视频文件不存在")
         if subtitle_path and not Path(subtitle_path).exists():
             raise HTTPException(status_code=400, detail="本地字幕文件不存在")
-        watchable = 1 if local_path else int(episode["watchable"] or 0)
+        old_resource_ref = str(episode["resource_ref"] or "")
+        old_local_path = str(episode["local_path"] or "")
+        if local_path and local_path == old_local_path and int(episode["watchable"] or 0) == 1 and Path(local_path).exists():
+            watchable = 1
+        elif not local_path and int(episode["watchable"] or 0) == 1 and old_local_path and Path(old_local_path).exists():
+            local_path = old_local_path
+            watchable = 1
+        else:
+            watchable = 0
+        source_type = "magnet"
+        if local_path and not resource_ref:
+            source_type = "local"
+        elif resource_ref and not resource_ref.startswith("magnet:"):
+            source_type = "url"
         conn.execute(
             """
             UPDATE episodes
-            SET resource_ref=CASE WHEN ?='' THEN resource_ref ELSE ? END,
-                subtitle_ref=CASE WHEN ?='' THEN subtitle_ref ELSE ? END,
-                local_path=CASE WHEN ?='' THEN local_path ELSE ? END,
-                subtitle_path=CASE WHEN ?='' THEN subtitle_path ELSE ? END,
+            SET resource_ref=?,
+                subtitle_ref=?,
+                local_path=?,
+                subtitle_path=?,
                 subtitle_group=CASE WHEN ?='' THEN subtitle_group ELSE ? END,
                 resolution=CASE WHEN ?='' THEN resolution ELSE ? END,
                 language=CASE WHEN ?='' THEN language ELSE ? END,
                 subtitle_format=CASE WHEN ?='' THEN subtitle_format ELSE ? END,
                 source_title=CASE WHEN ?='' THEN source_title ELSE ? END,
-                source_type='magnet',
-                release_id=CASE WHEN ?!='' THEN 0 ELSE release_id END,
+                source_type=?,
+                release_id=?,
                 watchable=?,
                 updated_at=?
             WHERE id=?
             """,
             (
-                resource_ref, resource_ref,
-                payload.subtitle_ref.strip(), payload.subtitle_ref.strip(),
-                local_path, local_path,
-                subtitle_path, subtitle_path,
+                resource_ref,
+                subtitle_ref,
+                local_path,
+                subtitle_path,
                 payload.subtitle_group.strip(), payload.subtitle_group.strip(),
                 payload.resolution.strip(), payload.resolution.strip(),
                 payload.language.strip(), payload.language.strip(),
                 payload.subtitle_format.strip(), payload.subtitle_format.strip(),
                 source_title, source_title,
-                resource_ref,
+                source_type,
+                0 if resource_ref != old_resource_ref else int(episode["release_id"] or 0),
                 watchable,
                 ts,
                 episode_id,
             ),
         )
         row = conn.execute("SELECT * FROM episodes WHERE id=?", (episode_id,)).fetchone()
-        if local_path:
+        if resource_ref or local_path:
+            resource_key = resource_ref or local_path
+            conn.execute(
+                "UPDATE episode_resources SET selected=0 WHERE entry_id=? AND episode_number=?",
+                (int(row["entry_id"] or 0), int(row["episode_number"] or 0)),
+            )
+            conn.execute(
+                """
+                INSERT INTO episode_resources
+                  (entry_id, episode_id, episode_number, source_type, source_ref, release_id, title,
+                   torrent_url, magnet, selected, downloaded, local_path, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
+                ON CONFLICT(entry_id, episode_number, source_type, source_ref) DO UPDATE SET
+                  episode_id=excluded.episode_id,
+                  release_id=excluded.release_id,
+                  title=excluded.title,
+                  torrent_url=excluded.torrent_url,
+                  magnet=excluded.magnet,
+                  selected=1,
+                  downloaded=excluded.downloaded,
+                  local_path=excluded.local_path,
+                  status=excluded.status,
+                  updated_at=excluded.updated_at
+                """,
+                (
+                    int(row["entry_id"] or 0),
+                    episode_id,
+                    int(row["episode_number"] or 0),
+                    source_type,
+                    resource_key,
+                    int(row["release_id"] or 0),
+                    source_title or Path(local_path).name or resource_ref,
+                    resource_ref if resource_ref and not resource_ref.startswith("magnet:") else "",
+                    resource_ref if resource_ref.startswith("magnet:") else "",
+                    watchable,
+                    local_path,
+                    "downloaded" if watchable else "available",
+                    ts,
+                    ts,
+                ),
+            )
+        if subtitle_ref or subtitle_path:
+            subtitle_file_name = Path(subtitle_path).name if subtitle_path else ""
+            conn.execute(
+                """
+                INSERT INTO episode_subtitles
+                  (episode_id, episode_resource_id, entry_id, episode_number, language, subtitle_format,
+                   subtitle_path, subtitle_url, file_name, embedded, selected, created_at, updated_at)
+                VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)
+                """,
+                (
+                    episode_id,
+                    int(row["entry_id"] or 0),
+                    int(row["episode_number"] or 0),
+                    payload.language.strip(),
+                    payload.subtitle_format.strip() or "external",
+                    subtitle_path,
+                    subtitle_ref,
+                    subtitle_file_name,
+                    ts,
+                    ts,
+                ),
+            )
+        if watchable and local_path:
             conn.execute(
                 """
                 INSERT INTO local_assets
@@ -550,7 +628,21 @@ async def api_update_episode(episode_id: int, payload: EpisodePayload) -> dict[s
                 ts,
                 True,
             )
+        else:
+            conn.execute(
+                """
+                UPDATE local_assets
+                SET status='missing', updated_at=?
+                WHERE entry_id=? AND episode_number=? AND local_path=?
+                """,
+                (ts, int(row["entry_id"] or 0), int(row["episode_number"] or 0), old_local_path),
+            )
     return {"status": "saved", "item": row_to_dict(row)}
+
+
+@router.post("/api/episodes/{episode_id}/organize")
+async def api_organize_episode(episode_id: int) -> dict[str, Any]:
+    return organize_episode_file(episode_id)
 
 
 @router.delete("/api/episode-resources/{resource_id}")

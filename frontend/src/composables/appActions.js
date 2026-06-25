@@ -5,7 +5,7 @@ import { createEntryMaintenanceActions } from './entryMaintenanceActions'
 import { createMetadataActions } from './metadataActions'
 
 export function createAppActions(app, deps) {
-  const { deleteAction, getAction, getDiagnostics, getMediaItem, getSettings, postAction, putAction, saveMediaItem, saveSettings } = deps
+  const { deleteAction, getAction, getDiagnostics, getMediaItem, getSettings, postAction, putAction, saveMediaItem, saveSettings, uploadFile } = deps
   let metadataProgressTimer = null
   const { clearEntryEditForm, refreshEntryMetadata } = createMetadataActions(app, {
     postAction,
@@ -521,14 +521,70 @@ export function createAppActions(app, deps) {
       subtitle_input: '',
       subtitle_format: '',
       language: '',
+      upload_session: `collect-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     })
     app.mediaWizardOpen = true
+  }
+
+  const videoSuffixes = ['.mkv', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.ts', '.m2ts']
+  const subtitleSuffixes = ['.ass', '.srt', '.ssa', '.vtt', '.sup', '.sub']
+
+  function lowerSuffix(value) {
+    const text = String(value || '').toLowerCase()
+    const dot = text.lastIndexOf('.')
+    return dot >= 0 ? text.slice(dot) : ''
+  }
+
+  function isSubtitleLike(value) {
+    return subtitleSuffixes.includes(lowerSuffix(value)) || isValidSubtitleReference(value)
+  }
+
+  function isPathLike(value) {
+    const text = String(value || '').trim()
+    return text.startsWith('/') || text.startsWith('\\') || /^[A-Za-z]:[\\/]/.test(text)
+  }
+
+  function upsertMediaWizardEpisodeItem(kind, item) {
+    const text = item.ref || item.path || item.file_name || ''
+    const episode = Number(item.episode_number || 0) || inferEpisodeFromText(text, mediaWizardEpisodeFallback(kind === 'subtitle' ? app.mediaWizardSubtitleItems.length : app.mediaWizardResourceItems.length))
+    const id = `${kind}-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    if (kind === 'subtitle') {
+      const next = [...app.mediaWizardSubtitleItems]
+      const existingIndex = next.findIndex(row => Number(row.episode_number || 0) === episode)
+      const patch = {
+        id,
+        source_mode: item.source_mode || (isPathLike(item.path || item.ref) ? 'local' : 'link'),
+        subtitle_ref: item.subtitle_ref || (!isPathLike(item.ref || '') ? (item.ref || '') : ''),
+        subtitle_path: item.subtitle_path || item.path || (isPathLike(item.ref || '') ? item.ref : ''),
+        file_name: item.file_name || '',
+        episode_number: episode,
+      }
+      if (existingIndex >= 0) next[existingIndex] = { ...next[existingIndex], ...patch, id: next[existingIndex].id }
+      else next.push(patch)
+      app.mediaWizardSubtitleItems = next
+      return
+    }
+    const next = [...app.mediaWizardResourceItems]
+    const existingIndex = next.findIndex(row => Number(row.episode_number || 0) === episode)
+    const patch = {
+      id,
+      source_mode: item.source_mode || (isPathLike(item.path || item.ref) ? 'local' : 'link'),
+      source_ref: item.source_ref || (!isPathLike(item.ref || '') ? (item.ref || '') : ''),
+      local_path: item.local_path || item.path || (isPathLike(item.ref || '') ? item.ref : ''),
+      file_name: item.file_name || '',
+      title: item.title || titleFromResourceSeed(text) || text,
+      episode_number: episode,
+    }
+    if (existingIndex >= 0) next[existingIndex] = { ...next[existingIndex], ...patch, id: next[existingIndex].id }
+    else next.push(patch)
+    app.mediaWizardResourceItems = next
   }
 
   async function advanceMediaWizard() {
     if (app.mediaWizardStep === 0) {
       addMediaWizardResourceLines(false)
-      const titleSeed = titleFromResourceSeed(app.mediaWizardDraft.resource_input || app.mediaWizardDraft.resources_text || '')
+      addMediaWizardSubtitleLines(false)
+      const titleSeed = titleFromResourceSeed(app.mediaWizardDraft.resource_input || app.mediaWizardDraft.subtitle_input || app.mediaWizardDraft.resources_text || '')
       if (titleSeed && !app.mediaWizardDraft.title) {
         app.mediaWizardDraft.title = titleSeed
       }
@@ -538,13 +594,11 @@ export function createAppActions(app, deps) {
         ElMessage.warning('请先填写作品标题')
         return
       }
+      if (app.mediaWizardDraft.source_mode === 'metadata') app.mediaWizardDraft.source_mode = 'link'
     }
     if (app.mediaWizardStep === 2) {
       if (!addMediaWizardResourceLines(false) || !addMediaWizardSubtitleLines(false)) {
         return
-      }
-      if (!app.mediaWizardResourceRows.length && app.mediaWizardDraft.source_mode !== 'metadata') {
-        app.mediaWizardDraft.source_mode = 'metadata'
       }
       if (app.mediaWizardInvalidResourceCount || app.mediaWizardInvalidSubtitleCount) {
         ElMessage.warning('请先修正无法识别的资源或字幕')
@@ -556,14 +610,7 @@ export function createAppActions(app, deps) {
         return
       }
     }
-    if (app.mediaWizardStep === 3) {
-      if (!addMediaWizardSubtitleLines(false)) return
-      if (app.mediaWizardInvalidSubtitleCount) {
-        ElMessage.warning('请先修正无法识别的字幕')
-        return
-      }
-    }
-    app.mediaWizardStep = Math.min(4, app.mediaWizardStep + 1)
+    app.mediaWizardStep = Math.min(2, app.mediaWizardStep + 1)
   }
 
   function mediaWizardEpisodeFallback(index) {
@@ -573,56 +620,54 @@ export function createAppActions(app, deps) {
   function addMediaWizardResourceLines(showMessage = true) {
     const lines = splitTextLines(app.mediaWizardDraft.resource_input || '')
     if (!lines.length) return true
-    const invalid = lines.find(line => !isValidResourceReference(line))
+    const invalid = lines.find(line => !isValidResourceReference(line) && !isSubtitleLike(line) && !isPathLike(line))
     if (invalid) {
       ElMessage.warning(`资源链接格式无效: ${invalid}`)
       return false
     }
     const baseIndex = app.mediaWizardResourceItems.length
-    const next = lines.map((line, index) => ({
-      id: `resource-${Date.now()}-${baseIndex + index}`,
-      source_mode: 'link',
-      source_ref: line,
-      file_name: '',
-      title: titleFromResourceSeed(line) || line,
-      episode_number: inferEpisodeFromText(line, mediaWizardEpisodeFallback(baseIndex + index)),
-      subtitle_ref: '',
-      subtitle_source_mode: 'link',
-      subtitle_format: app.mediaWizardDraft.subtitle_format || '',
-      language: app.mediaWizardDraft.language || '',
-    }))
-    app.mediaWizardResourceItems = [...app.mediaWizardResourceItems, ...next]
+    let added = 0
+    for (const [index, line] of lines.entries()) {
+      const item = {
+        ref: line,
+        file_name: '',
+        title: titleFromResourceSeed(line) || line,
+        episode_number: inferEpisodeFromText(line, mediaWizardEpisodeFallback(baseIndex + index)),
+        source_mode: isPathLike(line) ? 'local' : 'link',
+      }
+      if (isSubtitleLike(line) && !String(line).toLowerCase().startsWith('magnet:')) upsertMediaWizardEpisodeItem('subtitle', item)
+      else upsertMediaWizardEpisodeItem('video', item)
+      added += 1
+    }
     app.mediaWizardDraft.resource_input = ''
     app.mediaWizardDraft.resources_text = app.mediaWizardResourceItems
       .filter(item => item.source_mode === 'link')
       .map(item => item.source_ref)
       .join('\n')
-    if (showMessage) ElMessage.success(`已添加 ${next.length} 条资源`)
+    if (showMessage) ElMessage.success(`已添加 ${added} 条资源`)
     return true
   }
 
   function addMediaWizardSubtitleLines(showMessage = true) {
     const lines = splitTextLines(app.mediaWizardDraft.subtitle_input || '')
     if (!lines.length) return true
-    const invalid = lines.find(line => !isValidSubtitleReference(line))
+    const invalid = lines.find(line => !isValidSubtitleReference(line) && !isValidResourceReference(line) && !isPathLike(line))
     if (invalid) {
       ElMessage.warning(`字幕链接或文件名格式无效: ${invalid}`)
       return false
     }
     const baseIndex = app.mediaWizardSubtitleItems.length
-    const next = lines.map((line, index) => ({
-      id: `subtitle-${Date.now()}-${baseIndex + index}`,
-      source_mode: 'link',
-      subtitle_ref: line,
-      file_name: '',
-      episode_number: inferEpisodeFromText(line, mediaWizardEpisodeFallback(baseIndex + index)),
-      subtitle_format: app.mediaWizardDraft.subtitle_format || 'external',
-      language: app.mediaWizardDraft.language || '',
-    }))
-    app.mediaWizardSubtitleItems = [...app.mediaWizardSubtitleItems, ...next]
+    for (const [index, line] of lines.entries()) {
+      upsertMediaWizardEpisodeItem('subtitle', {
+        ref: line,
+        file_name: '',
+        episode_number: inferEpisodeFromText(line, mediaWizardEpisodeFallback(baseIndex + index)),
+        source_mode: isPathLike(line) ? 'local' : 'link',
+      })
+    }
     app.mediaWizardDraft.subtitle_input = ''
     app.mediaWizardDraft.subtitles_text = app.mediaWizardSubtitleItems.map(item => item.subtitle_ref || item.file_name).join('\n')
-    if (showMessage) ElMessage.success(`已添加 ${next.length} 条字幕`)
+    if (showMessage) ElMessage.success(`已添加 ${lines.length} 条字幕`)
     return true
   }
 
@@ -637,6 +682,66 @@ export function createAppActions(app, deps) {
   function removeMediaWizardSubtitleItem(index) {
     app.mediaWizardSubtitleItems = app.mediaWizardSubtitleItems.filter((_, itemIndex) => itemIndex !== index)
     app.mediaWizardDraft.subtitles_text = app.mediaWizardSubtitleItems.map(item => item.subtitle_ref || item.file_name).join('\n')
+  }
+
+  function addMediaWizardServerFile(item, mediaKind = 'auto') {
+    if (!item?.path) return
+    const kind = mediaKind === 'auto'
+      ? (item.kind === 'subtitle' || isSubtitleLike(item.path || item.name) ? 'subtitle' : 'video')
+      : mediaKind
+    if (kind === 'subtitle') {
+      upsertMediaWizardEpisodeItem('subtitle', {
+        path: item.path,
+        file_name: item.name || item.path,
+        episode_number: Number(item.episode_number || 0) || inferEpisodeFromText(item.name || item.path, mediaWizardEpisodeFallback(app.mediaWizardSubtitleItems.length)),
+        source_mode: 'server',
+      })
+    } else {
+      upsertMediaWizardEpisodeItem('video', {
+        path: item.path,
+        file_name: item.name || item.path,
+        title: item.name || item.path,
+        episode_number: Number(item.episode_number || 0) || inferEpisodeFromText(item.name || item.path, mediaWizardEpisodeFallback(app.mediaWizardResourceItems.length)),
+        source_mode: 'server',
+      })
+    }
+  }
+
+  async function uploadMediaWizardFiles(event, mediaKind = 'auto', preferredEpisode = 0) {
+    const files = Array.from(event?.target?.files || [])
+    if (!files.length || !uploadFile) return
+    app.mediaWizardUploading = true
+    app.mediaWizardUploadProgress = 0
+    const session = app.mediaWizardDraft.upload_session || `collect-${Date.now()}`
+    app.mediaWizardDraft.upload_session = session
+    try {
+      let uploaded = 0
+      for (const file of files) {
+        const result = await uploadFile('/uploads/local', file, { session_id: session }, progressEvent => {
+          const percent = progressEvent.total ? Math.round((progressEvent.loaded / progressEvent.total) * 100) : 0
+          app.mediaWizardUploadProgress = Math.min(99, Math.round(((uploaded * 100) + percent) / files.length))
+        })
+        uploaded += 1
+        const path = result.temp_path || ''
+        const kind = mediaKind === 'auto'
+          ? (isSubtitleLike(file.name) ? 'subtitle' : 'video')
+          : mediaKind
+        addMediaWizardServerFile({
+          path,
+          name: result.file_name || file.name,
+          kind: kind === 'subtitle' ? 'subtitle' : 'video',
+          size: result.size || file.size || 0,
+          episode_number: Number(preferredEpisode || 0),
+        }, kind)
+        app.mediaWizardUploadProgress = Math.round((uploaded / files.length) * 100)
+      }
+      ElMessage.success(`已上传 ${files.length} 个文件`)
+    } catch (error) {
+      ElMessage.error(apiErrorMessage(error))
+    } finally {
+      app.mediaWizardUploading = false
+      if (event?.target) event.target.value = ''
+    }
   }
 
   function hasFieldValue(value) {
@@ -792,11 +897,15 @@ export function createAppActions(app, deps) {
     try {
       addMediaWizardResourceLines(false)
       addMediaWizardSubtitleLines(false)
-      const linkItems = app.mediaWizardResourceItems.filter(item => item.source_ref)
-      const resourcesText = linkItems.map(item => item.source_ref).join('\n')
-      const sourceMode = linkItems.length ? 'link' : 'metadata'
+      if (app.mediaWizardInvalidResourceCount || app.mediaWizardInvalidSubtitleCount) {
+        ElMessage.warning('请先修正无法识别的资源或字幕')
+        return
+      }
+      const resourceItems = app.mediaWizardResourceItems.filter(item => item.source_ref || item.local_path)
+      const subtitleItems = app.mediaWizardSubtitleItems.filter(item => item.subtitle_ref || item.subtitle_path)
+      const sourceMode = resourceItems.length ? 'collect' : 'metadata'
       const release = parseMonthField(app.mediaWizardDraft.release_month)
-      const payload = {
+      const entry = {
         mode: sourceMode,
         title: app.mediaWizardDraft.title,
         bangumi_id: app.mediaWizardDraft.bangumi_id,
@@ -807,39 +916,32 @@ export function createAppActions(app, deps) {
         month: release.month || numberFromInput(app.mediaWizardDraft.month, 0),
         season_number: numberFromInput(app.mediaWizardDraft.season_number, 1),
         region: app.mediaWizardDraft.region || (app.currentMediaType === 'anime' ? 'jp' : ''),
-        episode_number: 0,
-        resource_title: '',
-        source_ref: '',
-        subtitle_group: app.mediaWizardDraft.subtitle_group || '',
-        resolution: app.mediaWizardDraft.resolution || '',
-        language: app.mediaWizardDraft.language || '',
-        subtitle_format: app.mediaWizardDraft.subtitle_format || '',
-        subtitle_path: app.mediaWizardDraft.subtitle_path || '',
-        subtitle_url: splitTextLines(app.mediaWizardDraft.subtitles_text || app.mediaWizardDraft.subtitle_url || '')[0] || '',
-        subtitle_file_name: app.mediaWizardDraft.subtitle_file_name || '',
         poster_url: app.mediaWizardDraft.poster_url || '',
         summary: app.mediaWizardDraft.summary || '',
         tags_json: jsonFromListText(app.mediaWizardDraft.tags_text || ''),
         genres_json: jsonFromListText(app.mediaWizardDraft.genres_text || ''),
       }
-      const created = await postAction(`/media/${app.currentMediaType}`, payload)
-      const entryId = Number(created.entry?.id || created.detail?.entry?.id || 0)
-      if (entryId && linkItems.length) {
-        await postAction(`/entries/${entryId}/resources/import`, {
-          resources_text: resourcesText,
-          resources: linkItems.map(item => ({
-            source_ref: item.source_ref,
-            episode_number: Number(item.episode_number || 0),
-            title: item.title || item.source_ref,
-            language: item.language || app.mediaWizardDraft.language || '',
-            subtitle_format: item.subtitle_format || app.mediaWizardDraft.subtitle_format || '',
-            subtitle_url: item.subtitle_ref || '',
-          })),
-          subtitles_text: app.mediaWizardSubtitleItems.map(item => item.subtitle_ref || item.file_name).filter(Boolean).join('\n'),
-          subtitle_format: app.mediaWizardDraft.subtitle_format || '',
-          language: app.mediaWizardDraft.language || '',
-        })
-      }
+      await postAction(`/media/${app.currentMediaType}/collect`, {
+        entry,
+        resources: resourceItems.map(item => ({
+          kind: item.local_path ? (String(item.local_path).includes('/uploads/') ? 'upload_temp' : 'server_file') : 'link',
+          media_kind: 'video',
+          ref: item.local_path || item.source_ref,
+          file_name: item.file_name || '',
+          title: item.title || item.source_ref || item.local_path || '',
+          episode_number: Number(item.episode_number || 0),
+        })),
+        subtitles: subtitleItems.map(item => ({
+          kind: item.subtitle_path ? (String(item.subtitle_path).includes('/uploads/') ? 'upload_temp' : 'server_file') : 'link',
+          media_kind: 'subtitle',
+          ref: item.subtitle_path || item.subtitle_ref,
+          file_name: item.file_name || '',
+          title: item.file_name || item.subtitle_ref || item.subtitle_path || '',
+          episode_number: Number(item.episode_number || 0),
+        })),
+        auto_download: true,
+        auto_organize: true,
+      })
       ElMessage.success('媒体已收录')
       app.mediaWizardOpen = false
       await app.reload()
@@ -1126,7 +1228,7 @@ export function createAppActions(app, deps) {
   }
 
   return {
-    addDownloader, addMediaWizardResourceLines, addMediaWizardSubtitleLines, advanceMediaWizard, apiErrorMessage, applyMetadataToWizard,
+    addDownloader, addMediaWizardResourceLines, addMediaWizardServerFile, addMediaWizardSubtitleLines, advanceMediaWizard, apiErrorMessage, applyMetadataToWizard,
     archiveCurrentEntry, backfillCurrentEntrySeason, browseServerFiles, cancelAllDownloads, cancelDownloadTask, cancelEpisodeDownload, cancelGenericTask, cancelQueueDownload, clearCompletedDownloadTasks, clearEntryEditForm,
     clearGenericTask,
     commitEpisodeImport, commitMediaWizard,
@@ -1137,6 +1239,6 @@ export function createAppActions(app, deps) {
     removeMediaWizardSubtitleItem, resetRssForm, resetSelectionRules, runAction, runMetadataSearch, saveAllSettings, saveBatchSubtitles,
     saveEntryEditForm, saveEpisodeResource, saveProcessorSettings, saveRssSubscription, saveScheduledJob, searchWizardMetadata, selectServerFile, setCurrentEntryFollowing,
     confirmMetadataMatch, selectedMetadataCandidate, selectMetadataCandidate, skipMetadataProvider, toggleEntryResourceRow,
-    startMetadataProgress, stopMetadataProgress, syncScheduledJobForm, triggerSchedule,
+    startMetadataProgress, stopMetadataProgress, syncScheduledJobForm, triggerSchedule, uploadMediaWizardFiles,
   }
 }
