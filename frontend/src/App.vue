@@ -58,7 +58,7 @@
 import { computed, isRef, onMounted, onUnmounted, provide, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Calendar, Collection, DataBoard, Document, Refresh, Search, Setting } from '@element-plus/icons-vue'
-import { deleteAction, getAction, getDashboard, getDiagnostics, getMediaItem, getSettings, postAction, putAction, saveMediaItem, saveSettings } from './api'
+import { deleteAction, getAction, getCalendar, getCatalog, getDashboard, getDiagnostics, getLogs, getMediaItem, getSettings, postAction, putAction, saveMediaItem, saveSettings } from './api'
 import { APP_BUILD, APP_VERSION } from './version'
 import { createAppActions } from './composables/appActions'
 import {
@@ -152,6 +152,7 @@ const metadataFetching = ref(false)
 const metadataFetchProgress = ref(0)
 let dashboardStream = null
 let streamRetryTimer = null
+let catalogReloadTimer = null
 const keyword = ref('')
 const libraryYearFilter = ref('')
 const libraryMonthFilter = ref('')
@@ -166,15 +167,10 @@ const selectedEntryMediaType = ref('anime')
 const expandedResourceKeys = ref([])
 const expandedDownloadTaskKeys = ref([])
 const dashboard = reactive({
-  seasonal_items: [],
-  library_items: [],
-  seasonal_sync_calendar: [],
-  seasonal_update_calendar: [],
   operations: [],
   scheduled_jobs: [],
   schedules: [],
   scheduled_runs: [],
-  server_logs: [],
   queue_summary: [],
   queue_details: {},
   console_sections: [],
@@ -184,6 +180,22 @@ const dashboard = reactive({
   download_overview: {},
   tasks: [],
   task_overview: [],
+})
+const catalogState = reactive({
+  kind: '',
+  items: [],
+  page: 0,
+  page_size: 24,
+  total: 0,
+  has_more: false,
+  facets: {},
+  loading: false,
+  loading_more: false,
+})
+const calendarItems = ref([])
+const logsData = reactive({
+  server_logs: [],
+  console_overview: {},
 })
 const settings = reactive({})
 const diagnostics = reactive({ tables: {} })
@@ -335,78 +347,32 @@ const pageTitle = computed(() => ({
   settings: '设置中心'
 }[view.value]))
 
-const seasonalRows = computed(() => dashboard.seasonal_items || [])
-const libraryRows = computed(() => dashboard.library_items || [])
 const isMediaCatalogView = computed(() => ['library', 'movies', 'tv'].includes(view.value))
 const currentMediaType = computed(() => ({
   library: 'anime',
   movies: 'movie',
   tv: 'tv',
 }[view.value] || 'anime'))
+const currentCatalogKind = computed(() => view.value === 'seasonal' ? 'seasonal' : currentMediaType.value)
+const seasonalRows = computed(() => view.value === 'seasonal' ? catalogState.items : [])
+const libraryRows = computed(() => isMediaCatalogView.value ? catalogState.items : [])
 const currentMediaPageTitle = computed(() => ({
   library: '番剧',
   movies: '电影',
   tv: '电视剧',
 }[view.value] || '媒体'))
-const currentCatalogSourceRows = computed(() => {
-  if (!isMediaCatalogView.value) return seasonalRows.value
-  return libraryRows.value.filter(item => belongsToCurrentMediaPage(item))
-})
-const currentYearOptions = computed(() => {
-  const values = new Set()
-  for (const item of currentCatalogSourceRows.value) {
-    const year = Number(item.year || 0)
-    if (year > 0) values.add(year)
-  }
-  return Array.from(values).sort((a, b) => b - a)
-})
-const currentMonthOptions = computed(() => {
-  const values = new Set()
-  for (const item of currentCatalogSourceRows.value) {
-    const month = Number(item.month || 0)
-    if (month >= 1 && month <= 12) values.add(month)
-  }
-  return Array.from(values).sort((a, b) => a - b)
-})
-const currentMediaTypeOptions = computed(() => {
-  const values = new Set()
-  for (const item of currentCatalogSourceRows.value) {
-    const type = entryMediaType(item)
-    if (type) values.add(type)
-  }
-  return Array.from(values).sort((a, b) => mediaTypeLabel(a).localeCompare(mediaTypeLabel(b)))
-})
-const currentRegionOptions = computed(() => {
-  const values = new Set()
-  for (const item of currentCatalogSourceRows.value) {
-    if (item.region) values.add(item.region)
-  }
-  return Array.from(values).sort((a, b) => regionLabel(a).localeCompare(regionLabel(b)))
-})
-const currentScopeOptions = computed(() => {
-  const values = new Set()
-  for (const item of currentCatalogSourceRows.value) {
-    const scope = normalizedSeasonLabel(item)
-    if (scope) values.add(scope)
-  }
-  return Array.from(values).sort((a, b) => String(a).localeCompare(String(b)))
-})
-const currentTagOptions = computed(() => {
-  const counts = new Map()
-  for (const item of currentCatalogSourceRows.value) {
-    for (const tag of catalogTags(item)) {
-      counts.set(tag, (counts.get(tag) || 0) + 1)
-    }
-  }
-  return Array.from(counts.entries())
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .slice(0, 36)
-    .map(item => item[0])
-})
+const currentCatalogSourceRows = computed(() => catalogState.items || [])
+const currentYearOptions = computed(() => catalogState.facets?.years || [])
+const currentMonthOptions = computed(() => catalogState.facets?.months || [])
+const currentMediaTypeOptions = computed(() => catalogState.facets?.media_types || [])
+const currentRegionOptions = computed(() => catalogState.facets?.regions || [])
+const currentScopeOptions = computed(() => catalogState.facets?.scopes || [])
+const currentTagOptions = computed(() => catalogState.facets?.tags || [])
 const activeDetailRows = computed(() => selectedEntryDomain.value === 'library' ? libraryRows.value : seasonalRows.value)
-const localAssetTotal = computed(() => seasonalRows.value.reduce((sum, item) => sum + Number(item.local_asset_count || 0), 0))
-const watchableTotal = computed(() => localAssetTotal.value)
-const seasonalCalendarCards = computed(() => dashboard.seasonal_sync_calendar || [])
+const localAssetTotal = computed(() => Number(dashboard.summary?.local_asset_count || 0))
+const watchableTotal = computed(() => Number(dashboard.summary?.watchable_count || 0))
+const seasonalCatalogTotal = computed(() => Number(dashboard.summary?.seasonal_count || catalogState.total || 0))
+const seasonalCalendarCards = computed(() => calendarItems.value || [])
 const weekStart = computed(() => startOfWeek(calendarWeek.value ? new Date(calendarWeek.value) : new Date()))
 const weekDays = computed(() => {
   const labels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
@@ -478,21 +444,21 @@ const scannerStatusText = computed(() => {
 })
 const filteredServerLogs = computed(() => {
   const keyword = logKeyword.value.trim().toLowerCase()
-  const rows = dashboard.server_logs || []
+  const rows = logsData.server_logs || []
   if (!keyword) return rows
   return rows.filter(line => String(line || '').toLowerCase().includes(keyword))
 })
 const filteredServerLogText = computed(() => filteredServerLogs.value.join('\n'))
 const logsBadgeText = computed(() => {
-  const errors = Number(dashboard.console_overview?.recent_error_count || 0)
-  const warns = Number(dashboard.console_overview?.recent_warn_count || 0)
+  const errors = Number(logsData.console_overview?.recent_error_count ?? dashboard.console_overview?.recent_error_count ?? 0)
+  const warns = Number(logsData.console_overview?.recent_warn_count ?? dashboard.console_overview?.recent_warn_count ?? 0)
   if (errors > 0) return `${errors} 错误`
   if (warns > 0) return `${warns} 警告`
   return '正常'
 })
 const logsBadgeType = computed(() => {
-  const errors = Number(dashboard.console_overview?.recent_error_count || 0)
-  const warns = Number(dashboard.console_overview?.recent_warn_count || 0)
+  const errors = Number(logsData.console_overview?.recent_error_count ?? dashboard.console_overview?.recent_error_count ?? 0)
+  const warns = Number(logsData.console_overview?.recent_warn_count ?? dashboard.console_overview?.recent_warn_count ?? 0)
   if (errors > 0) return 'danger'
   if (warns > 0) return 'warning'
   return 'success'
@@ -650,24 +616,7 @@ const mediaWizardSubtitleRows = computed(() => mediaWizardSubtitleItems.value.ma
 const mediaWizardInvalidResourceCount = computed(() => mediaWizardResourceRows.value.filter(item => !item.valid).length)
 const mediaWizardInvalidSubtitleCount = computed(() => mediaWizardSubtitleRows.value.filter(item => !item.valid).length)
 
-const filteredSeries = computed(() => {
-  const text = keyword.value.toLowerCase()
-  const source = currentCatalogSourceRows.value
-  return source.filter(item => {
-    const matched = !text || `${item.entry_display_title || item.display_title || item.title_cn} ${item.work_display_title || item.work_title || item.title_root || ''} ${item.entry_scope_label || ''} ${item.bangumi_id || ''} ${item.tmdb_id || ''}`.toLowerCase().includes(text)
-    if (!matched) return false
-    if (libraryMediaTypeFilter.value && entryMediaType(item) !== String(libraryMediaTypeFilter.value)) return false
-    if (libraryRegionFilter.value && String(item.region || '') !== String(libraryRegionFilter.value)) return false
-    if (libraryYearFilter.value && Number(item.year || 0) !== Number(libraryYearFilter.value)) return false
-    if (libraryMonthFilter.value && Number(item.month || 0) !== Number(libraryMonthFilter.value)) return false
-    if (libraryScopeFilter.value && normalizedSeasonLabel(item) !== String(libraryScopeFilter.value)) return false
-    if (libraryTagFilters.value.length) {
-      const tags = catalogTags(item)
-      if (!libraryTagFilters.value.every(tag => tags.includes(tag))) return false
-    }
-    return true
-  })
-})
+const filteredSeries = computed(() => currentCatalogSourceRows.value)
 
 function belongsToCurrentMediaPage(item) {
   const type = entryMediaType(item)
@@ -677,12 +626,7 @@ function belongsToCurrentMediaPage(item) {
 }
 
 function hasRecentUpdate(item) {
-  const entryId = Number(item?.id || item?.entry_id || 0)
-  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000
-  return [...(dashboard.seasonal_update_calendar || []), ...(dashboard.seasonal_sync_calendar || [])].some(row => {
-    if (Number(row.entry_id || 0) !== entryId) return false
-    return parseDateValue(row.updated_at || row.synced_at || row.published_at) >= cutoff
-  })
+  return Boolean(Number(item?.recent_update || 0))
 }
 
 function toggleLibraryTag(tag) {
@@ -758,6 +702,109 @@ function applyDashboard(nextDashboard) {
   }
 }
 
+function catalogQuery(page = 1, pageSize = catalogState.page_size || 24) {
+  return {
+    page,
+    page_size: pageSize,
+    keyword: keyword.value.trim(),
+    year: Number(libraryYearFilter.value || 0) || undefined,
+    month: Number(libraryMonthFilter.value || 0) || undefined,
+    media_type: libraryMediaTypeFilter.value || undefined,
+    region: libraryRegionFilter.value || undefined,
+    scope: libraryScopeFilter.value || undefined,
+    tags: libraryTagFilters.value,
+  }
+}
+
+function isCatalogView(value = view.value) {
+  return ['seasonal', 'library', 'movies', 'tv'].includes(value)
+}
+
+async function loadCatalog({ reset = false, page = 1 } = {}) {
+  if (!isCatalogView()) return
+  if (catalogState.loading || catalogState.loading_more) return
+  const kind = currentCatalogKind.value
+  const targetPage = reset ? 1 : page
+  if (!reset && catalogState.kind === kind && !catalogState.has_more && targetPage > 1) return
+  if (reset) {
+    catalogState.loading = true
+  } else {
+    catalogState.loading_more = true
+  }
+  try {
+    const data = await getCatalog(kind, catalogQuery(targetPage))
+    const incoming = data.items || []
+    if (reset || catalogState.kind !== kind || targetPage === 1) {
+      catalogState.kind = kind
+      catalogState.items = incoming
+    } else {
+      const seen = new Set(catalogState.items.map(item => Number(item.id || 0)))
+      catalogState.items = [
+        ...catalogState.items,
+        ...incoming.filter(item => {
+          const id = Number(item.id || 0)
+          if (!id || seen.has(id)) return false
+          seen.add(id)
+          return true
+        }),
+      ]
+    }
+    catalogState.page = Number(data.page || targetPage)
+    catalogState.page_size = Number(data.page_size || catalogState.page_size || 24)
+    catalogState.total = Number(data.total || 0)
+    catalogState.has_more = Boolean(data.has_more)
+    catalogState.facets = data.facets || {}
+  } finally {
+    catalogState.loading = false
+    catalogState.loading_more = false
+  }
+}
+
+async function loadMoreCatalog() {
+  if (!catalogState.has_more || catalogState.loading || catalogState.loading_more) return
+  await loadCatalog({ page: Number(catalogState.page || 1) + 1 })
+}
+
+async function refreshLoadedCatalog() {
+  if (!isCatalogView() || !catalogState.items.length) return
+  const loadedCount = Math.max(catalogState.items.length, catalogState.page_size || 24)
+  const data = await getCatalog(currentCatalogKind.value, catalogQuery(1, Math.min(96, loadedCount)))
+  catalogState.kind = currentCatalogKind.value
+  catalogState.items = data.items || []
+  catalogState.page = Math.max(1, Math.ceil(catalogState.items.length / Number(data.page_size || 24)))
+  catalogState.page_size = Number(data.page_size || catalogState.page_size || 24)
+  catalogState.total = Number(data.total || 0)
+  catalogState.has_more = catalogState.items.length < catalogState.total
+  catalogState.facets = data.facets || {}
+}
+
+function scheduleCatalogRefresh() {
+  if (!isCatalogView()) return
+  if (catalogReloadTimer) window.clearTimeout(catalogReloadTimer)
+  catalogReloadTimer = window.setTimeout(() => {
+    catalogReloadTimer = null
+    refreshLoadedCatalog().catch(error => ElMessage.error(apiErrorMessage(error)))
+  }, 1200)
+}
+
+async function loadCalendarPage() {
+  const data = await getCalendar({ week: formatDateKey(weekStart.value) })
+  calendarItems.value = data.items || []
+}
+
+async function loadLogsPage() {
+  const data = await getLogs()
+  logsData.server_logs = data.server_logs || []
+  logsData.console_overview = data.console_overview || {}
+}
+
+async function reloadCurrentPageData() {
+  if (isCatalogView()) await loadCatalog({ reset: true })
+  if (view.value === 'calendar') await loadCalendarPage()
+  if (view.value === 'logs') await loadLogsPage()
+  if (view.value === 'settings') await reloadDiagnostics()
+}
+
 async function reload() {
   if (loading.value) return
   loading.value = true
@@ -765,7 +812,7 @@ async function reload() {
     applyDashboard(await getDashboard())
     Object.assign(settings, await getSettings())
     normalizeSettingsShape()
-    if (view.value === 'settings') await reloadDiagnostics()
+    await reloadCurrentPageData()
   } finally {
     loading.value = false
   }
@@ -797,6 +844,8 @@ function startDashboardStream() {
   dashboardStream.onmessage = event => {
     try {
       applyDashboard(JSON.parse(event.data))
+      scheduleCatalogRefresh()
+      if (view.value === 'logs') loadLogsPage().catch(() => {})
     } catch {
       liveConnected.value = false
     }
@@ -832,6 +881,7 @@ exposeAppContext({
   cardInitials,
   cardSubtitle,
   catalogTags,
+  catalogState,
   currentCatalogSourceRows,
   currentMediaPageTitle,
   currentMediaType,
@@ -887,11 +937,13 @@ exposeAppContext({
   libraryScopeFilter,
   libraryTagFilters,
   libraryYearFilter,
+  loadMoreCatalog,
   listTextFromJson,
   liveConnected,
   loading,
   localAssetTotal,
   logKeyword,
+  logsData,
   logsBadgeText,
   logsBadgeType,
   mediaTypeLabel,
@@ -946,6 +998,7 @@ exposeAppContext({
   scheduledSettingsDialogOpen,
   scheduleEditingId,
   seasonalCalendarCards,
+  seasonalCatalogTotal,
   seasonalRows,
   selectedConsoleSection,
   selectedEntry,
@@ -1041,7 +1094,24 @@ watch(view, value => {
     libraryTagFilters.value = []
     advancedFilterOpen.value = false
   }
-  if (value === 'settings') reloadDiagnostics().catch(error => ElMessage.error(apiErrorMessage(error)))
+  reloadCurrentPageData().catch(error => ElMessage.error(apiErrorMessage(error)))
+})
+
+watch(
+  [keyword, libraryYearFilter, libraryMonthFilter, libraryScopeFilter, libraryMediaTypeFilter, libraryRegionFilter, libraryTagFilters],
+  () => {
+    if (!isCatalogView()) return
+    if (catalogReloadTimer) window.clearTimeout(catalogReloadTimer)
+    catalogReloadTimer = window.setTimeout(() => {
+      catalogReloadTimer = null
+      loadCatalog({ reset: true }).catch(error => ElMessage.error(apiErrorMessage(error)))
+    }, 250)
+  },
+  { deep: true }
+)
+
+watch(calendarWeek, () => {
+  if (view.value === 'calendar') loadCalendarPage().catch(error => ElMessage.error(apiErrorMessage(error)))
 })
 
 onMounted(async () => {

@@ -18,8 +18,8 @@ export default appContextComponent()
               </div>
             </template>
             <div class="detail-summary-grid">
-              <div><span>最近错误</span><strong>{{ dashboard.console_overview?.recent_error_count || 0 }}</strong></div>
-              <div><span>最近警告</span><strong>{{ dashboard.console_overview?.recent_warn_count || 0 }}</strong></div>
+              <div><span>最近错误</span><strong>{{ logsData.console_overview?.recent_error_count || 0 }}</strong></div>
+              <div><span>最近警告</span><strong>{{ logsData.console_overview?.recent_warn_count || 0 }}</strong></div>
               <div><span>显示行数</span><strong>{{ filteredServerLogs.length || 0 }}</strong></div>
               <div><span>筛选</span><strong>{{ logKeyword || '全部' }}</strong></div>
             </div>

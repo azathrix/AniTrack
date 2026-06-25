@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
+from ..catalog_service import CATALOG_PAGE_SIZE, catalog_response
 from ..database import connect
 from ..db import get_settings, log
 from ..media_service import (
@@ -21,6 +22,64 @@ from ..schemas import EntryPayload, MediaCreatePayload, MetadataFetchPayload
 
 
 router = APIRouter()
+
+
+def _tag_params(tags: list[str] | None, tag: list[str] | None) -> list[str]:
+    return [str(item) for item in [*(tags or []), *(tag or [])] if str(item or "").strip()]
+
+
+@router.get("/api/seasonal/catalog")
+async def api_seasonal_catalog(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(CATALOG_PAGE_SIZE, ge=1, le=96),
+    keyword: str = Query(""),
+    year: int = Query(0),
+    month: int = Query(0),
+    media_type: str = Query(""),
+    region: str = Query(""),
+    scope: str = Query(""),
+    tags: list[str] | None = Query(None),
+    tag: list[str] | None = Query(None),
+) -> dict:
+    return catalog_response(
+        "seasonal",
+        page=page,
+        page_size=page_size,
+        keyword=keyword,
+        year=year,
+        month=month,
+        media_type=media_type,
+        region=region,
+        scope=scope,
+        tags=_tag_params(tags, tag),
+    )
+
+
+@router.get("/api/media/{media_type}/catalog")
+async def api_media_catalog(
+    media_type: str,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(CATALOG_PAGE_SIZE, ge=1, le=96),
+    keyword: str = Query(""),
+    year: int = Query(0),
+    month: int = Query(0),
+    region: str = Query(""),
+    scope: str = Query(""),
+    tags: list[str] | None = Query(None),
+    tag: list[str] | None = Query(None),
+) -> dict:
+    normalized = normalize_api_media_type(media_type)
+    return catalog_response(
+        normalized,
+        page=page,
+        page_size=page_size,
+        keyword=keyword,
+        year=year,
+        month=month,
+        region=region,
+        scope=scope,
+        tags=_tag_params(tags, tag),
+    )
 
 
 @router.get("/api/media/{media_type}")

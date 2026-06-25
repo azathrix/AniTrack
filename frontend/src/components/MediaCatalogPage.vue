@@ -74,7 +74,12 @@ export default appContextComponent()
             >{{ tag }}</button>
           </div>
         </div>
-        <div class="anime-grid catalog-card-grid">
+        <div
+          v-infinite-scroll="loadMoreCatalog"
+          :infinite-scroll-disabled="catalogState.loading || catalogState.loading_more || !catalogState.has_more"
+          :infinite-scroll-distance="240"
+          class="anime-grid catalog-card-grid"
+        >
           <article v-for="item in filteredSeries" :key="item.id" class="anime-card catalog-card" @click="openEntry(item.id, 'library', entryMediaType(item))">
             <div class="cover poster-cover">
               <img v-if="item.poster_url" :src="item.poster_url" />
@@ -90,7 +95,11 @@ export default appContextComponent()
               </div>
             </div>
           </article>
-          <el-empty v-if="!filteredSeries.length" :description="`没有匹配的${currentMediaPageTitle}`" />
+          <el-empty v-if="!catalogState.loading && !filteredSeries.length" :description="`没有匹配的${currentMediaPageTitle}`" />
+        </div>
+        <div class="catalog-load-more">
+          <el-button v-if="catalogState.has_more" :loading="catalogState.loading_more" plain @click="loadMoreCatalog">加载更多</el-button>
+          <span v-else-if="filteredSeries.length">已显示 {{ filteredSeries.length }} / {{ catalogState.total }}</span>
         </div>
       </section>
 

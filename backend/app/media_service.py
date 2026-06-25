@@ -6,6 +6,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from .catalog_service import catalog_response
 from .database import connect
 from .db import log, now
 from .download_task_service import queue_download_for_release
@@ -25,14 +26,7 @@ def normalize_api_media_type(value: str) -> str:
 
 def media_items_response(media_type: str) -> dict[str, Any]:
     media_type = normalize_api_media_type(media_type)
-    from .dashboard_service import dashboard_data
-
-    rows = dashboard_data().get("library_items", [])
-    items = [
-        item
-        for item in rows
-        if str(item.get("media_type") or "anime").lower() == media_type
-    ]
+    items = catalog_response(media_type, page=1, page_size=96).get("items", [])
     return {"type": media_type, "items": items}
 
 def build_media_entry_response(media_type: str, entry_id: int) -> dict[str, Any]:

@@ -9,6 +9,30 @@ export async function getDashboard() {
   return (await api.get('/dashboard')).data
 }
 
+export async function getCatalog(kind, params = {}) {
+  const path = kind === 'seasonal' ? '/seasonal/catalog' : `/media/${kind}/catalog`
+  const search = new URLSearchParams()
+  for (const [key, value] of Object.entries(params || {})) {
+    if (value === undefined || value === null || value === '') continue
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (item !== undefined && item !== null && String(item).trim() !== '') search.append(key, item)
+      }
+    } else {
+      search.append(key, value)
+    }
+  }
+  return (await api.get(path, { params: search })).data
+}
+
+export async function getCalendar(params = {}) {
+  return (await api.get('/calendar', { params })).data
+}
+
+export async function getLogs() {
+  return (await api.get('/logs')).data
+}
+
 export async function getAction(path) {
   return (await api.get(path)).data
 }

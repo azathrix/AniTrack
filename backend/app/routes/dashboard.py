@@ -7,6 +7,7 @@ from fastapi import APIRouter
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 
+from ..catalog_service import calendar_response, logs_response
 from ..dashboard_service import cached_dashboard_data, dashboard_cache, dashboard_cache_lock, dashboard_data
 from ..runtime_store import runtime_store
 
@@ -17,6 +18,16 @@ router = APIRouter()
 @router.get("/api/dashboard")
 async def api_dashboard() -> dict:
     return await cached_dashboard_data()
+
+
+@router.get("/api/calendar")
+async def api_calendar(week: str = "") -> dict:
+    return calendar_response(week)
+
+
+@router.get("/api/logs")
+async def api_logs() -> dict:
+    return logs_response()
 
 
 @router.get("/api/dashboard/stream")

@@ -8,7 +8,7 @@ export default appContextComponent()
   <section v-if="view === 'dashboard'" class="content-grid">
     <div class="metric-card">
       <span>新番条目</span>
-      <strong>{{ dashboard.seasonal_items.length }}</strong>
+      <strong>{{ seasonalCatalogTotal }}</strong>
     </div>
     <div class="metric-card">
       <span>可观看</span>

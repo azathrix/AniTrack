@@ -315,206 +315,25 @@ def console_sections() -> list[dict[str, Any]]:
 
 def dashboard_data() -> dict[str, Any]:
     settings = get_settings()
-    recent_cutoff = datetime.now(timezone.utc).timestamp() - 7 * 24 * 60 * 60
-    calendar_cutoff = datetime.now(timezone.utc).timestamp() - 28 * 24 * 60 * 60
     with connect() as conn:
-        seasonal_items = conn.execute(
-            """
-            SELECT e.id,
-              e.work_id,
-              e.media_type,
-              e.region,
-              e.source_provider,
-              e.metadata_provider,
-              e.external_id,
-              e.target_library_id,
-              e.genres_json,
-              e.tags_json,
-              e.display_title,
-              e.title_root,
-              e.poster_url,
-              e.entry_kind,
-              e.season_label,
-              e.arc_label,
-              e.part_label,
-              e.special_label,
-              e.title_cn,
-              e.poster_url,
-              e.bangumi_id,
-              e.tmdb_id,
-              e.bangumi_score,
-              e.tmdb_score,
-              e.year,
-              e.month,
-              e.season_number,
-              w.title_root AS work_title,
-              COUNT(DISTINCT ep.id) AS episode_count,
-              COUNT(DISTINCT r.id) AS release_count,
-              COUNT(DISTINCT r.subtitle_group) AS group_count,
-              COUNT(DISTINCT r.resolution) AS resolution_count,
-              COUNT(DISTINCT r.language) AS language_count,
-              GROUP_CONCAT(DISTINCT r.subtitle_group) AS subtitle_groups,
-              GROUP_CONCAT(DISTINCT r.resolution) AS resolutions,
-              GROUP_CONCAT(DISTINCT r.language) AS languages,
-              COUNT(DISTINCT CASE WHEN cs.status IN ('submitted','running','completed') THEN cs.id END) AS downloaded_count,
-              COUNT(DISTINCT ca.id) AS download_artifact_count,
-              COUNT(DISTINCT CASE WHEN COALESCE(ep.watchable, 0)=1 THEN ep.id END) AS local_asset_count
-            FROM entries e
-            JOIN seasonal_entries se ON se.entry_id=e.id
-            JOIN works w ON w.id=e.work_id
-            LEFT JOIN episodes ep ON ep.entry_id=e.id
-            LEFT JOIN releases r ON r.entry_id=e.id
-            LEFT JOIN download_jobs cs ON cs.release_id=r.id
-            LEFT JOIN download_artifacts ca ON ca.release_id=r.id
-            LEFT JOIN local_assets la ON la.release_id=r.id AND la.status='synced'
-            WHERE COALESCE(e.hidden, 0)=0
-              AND e.bangumi_id != ''
-              AND COALESCE(se.following, 1)=1
-              AND COALESCE(se.archived, 0)=0
-            GROUP BY e.id
-            ORDER BY e.updated_at DESC
-            """
-        ).fetchall()
-        library_items = conn.execute(
-            """
-            SELECT e.id,
-              e.work_id,
-              e.media_type,
-              e.region,
-              e.source_provider,
-              e.metadata_provider,
-              e.external_id,
-              e.target_library_id,
-              e.genres_json,
-              e.tags_json,
-              e.display_title,
-              e.title_root,
-              e.poster_url,
-              e.entry_kind,
-              e.season_label,
-              e.arc_label,
-              e.part_label,
-              e.special_label,
-              e.title_cn,
-              e.bangumi_id,
-              e.tmdb_id,
-              e.bangumi_score,
-              e.tmdb_score,
-              e.year,
-              e.month,
-              e.season_number,
-              w.title_root AS work_title,
-              COUNT(DISTINCT ep.id) AS episode_count,
-              COUNT(DISTINCT r.id) AS release_count,
-              COUNT(DISTINCT ca.id) AS download_artifact_count,
-              COUNT(DISTINCT CASE WHEN COALESCE(ep.watchable, 0)=1 THEN ep.id END) AS local_asset_count
-            FROM entries e
-            LEFT JOIN library_entries le ON le.entry_id=e.id
-            JOIN works w ON w.id=e.work_id
-            LEFT JOIN episodes ep ON ep.entry_id=e.id
-            LEFT JOIN releases r ON r.entry_id=e.id
-            LEFT JOIN download_artifacts ca ON ca.release_id=r.id
-            LEFT JOIN local_assets la ON la.release_id=r.id AND la.status='synced'
-            WHERE COALESCE(e.hidden, 0)=0
-            GROUP BY e.id
-            ORDER BY e.updated_at DESC
-            """
-        ).fetchall()
-        seasonal_sync_calendar = conn.execute(
-            """
-            SELECT la.id,
-              e.id AS entry_id,
-              la.local_path,
-              la.updated_at AS synced_at,
-              ca.episode_number,
-              e.display_title,
-              e.title_root,
-              e.poster_url,
-              e.entry_kind,
-              e.season_label,
-              e.arc_label,
-              e.part_label,
-              e.special_label,
-              w.title_root AS work_title
-            FROM local_assets la
-            JOIN download_artifacts ca ON ca.id=la.download_artifact_id
-            JOIN releases r ON r.id=la.release_id
-            JOIN entries e ON e.id=r.entry_id
-            JOIN seasonal_entries se ON se.entry_id=e.id
-            JOIN works w ON w.id=e.work_id
-            WHERE la.status='synced'
-              AND COALESCE(e.hidden, 0)=0
-              AND COALESCE(se.following, 1)=1
-              AND COALESCE(se.archived, 0)=0
-              AND strftime('%s', la.updated_at) >= ?
-            ORDER BY la.updated_at DESC
-            LIMIT 120
-            """,
-            (int(recent_cutoff),),
-        ).fetchall()
-        seasonal_update_calendar = conn.execute(
+        summary_row = conn.execute(
             """
             SELECT
-              e.id AS entry_id,
-              e.display_title,
-              e.title_root,
-              e.poster_url,
-              e.entry_kind,
-              e.season_label,
-              e.arc_label,
-              e.part_label,
-              e.special_label,
-              w.title_root AS work_title,
-              r.episode_number,
-              MAX(COALESCE(la.updated_at, ca.updated_at, r.updated_at, r.created_at)) AS updated_at,
-              MAX(CASE WHEN la.status='synced' THEN 1 ELSE 0 END) AS synced
-            FROM releases r
-            JOIN entries e ON e.id=r.entry_id
-            JOIN seasonal_entries se ON se.entry_id=e.id
-            JOIN works w ON w.id=e.work_id
-            LEFT JOIN download_artifacts ca ON ca.release_id=r.id
-            LEFT JOIN local_assets la ON la.release_id=r.id
+              COUNT(DISTINCT CASE
+                WHEN se.entry_id IS NOT NULL
+                  AND COALESCE(se.following, 1)=1
+                  AND COALESCE(se.archived, 0)=0
+                  AND e.bangumi_id!=''
+                THEN e.id END) AS seasonal_count,
+              COUNT(DISTINCT CASE WHEN COALESCE(ep.watchable, 0)=1 THEN ep.id END) AS watchable_count,
+              COUNT(DISTINCT CASE WHEN la.status='synced' THEN la.id END) AS local_asset_count
+            FROM entries e
+            LEFT JOIN seasonal_entries se ON se.entry_id=e.id
+            LEFT JOIN episodes ep ON ep.entry_id=e.id
+            LEFT JOIN local_assets la ON la.entry_id=e.id AND la.episode_number=ep.episode_number
             WHERE COALESCE(e.hidden, 0)=0
-              AND COALESCE(se.following, 1)=1
-              AND COALESCE(se.archived, 0)=0
-              AND la.status='synced'
-              AND strftime('%s', COALESCE(la.updated_at, ca.updated_at, r.updated_at, r.created_at)) >= ?
-            GROUP BY e.id, r.episode_number
-            ORDER BY updated_at DESC
-            LIMIT 160
             """,
-            (int(calendar_cutoff),),
-        ).fetchall()
-        recent_synced_entries = conn.execute(
-            """
-            SELECT
-              e.id AS entry_id,
-              e.display_title,
-              e.title_root,
-              e.poster_url,
-              e.entry_kind,
-              e.season_label,
-              e.arc_label,
-              e.part_label,
-              e.special_label,
-              w.title_root AS work_title,
-              MAX(la.updated_at) AS synced_at,
-              COUNT(DISTINCT la.id) AS synced_count
-            FROM local_assets la
-            JOIN entries e ON e.id=la.entry_id
-            JOIN seasonal_entries se ON se.entry_id=e.id
-            JOIN works w ON w.id=e.work_id
-            WHERE la.status='synced'
-              AND COALESCE(e.hidden, 0)=0
-              AND COALESCE(se.following, 1)=1
-              AND COALESCE(se.archived, 0)=0
-              AND strftime('%s', la.updated_at) >= ?
-            GROUP BY e.id
-            ORDER BY synced_at DESC
-            LIMIT 12
-            """,
-            (int(recent_cutoff),),
-        ).fetchall()
+        ).fetchone()
     queue_items = queue_summary(settings)
     runtime_snapshot = runtime_store.snapshot()
     scheduled_jobs = scheduled_jobs_summary()
@@ -528,20 +347,12 @@ def dashboard_data() -> dict[str, Any]:
     download_tasks = list_download_tasks()
     task_items = list_tasks()
     queue_details = queue_detail_map()
-    seasonal_rows = [
-        enrich_catalog_entry(summarize_seasonal_entry(row))
-        for row in rows_to_dicts(seasonal_items)
-    ]
-    library_rows = [enrich_catalog_entry(row) for row in rows_to_dicts(library_items)]
-    seasonal_calendar_rows = [enrich_catalog_entry(row) for row in rows_to_dicts(seasonal_sync_calendar)]
-    seasonal_update_rows = [enrich_catalog_entry(row) for row in rows_to_dicts(seasonal_update_calendar)]
-    recent_synced_rows = [enrich_catalog_entry(row) for row in rows_to_dicts(recent_synced_entries)]
     return {
-        "seasonal_items": seasonal_rows,
-        "library_items": library_rows,
-        "seasonal_sync_calendar": seasonal_calendar_rows,
-        "seasonal_update_calendar": seasonal_update_rows,
-        "recent_synced_seasonal_entries": recent_synced_rows,
+        "summary": {
+            "seasonal_count": int(summary_row["seasonal_count"] or 0) if summary_row else 0,
+            "watchable_count": int(summary_row["watchable_count"] or 0) if summary_row else 0,
+            "local_asset_count": int(summary_row["local_asset_count"] or 0) if summary_row else 0,
+        },
         "operations": operations_list,
         "scheduled_jobs": scheduled_jobs,
         "schedules": list_schedules(),
@@ -555,7 +366,6 @@ def dashboard_data() -> dict[str, Any]:
         "task_overview": task_overview(task_items),
         "pipelines": pipeline_overview(),
         "console_sections": console_sections(),
-        "server_logs": server_logs,
         "console_overview": console_overview(queue_items, scheduled_jobs, operations_list, server_logs),
     }
 
