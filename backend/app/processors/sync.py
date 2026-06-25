@@ -22,6 +22,35 @@ def _download_artifact_id(context: ProcessorContext, payload: dict) -> int:
     return int(payload.get("download_artifact_id") or 0)
 
 
+def _local_copy_size(target_file: Path) -> int:
+    try:
+        if target_file.exists() and target_file.is_file():
+            return max(0, target_file.stat().st_size)
+    except OSError:
+        return 0
+    parent = target_file.parent
+    name = target_file.name
+    if not name:
+        return 0
+    try:
+        candidates = list(parent.iterdir()) if parent.exists() else []
+    except OSError:
+        return 0
+    sizes: list[int] = []
+    for item in candidates:
+        try:
+            if not item.is_file():
+                continue
+            item_name = item.name
+            if item_name == name:
+                continue
+            if item_name.startswith(name) or name in item_name:
+                sizes.append(max(0, item.stat().st_size))
+        except OSError:
+            continue
+    return max(sizes) if sizes else 0
+
+
 async def sync_download_artifact_to_local(
     context: ProcessorContext,
     payload: dict,
@@ -79,11 +108,7 @@ async def sync_download_artifact_to_local(
             )
 
             async def progress_cb(percent: int, text: str) -> None:
-                downloaded_size = 0
-                try:
-                    downloaded_size = target_file.stat().st_size if target_file.exists() else 0
-                except OSError:
-                    downloaded_size = 0
+                downloaded_size = _local_copy_size(target_file)
                 calculated = int(downloaded_size * 100 / total_size) if total_size > 0 and downloaded_size > 0 else 0
                 value = max(0, min(100, max(int(percent or 0), calculated)))
                 if total_size > 0 and downloaded_size > 0:

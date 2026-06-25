@@ -266,6 +266,7 @@ async def copy_to_local(settings: dict[str, str], source_path: str, target_path:
                 "copyto",
                 remote_path(settings, source_path),
                 target_path,
+                "--inplace",
                 "--progress",
                 "--stats",
                 "1s",

@@ -380,6 +380,8 @@ def list_download_tasks(limit: int = 200) -> list[dict[str, Any]]:
         item["status"] = status
         item["phase"] = download_phase(str(item.get("phase") or status))
         item["status_text"] = download_status_text(status, str(item.get("provider_key") or item.get("provider") or ""))
+        stored_progress = max(0, min(100, int(item.get("progress") or 0)))
+        stored_progress_text = str(item.get("progress_text") or "")
         target_path = str(item.get("target_local_path") or item.get("local_asset_path") or "")
         current_size = 0
         if target_path:
@@ -394,11 +396,6 @@ def list_download_tasks(limit: int = 200) -> list[dict[str, Any]]:
         item["downloaded_size"] = downloaded_size
         item["downloaded_size_text"] = human_size(downloaded_size)
         item["total_size_text"] = human_size(total_size)
-        if status == "local_copying" and downloaded_size <= 0:
-            status = "remote_downloading"
-            item["status"] = status
-            item["phase"] = "remote_downloading"
-            item["status_text"] = download_status_text(status, str(item.get("provider_key") or item.get("provider") or ""))
         if status in ACTIVE_DOWNLOAD_STATUSES:
             if status == "local_copying" and total_size > 0 and downloaded_size > 0:
                 item["progress"] = min(99, max(1, int(downloaded_size * 100 / total_size)))
@@ -406,6 +403,9 @@ def list_download_tasks(limit: int = 200) -> list[dict[str, Any]]:
             elif status == "local_copying" and downloaded_size > 0:
                 item["progress"] = 0
                 item["progress_text"] = f"已写入 {item['downloaded_size_text']}"
+            elif status == "local_copying":
+                item["progress"] = min(99, stored_progress)
+                item["progress_text"] = stored_progress_text or "正在复制到本地"
             else:
                 item["progress"] = 0
                 item["progress_text"] = "-"
