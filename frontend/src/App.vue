@@ -381,7 +381,7 @@ const weekDays = computed(() => {
     const key = formatDateKey(date)
     const itemsByEntry = new Map()
     for (const item of seasonalCalendarCards.value) {
-      const itemDate = formatDateKey(new Date(item.updated_at || item.synced_at || 0))
+      const itemDate = item.event_date || formatDateKey(new Date(item.updated_at || item.synced_at || 0))
       if (itemDate !== key) continue
       const entryId = Number(item.entry_id || 0)
       const old = itemsByEntry.get(entryId)

@@ -20,6 +20,87 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _calendar_event_date(value: str) -> str:
+    try:
+        parsed = datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
+    except ValueError:
+        parsed = datetime.now(timezone.utc)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone().date().isoformat()
+
+
+def ensure_calendar_entries(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS calendar_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            entry_id INTEGER NOT NULL,
+            episode_number INTEGER NOT NULL DEFAULT 0,
+            event_date TEXT NOT NULL,
+            event_time TEXT NOT NULL DEFAULT '',
+            synced INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(entry_id, event_date)
+        )
+        """
+    )
+
+
+def upsert_calendar_entry(conn: sqlite3.Connection, entry_id: int, episode_number: int, event_time: str | None = None, synced: bool = True) -> None:
+    if entry_id <= 0 or episode_number <= 0:
+        return
+    ts = event_time or now()
+    event_date = _calendar_event_date(ts)
+    conn.execute(
+        """
+        INSERT INTO calendar_entries
+          (entry_id, episode_number, event_date, event_time, synced, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(entry_id, event_date) DO UPDATE SET
+          episode_number=MAX(calendar_entries.episode_number, excluded.episode_number),
+          event_time=CASE
+            WHEN excluded.episode_number >= calendar_entries.episode_number THEN excluded.event_time
+            ELSE calendar_entries.event_time
+          END,
+          synced=CASE WHEN excluded.synced > calendar_entries.synced THEN excluded.synced ELSE calendar_entries.synced END,
+          updated_at=excluded.updated_at
+        """,
+        (entry_id, episode_number, event_date, ts, 1 if synced else 0, ts, ts),
+    )
+
+
+def backfill_calendar_entries(conn: sqlite3.Connection) -> None:
+    ensure_calendar_entries(conn)
+    existing = conn.execute("SELECT 1 FROM calendar_entries LIMIT 1").fetchone()
+    if existing:
+        return
+    rows = conn.execute(
+        """
+        SELECT la.entry_id, la.episode_number, MIN(la.created_at) AS event_time
+        FROM local_assets la
+        JOIN entries e ON e.id=la.entry_id
+        JOIN seasonal_entries se ON se.entry_id=e.id
+        WHERE la.status='synced'
+          AND COALESCE(e.hidden, 0)=0
+          AND COALESCE(se.following, 1)=1
+          AND COALESCE(se.archived, 0)=0
+          AND la.entry_id > 0
+          AND la.episode_number > 0
+        GROUP BY la.entry_id, la.episode_number
+        """
+    ).fetchall()
+    for row in rows:
+        upsert_calendar_entry(
+            conn,
+            int(row["entry_id"] or 0),
+            int(row["episode_number"] or 0),
+            str(row["event_time"] or ""),
+            True,
+        )
+
+
 def ensure_unique_index(conn: sqlite3.Connection, table: str, columns: list[str], index_name: str) -> None:
     table_exists = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
@@ -436,6 +517,18 @@ def init_db() -> None:
                 updated_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS calendar_entries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entry_id INTEGER NOT NULL,
+                episode_number INTEGER NOT NULL DEFAULT 0,
+                event_date TEXT NOT NULL,
+                event_time TEXT NOT NULL DEFAULT '',
+                synced INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(entry_id, event_date)
+            );
+
             CREATE UNIQUE INDEX IF NOT EXISTS idx_download_artifacts_provider_file
             ON download_artifacts(provider, provider_file_id)
             WHERE provider_file_id != '';
@@ -480,6 +573,7 @@ def init_db() -> None:
             )
         ensure_media_libraries(conn)
         migrate(conn)
+        backfill_calendar_entries(conn)
 
 
 def ensure_media_libraries(conn: sqlite3.Connection) -> None:

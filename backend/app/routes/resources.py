@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 from ..database import connect
-from ..db import log, now
+from ..db import log, now, upsert_calendar_entry
 from ..download_task_service import queue_download_for_episode, queue_download_for_release
 from ..download_worker_service import cancel_all_download_workers, cancel_download_job_worker, trigger_download_worker
 from ..config import MEDIA_ROOT
@@ -255,6 +255,7 @@ async def api_import_entry_resources(entry_id: int, payload: EpisodeImportPayloa
                     """,
                     (-abs(episode_id), entry_id, entry_id, episode_number, local_path, ts, ts),
                 )
+                upsert_calendar_entry(conn, entry_id, episode_number, ts, True)
             subtitle_ref = (item.subtitle_url or item.subtitle_file_name or "").strip()
             if subtitle_ref:
                 if not is_valid_subtitle_reference(subtitle_ref):
@@ -541,6 +542,13 @@ async def api_update_episode(episode_id: int, payload: EpisodePayload) -> dict[s
                     ts,
                     ts,
                 ),
+            )
+            upsert_calendar_entry(
+                conn,
+                int(row["entry_id"] or 0),
+                int(row["episode_number"] or 0),
+                ts,
+                True,
             )
     return {"status": "saved", "item": row_to_dict(row)}
 

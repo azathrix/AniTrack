@@ -100,7 +100,6 @@ export default appContextComponent()
         </div>
         <div class="catalog-load-more">
           <el-button v-if="catalogState.has_more" :loading="catalogState.loading_more" plain @click="loadMoreCatalog">加载更多</el-button>
-          <span v-else-if="filteredSeries.length">已显示 {{ filteredSeries.length }} / {{ catalogState.total }}</span>
         </div>
       </section>
 

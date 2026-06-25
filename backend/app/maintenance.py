@@ -88,6 +88,7 @@ def diagnostics() -> dict[str, Any]:
             "download_artifacts",
             "sync_rules",
             "local_assets",
+            "calendar_entries",
         ]
         result["tables"] = {table: table_count(conn, table) for table in tables}
         total_series = max(0, table_count(conn, "series"))
@@ -104,6 +105,7 @@ def clear_runtime_data() -> None:
     next_generation = _now()
     with connect() as conn:
         for table in [
+            "calendar_entries",
             "local_assets",
             "sync_rules",
             "download_artifacts",
@@ -125,7 +127,7 @@ def clear_runtime_data() -> None:
         except sqlite3.Error:
             pass
         conn.execute(
-            "DELETE FROM sqlite_sequence WHERE name IN ('local_assets','sync_rules','download_artifacts','download_jobs','episode_subtitles','episode_resources','rss_candidates','processing_cache','library_entries','seasonal_entries','entries','works','releases','episodes','series')"
+            "DELETE FROM sqlite_sequence WHERE name IN ('calendar_entries','local_assets','sync_rules','download_artifacts','download_jobs','episode_subtitles','episode_resources','rss_candidates','processing_cache','library_entries','seasonal_entries','entries','works','releases','episodes','series')"
         )
         conn.execute(
             "INSERT INTO settings (key, value) VALUES ('runtime_generation', ?) "

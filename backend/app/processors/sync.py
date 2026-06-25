@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 
 from ..database import connect
-from ..db import get_settings, log, now
+from ..db import get_settings, log, now, upsert_calendar_entry
 from ..downloader_service import settings_for_provider
 from ..pipeline_models import ProcessorContext, ProcessorResult
 from ..runtime_store import runtime_store
@@ -213,6 +213,13 @@ async def sync_download_artifact_to_local(
             WHERE entry_id=? AND episode_number=?
             """,
             (target, ts, int(row["entry_id"] or 0), int(row["episode_number"] or 0)),
+        )
+        upsert_calendar_entry(
+            conn,
+            int(row["entry_id"] or 0),
+            int(row["episode_number"] or 0),
+            ts,
+            True,
         )
         conn.execute(
             """

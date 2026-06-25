@@ -166,7 +166,7 @@ def _catalog_select_sql(where_sql: str) -> str:
           COUNT(DISTINCT CASE WHEN dj.status IN ('submitted','running','completed','remote_downloading','local_copying') THEN dj.id END) AS downloaded_count,
           COUNT(DISTINCT da.id) AS download_artifact_count,
           COUNT(DISTINCT CASE WHEN COALESCE(ep.watchable, 0)=1 THEN ep.id END) AS local_asset_count,
-          MAX(CASE WHEN la.status='synced' AND strftime('%s', la.updated_at) >= ? THEN 1 ELSE 0 END) AS recent_update
+          MAX(CASE WHEN ce.event_date >= ? THEN 1 ELSE 0 END) AS recent_update
         FROM entries e
         LEFT JOIN seasonal_entries se ON se.entry_id=e.id
         JOIN works w ON w.id=e.work_id
@@ -175,6 +175,7 @@ def _catalog_select_sql(where_sql: str) -> str:
         LEFT JOIN download_jobs dj ON dj.entry_id=e.id AND dj.episode_number=ep.episode_number
         LEFT JOIN download_artifacts da ON da.entry_id=e.id AND da.episode_number=ep.episode_number
         LEFT JOIN local_assets la ON la.entry_id=e.id AND la.episode_number=ep.episode_number AND la.status='synced'
+        LEFT JOIN calendar_entries ce ON ce.entry_id=e.id
         WHERE {where_sql}
         GROUP BY e.id
         ORDER BY e.updated_at DESC, e.id DESC
@@ -240,7 +241,7 @@ def catalog_response(kind: str, *, page: int = 1, page_size: int = CATALOG_PAGE_
     page_size = _safe_page_size(page_size)
     offset = (page - 1) * page_size
     where_sql, params = _catalog_where(catalog_kind, filters)
-    recent_cutoff = int(datetime.now(timezone.utc).timestamp() - 7 * 24 * 60 * 60)
+    recent_cutoff = (datetime.now().date() - timedelta(days=7)).isoformat()
     with connect() as conn:
         total = int(
             conn.execute(
@@ -289,7 +290,11 @@ def calendar_response(week: str = "") -> dict[str, Any]:
         rows = conn.execute(
             """
             SELECT
-              e.id AS entry_id,
+              ce.id,
+              ce.entry_id,
+              ce.event_date,
+              ce.event_time AS updated_at,
+              ce.synced,
               e.display_title,
               e.title_root,
               e.poster_url,
@@ -299,25 +304,20 @@ def calendar_response(week: str = "") -> dict[str, Any]:
               e.part_label,
               e.special_label,
               w.title_root AS work_title,
-              ep.episode_number,
-              MAX(la.updated_at) AS updated_at,
-              1 AS synced
-            FROM local_assets la
-            JOIN episodes ep ON ep.entry_id=la.entry_id AND ep.episode_number=la.episode_number
-            JOIN entries e ON e.id=la.entry_id
+              ce.episode_number
+            FROM calendar_entries ce
+            JOIN entries e ON e.id=ce.entry_id
             JOIN seasonal_entries se ON se.entry_id=e.id
             JOIN works w ON w.id=e.work_id
-            WHERE la.status='synced'
-              AND COALESCE(e.hidden, 0)=0
+            WHERE COALESCE(e.hidden, 0)=0
               AND COALESCE(se.following, 1)=1
               AND COALESCE(se.archived, 0)=0
-              AND strftime('%s', la.updated_at) >= ?
-              AND strftime('%s', la.updated_at) < ?
-            GROUP BY e.id, ep.episode_number
-            ORDER BY updated_at DESC
+              AND ce.event_date >= ?
+              AND ce.event_date < ?
+            ORDER BY ce.event_date DESC, ce.episode_number DESC
             LIMIT 160
             """,
-            (int(start.timestamp()), int(end.timestamp())),
+            (start.date().isoformat(), end.date().isoformat()),
         ).fetchall()
     return {"items": [enrich_catalog_entry(row) for row in rows_to_dicts(rows)]}
 
