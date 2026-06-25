@@ -601,6 +601,26 @@ def save_entry_payload(entry_id: int, payload: EntryPayload, *, expected_domain:
                 entry_id,
             ),
         )
+        if int(entry["work_id"] or 0) > 0:
+            conn.execute(
+                """
+                UPDATE works
+                SET title_root=?,
+                    title_root_raw=CASE WHEN ?='' THEN title_root_raw ELSE ? END,
+                    bangumi_id=CASE WHEN ?='' THEN bangumi_id ELSE ? END,
+                    updated_at=?
+                WHERE id=?
+                """,
+                (
+                    title_root,
+                    payload.title_raw.strip(),
+                    payload.title_raw.strip(),
+                    payload.bangumi_id.strip(),
+                    payload.bangumi_id.strip(),
+                    now(),
+                    int(entry["work_id"] or 0),
+                ),
+            )
         if domain_kind == "seasonal":
             conn.execute(
                 """

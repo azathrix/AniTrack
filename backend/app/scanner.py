@@ -529,8 +529,8 @@ def upsert_release(item: ParsedRelease, metadata: dict | None = None) -> tuple[i
               (root_key, title_root, title_root_raw, bangumi_id, metadata_source, hidden, created_at, updated_at)
             VALUES (?, ?, ?, ?, 'bangumi', 0, ?, ?)
             ON CONFLICT(root_key) DO UPDATE SET
-              title_root=excluded.title_root,
-              title_root_raw=excluded.title_root_raw,
+              title_root=CASE WHEN works.title_root='' THEN excluded.title_root ELSE works.title_root END,
+              title_root_raw=CASE WHEN works.title_root_raw='' THEN excluded.title_root_raw ELSE works.title_root_raw END,
               bangumi_id=CASE WHEN works.bangumi_id='' THEN excluded.bangumi_id ELSE works.bangumi_id END,
               metadata_source='bangumi',
               hidden=0,
@@ -553,8 +553,8 @@ def upsert_release(item: ParsedRelease, metadata: dict | None = None) -> tuple[i
                metadata_source, hidden, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'bangumi', 0, ?, ?)
             ON CONFLICT(fingerprint) DO UPDATE SET
-              title_raw=excluded.title_raw,
-              title_cn=CASE WHEN excluded.title_cn!='' THEN excluded.title_cn ELSE series.title_cn END,
+              title_raw=CASE WHEN series.title_raw='' THEN excluded.title_raw ELSE series.title_raw END,
+              title_cn=CASE WHEN series.title_cn='' THEN excluded.title_cn ELSE series.title_cn END,
               bangumi_id=CASE WHEN series.bangumi_id='' THEN excluded.bangumi_id ELSE series.bangumi_id END,
               mikan_bangumi_id=CASE WHEN excluded.mikan_bangumi_id!='' THEN excluded.mikan_bangumi_id ELSE series.mikan_bangumi_id END,
               year=CASE WHEN excluded.year!=0 THEN excluded.year ELSE series.year END,
@@ -600,15 +600,15 @@ def upsert_release(item: ParsedRelease, metadata: dict | None = None) -> tuple[i
               metadata_provider=excluded.metadata_provider,
               external_id=CASE WHEN excluded.external_id!='' THEN excluded.external_id ELSE entries.external_id END,
               target_library_id=CASE WHEN entries.target_library_id=0 THEN excluded.target_library_id ELSE entries.target_library_id END,
-              entry_kind=excluded.entry_kind,
-              display_title=excluded.display_title,
-              title_root=excluded.title_root,
-              season_label=excluded.season_label,
-              arc_label=excluded.arc_label,
-              part_label=excluded.part_label,
-              special_label=excluded.special_label,
-              title_raw=excluded.title_raw,
-              title_cn=excluded.title_cn,
+              entry_kind=CASE WHEN entries.entry_kind='' THEN excluded.entry_kind ELSE entries.entry_kind END,
+              display_title=CASE WHEN entries.display_title='' THEN excluded.display_title ELSE entries.display_title END,
+              title_root=CASE WHEN entries.title_root='' THEN excluded.title_root ELSE entries.title_root END,
+              season_label=CASE WHEN entries.season_label='' THEN excluded.season_label ELSE entries.season_label END,
+              arc_label=CASE WHEN entries.arc_label='' THEN excluded.arc_label ELSE entries.arc_label END,
+              part_label=CASE WHEN entries.part_label='' THEN excluded.part_label ELSE entries.part_label END,
+              special_label=CASE WHEN entries.special_label='' THEN excluded.special_label ELSE entries.special_label END,
+              title_raw=CASE WHEN entries.title_raw='' THEN excluded.title_raw ELSE entries.title_raw END,
+              title_cn=CASE WHEN entries.title_cn='' THEN excluded.title_cn ELSE entries.title_cn END,
               bangumi_id=CASE WHEN entries.bangumi_id='' THEN excluded.bangumi_id ELSE entries.bangumi_id END,
               mikan_bangumi_id=CASE WHEN excluded.mikan_bangumi_id!='' THEN excluded.mikan_bangumi_id ELSE entries.mikan_bangumi_id END,
               year=CASE WHEN excluded.year!=0 THEN excluded.year ELSE entries.year END,

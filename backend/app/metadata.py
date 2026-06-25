@@ -10,7 +10,7 @@ import httpx
 
 from .database import connect
 from .db import log, merge_duplicate_series, now
-from .library import local_library_root, render_episode_name, render_season_dir, render_series_dir
+from .library import local_library_root, parse_entry_labels, render_episode_name, render_season_dir, render_series_dir
 from .parser import clean_name
 from .processing_cache import get_cached_json, set_cached_json
 
@@ -47,10 +47,12 @@ async def fetch_bangumi_metadata(subject_id: str, proxy: str = "") -> dict[str, 
     images = subject.get("images") or {}
     return {
         "title_cn": title_cn,
+        "title_raw": subject.get("name") or title_cn,
         "poster_url": images.get("large") or images.get("common") or images.get("medium") or "",
         "summary": subject.get("summary") or "",
         "year": subject_year(subject),
         "month": subject_month(subject),
+        "tags_json": subject_tags_json(subject),
         "bangumi_score": subject_score(subject),
     }
 
@@ -221,29 +223,37 @@ def subject_tags_json(subject: dict[str, Any], limit: int = 16) -> str:
     return json.dumps(list(dict.fromkeys(tags))[:limit], ensure_ascii=False)
 
 
-async def refresh_entry_metadata(entry_id: int, proxy: str = "") -> None:
+def metadata_root_labels(title: str) -> dict[str, str | int]:
+    labels = parse_entry_labels(title)
+    if not str(labels.get("title_root") or "").strip():
+        labels["title_root"] = clean_name(title or "Unknown")
+    return labels
+
+
+async def apply_bangumi_metadata(entry_id: int, bangumi_id: str, proxy: str = "", *, force: bool = True) -> bool:
+    bangumi_id = str(bangumi_id or "").strip()
+    if not bangumi_id:
+        return False
     with connect() as conn:
         entry = conn.execute("SELECT * FROM entries WHERE id=?", (entry_id,)).fetchone()
         series = None
         if entry:
             series = conn.execute(
                 "SELECT * FROM series WHERE bangumi_id=? ORDER BY id ASC LIMIT 1",
-                (entry["bangumi_id"],),
+                (bangumi_id,),
             ).fetchone()
     if not entry:
-        return
-
-    bangumi_id = str(entry["bangumi_id"] or "").strip()
-    if not bangumi_id:
-        log("warn", f"跳过 Bangumi 元数据: {entry['display_title']} - 缺少 Bangumi ID")
-        return
+        return False
     try:
         subject = await fetch_bangumi_subject(bangumi_id, proxy)
     except Exception as exc:
         log("error", f"Bangumi 元数据失败: {entry['display_title']} - {exc}")
-        return
+        return False
 
     title_cn = subject_cn_name(subject) or entry["title_cn"]
+    title_raw = subject.get("name") or entry["title_raw"] or title_cn
+    labels = metadata_root_labels(title_cn)
+    title_root = str(labels.get("title_root") or title_cn)
     images = subject.get("images") or {}
     poster = images.get("large") or images.get("common") or images.get("medium") or ""
     summary = chinese_summary(subject.get("summary") or "")
@@ -252,35 +262,273 @@ async def refresh_entry_metadata(entry_id: int, proxy: str = "") -> None:
     month = subject_month(subject) or entry["month"]
     bangumi_score = subject_score(subject)
     with connect() as conn:
-        conn.execute(
-            """
-            UPDATE entries
-            SET title_cn=CASE WHEN title_cn='' THEN ? ELSE title_cn END,
-                display_title=CASE WHEN display_title='' THEN ? ELSE display_title END,
-                bangumi_id=?,
-                poster_url=CASE WHEN poster_url='' THEN ? ELSE poster_url END,
-                summary=CASE WHEN summary='' THEN ? ELSE summary END,
-                year=CASE WHEN year=0 THEN ? ELSE year END,
-                month=CASE WHEN month=0 THEN ? ELSE month END,
-                tags_json=CASE WHEN tags_json='[]' THEN ? ELSE tags_json END,
-                bangumi_score=?,
-                metadata_source='bangumi', updated_at=?
-            WHERE id=?
-            """,
-            (title_cn, title_cn, bangumi_id, poster, summary, year, month, tags_json, bangumi_score, now(), entry_id),
-        )
+        if force:
+            conn.execute(
+                """
+                UPDATE entries
+                SET title_cn=?,
+                    display_title=?,
+                    title_root=?,
+                    title_raw=?,
+                    entry_kind=?,
+                    season_label=?,
+                    arc_label=?,
+                    part_label=?,
+                    special_label=?,
+                    season_number=?,
+                    bangumi_id=?,
+                    poster_url=?,
+                    summary=?,
+                    year=?,
+                    month=?,
+                    tags_json=?,
+                    bangumi_score=?,
+                    metadata_source='bangumi',
+                    metadata_provider='bangumi',
+                    updated_at=?
+                WHERE id=?
+                """,
+                (
+                    title_cn,
+                    title_cn,
+                    title_root,
+                    title_raw,
+                    str(labels.get("entry_kind") or "season"),
+                    str(labels.get("season_label") or ""),
+                    str(labels.get("arc_label") or ""),
+                    str(labels.get("part_label") or ""),
+                    str(labels.get("special_label") or ""),
+                    int(labels.get("season_number") or entry["season_number"] or 1),
+                    bangumi_id,
+                    poster,
+                    summary,
+                    year,
+                    month,
+                    tags_json,
+                    bangumi_score,
+                    now(),
+                    entry_id,
+                ),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE entries
+                SET bangumi_id=?,
+                    bangumi_score=?,
+                    poster_url=CASE WHEN poster_url='' THEN ? ELSE poster_url END,
+                    summary=CASE WHEN summary='' THEN ? ELSE summary END,
+                    tags_json=CASE WHEN tags_json='[]' THEN ? ELSE tags_json END,
+                    updated_at=?
+                WHERE id=?
+                """,
+                (bangumi_id, bangumi_score, poster, summary, tags_json, now(), entry_id),
+            )
+        if int(entry["work_id"] or 0) > 0 and force:
+            conn.execute(
+                """
+                UPDATE works
+                SET title_root=?,
+                    title_root_raw=?,
+                    bangumi_id=CASE WHEN ?='' THEN bangumi_id ELSE ? END,
+                    metadata_source='bangumi',
+                    updated_at=?
+                WHERE id=?
+                """,
+                (title_root, title_raw, bangumi_id, bangumi_id, now(), int(entry["work_id"] or 0)),
+            )
         if series:
             conn.execute(
                 """
                 UPDATE series
-                SET title_cn=?, bangumi_id=?, poster_url=?, summary=?, year=?, month=?,
-                    metadata_source='bangumi', updated_at=?
+                SET title_raw=?,
+                    title_cn=?,
+                    bangumi_id=?,
+                    poster_url=?,
+                    summary=?,
+                    year=?,
+                    month=?,
+                    metadata_source='bangumi',
+                    updated_at=?
                 WHERE id=?
                 """,
-                (title_cn, bangumi_id, poster, summary, year, month, now(), series["id"]),
+                (title_raw, title_cn, bangumi_id, poster, summary, year, month, now(), series["id"]),
             )
             merge_duplicate_series(conn)
     log("info", f"已刷新 Bangumi 元数据: {title_cn}")
+    return True
+
+
+async def apply_tmdb_metadata(
+    entry_id: int,
+    tmdb_id: str,
+    media_type: str,
+    token: str,
+    proxy: str = "",
+    *,
+    force: bool = True,
+) -> bool:
+    tmdb_id = str(tmdb_id or "").strip()
+    if not tmdb_id or not token:
+        return False
+    with connect() as conn:
+        entry = conn.execute("SELECT * FROM entries WHERE id=?", (entry_id,)).fetchone()
+    if not entry:
+        return False
+    try:
+        metadata = await fetch_tmdb_metadata(tmdb_id, media_type, token, proxy)
+    except Exception as exc:
+        log("error", f"TMDB 元数据失败: entry_id={entry_id} tmdb_id={tmdb_id} - {exc}")
+        return False
+    title_cn = metadata.get("title_cn") or entry["title_cn"] or entry["display_title"]
+    title_raw = metadata.get("title_raw") or entry["title_raw"] or title_cn
+    labels = metadata_root_labels(title_cn)
+    title_root = str(labels.get("title_root") or title_cn)
+    year = int(metadata.get("year") or entry["year"] or 0)
+    month = int(metadata.get("month") or entry["month"] or 0)
+    with connect() as conn:
+        if force:
+            conn.execute(
+                """
+                UPDATE entries
+                SET title_cn=?,
+                    display_title=?,
+                    title_root=?,
+                    title_raw=?,
+                    tmdb_id=?,
+                    poster_url=?,
+                    summary=?,
+                    year=?,
+                    month=?,
+                    region=?,
+                    tags_json=?,
+                    tmdb_score=?,
+                    metadata_source='tmdb',
+                    metadata_provider='tmdb',
+                    updated_at=?
+                WHERE id=?
+                """,
+                (
+                    title_cn,
+                    title_cn,
+                    title_root,
+                    title_raw,
+                    tmdb_id,
+                    metadata.get("poster_url", ""),
+                    metadata.get("summary", ""),
+                    year,
+                    month,
+                    metadata.get("region", ""),
+                    metadata.get("tags_json", "[]"),
+                    float(metadata.get("tmdb_score") or 0),
+                    now(),
+                    entry_id,
+                ),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE entries
+                SET tmdb_id=?,
+                    tmdb_score=?,
+                    poster_url=CASE WHEN poster_url='' THEN ? ELSE poster_url END,
+                    summary=CASE WHEN summary='' THEN ? ELSE summary END,
+                    tags_json=CASE WHEN tags_json='[]' THEN ? ELSE tags_json END,
+                    updated_at=?
+                WHERE id=?
+                """,
+                (
+                    tmdb_id,
+                    float(metadata.get("tmdb_score") or 0),
+                    metadata.get("poster_url", ""),
+                    metadata.get("summary", ""),
+                    metadata.get("tags_json", "[]"),
+                    now(),
+                    entry_id,
+                ),
+            )
+        if int(entry["work_id"] or 0) > 0 and force:
+            conn.execute(
+                """
+                UPDATE works
+                SET title_root=?,
+                    title_root_raw=?,
+                    metadata_source='tmdb',
+                    updated_at=?
+                WHERE id=?
+                """,
+                (title_root, title_raw, now(), int(entry["work_id"] or 0)),
+            )
+    log("info", f"已刷新 TMDB 元数据: {title_cn}")
+    return True
+
+
+async def refresh_entry_metadata_by_ids(
+    entry_id: int,
+    media_type: str = "",
+    *,
+    bangumi_id: str = "",
+    tmdb_id: str = "",
+    tmdb_token: str = "",
+    proxy: str = "",
+) -> list[str]:
+    with connect() as conn:
+        entry = conn.execute("SELECT id, media_type, bangumi_id, tmdb_id FROM entries WHERE id=?", (entry_id,)).fetchone()
+        if not entry:
+            return []
+        if bangumi_id or tmdb_id:
+            conn.execute(
+                """
+                UPDATE entries
+                SET bangumi_id=CASE WHEN ?='' THEN bangumi_id ELSE ? END,
+                    tmdb_id=CASE WHEN ?='' THEN tmdb_id ELSE ? END,
+                    updated_at=?
+                WHERE id=?
+                """,
+                (bangumi_id, bangumi_id, tmdb_id, tmdb_id, now(), entry_id),
+            )
+    normalized_type = str(media_type or entry["media_type"] or "anime").strip().lower()
+    current_bangumi_id = str(bangumi_id or entry["bangumi_id"] or "").strip()
+    current_tmdb_id = str(tmdb_id or entry["tmdb_id"] or "").strip()
+    providers: list[str] = []
+
+    if normalized_type == "anime":
+        if current_bangumi_id and await apply_bangumi_metadata(entry_id, current_bangumi_id, proxy, force=True):
+            providers.append("bangumi")
+        if current_tmdb_id and await apply_tmdb_metadata(
+            entry_id,
+            current_tmdb_id,
+            normalized_type,
+            tmdb_token,
+            proxy,
+            force=not providers,
+        ):
+            providers.append("tmdb")
+    else:
+        if current_tmdb_id and await apply_tmdb_metadata(
+            entry_id,
+            current_tmdb_id,
+            normalized_type,
+            tmdb_token,
+            proxy,
+            force=True,
+        ):
+            providers.append("tmdb")
+        if current_bangumi_id and await apply_bangumi_metadata(entry_id, current_bangumi_id, proxy, force=not providers):
+            providers.append("bangumi")
+    return providers
+
+
+async def refresh_entry_metadata(entry_id: int, proxy: str = "") -> None:
+    with connect() as conn:
+        entry = conn.execute("SELECT bangumi_id, display_title FROM entries WHERE id=?", (entry_id,)).fetchone()
+    if not entry:
+        return
+    bangumi_id = str(entry["bangumi_id"] or "").strip()
+    if not bangumi_id:
+        log("warn", f"跳过 Bangumi 元数据: {entry['display_title']} - 缺少 Bangumi ID")
+        return
+    await apply_bangumi_metadata(entry_id, bangumi_id, proxy, force=True)
 
 
 def xml_text(value: str) -> str:

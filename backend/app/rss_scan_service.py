@@ -8,7 +8,7 @@ from .db import get_settings, log, now
 from .download_task_service import queue_download_for_release
 from .download_worker_service import trigger_download_worker
 from .maintenance import refresh_local_status
-from .metadata import fetch_tmdb_metadata, refresh_entry_metadata
+from .metadata import refresh_entry_metadata_by_ids
 from .parser import ParsedRelease
 from .processing_cache import first_resource_ref, get_cached_json, set_cached_json
 from .runtime_store import runtime_store
@@ -164,53 +164,12 @@ async def refresh_entry_metadata_body(entry_id: int) -> str:
     if not entry:
         return "条目不存在，已跳过"
 
-    refreshed: list[str] = []
-    bangumi_id = str(entry["bangumi_id"] or "").strip()
-    if bangumi_id:
-        await refresh_entry_metadata(entry_id, settings.get("rss_proxy", ""))
-        refreshed.append("Bangumi")
-
-    tmdb_id = str(entry["tmdb_id"] or "").strip()
-    tmdb_token = settings.get("tmdb_token", "").strip()
-    if tmdb_id and tmdb_token:
-        metadata = await fetch_tmdb_metadata(
-            tmdb_id,
-            str(entry["media_type"] or "tv"),
-            tmdb_token,
-            settings.get("rss_proxy", ""),
-        )
-        with connect() as conn:
-            conn.execute(
-                """
-                UPDATE entries
-                SET title_cn=CASE WHEN title_cn='' THEN ? ELSE title_cn END,
-                    title_raw=CASE WHEN title_raw='' THEN ? ELSE title_raw END,
-                    poster_url=CASE WHEN poster_url='' THEN ? ELSE poster_url END,
-                    summary=CASE WHEN summary='' THEN ? ELSE summary END,
-                    year=CASE WHEN year=0 THEN ? ELSE year END,
-                    month=CASE WHEN month=0 THEN ? ELSE month END,
-                    region=CASE WHEN region='' THEN ? ELSE region END,
-                    tags_json=CASE WHEN tags_json='[]' THEN ? ELSE tags_json END,
-                    tmdb_score=?,
-                    metadata_source=CASE WHEN metadata_source='' THEN 'tmdb' ELSE metadata_source END,
-                    updated_at=?
-                WHERE id=?
-                """,
-                (
-                    metadata.get("title_cn", ""),
-                    metadata.get("title_raw", ""),
-                    metadata.get("poster_url", ""),
-                    metadata.get("summary", ""),
-                    int(metadata.get("year") or 0),
-                    int(metadata.get("month") or 0),
-                    metadata.get("region", ""),
-                    metadata.get("tags_json", "[]"),
-                    float(metadata.get("tmdb_score") or 0),
-                    now(),
-                    entry_id,
-                ),
-            )
-        refreshed.append("TMDB")
+    refreshed = await refresh_entry_metadata_by_ids(
+        entry_id,
+        str(entry["media_type"] or "anime"),
+        tmdb_token=settings.get("tmdb_token", "").strip(),
+        proxy=settings.get("rss_proxy", ""),
+    )
 
     if not refreshed:
         return "缺少 Bangumi/TMDB ID，已跳过"
