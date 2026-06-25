@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -31,6 +32,7 @@ async def api_cancel_download_task(task_id: int) -> dict[str, Any]:
             raise HTTPException(status_code=404, detail="下载任务不存在")
         entry_id = int(row["entry_id"] or 0)
         episode_number = int(row["episode_number"] or 0)
+        target_local_path = str(row["target_local_path"] or "")
         conn.execute(
             """
             UPDATE download_jobs
@@ -58,6 +60,13 @@ async def api_cancel_download_task(task_id: int) -> dict[str, Any]:
         episode_number=episode_number,
     )
     worker_cancelled = cancel_download_job_worker(task_id)
+    if target_local_path:
+        partial_path = Path(target_local_path).with_name(f"{Path(target_local_path).name}.anitrack.part")
+        try:
+            if partial_path.exists() and partial_path.is_file():
+                partial_path.unlink()
+        except OSError as exc:
+            log("warn", f"下载临时文件清理失败: task_id={task_id} path={partial_path} error={str(exc)[:500]}")
     log("warn", f"下载任务已取消: task_id={task_id} entry_id={entry_id} episode={episode_number}")
     return {
         "status": "cancelled",

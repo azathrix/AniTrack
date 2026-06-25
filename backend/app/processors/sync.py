@@ -51,6 +51,10 @@ def _local_copy_size(target_file: Path) -> int:
     return max(sizes) if sizes else 0
 
 
+def _partial_copy_path(target_file: Path) -> Path:
+    return target_file.with_name(f"{target_file.name}.anitrack.part")
+
+
 async def sync_download_artifact_to_local(
     context: ProcessorContext,
     payload: dict,
@@ -79,6 +83,7 @@ async def sync_download_artifact_to_local(
         target = local_episode_path(dict(row), dict(row), settings)
     target = normalize_local_target_path(target, str(row["artifact_name"] or ""))
     target_file = Path(target)
+    partial_file = _partial_copy_path(target_file)
     with connect() as conn:
         size_row = conn.execute(
             """
@@ -93,22 +98,29 @@ async def sync_download_artifact_to_local(
     total_size = int(size_row["total_size"] or 0) if size_row else 0
 
     try:
-        if target_file.exists() and target_file.stat().st_size > 0:
+        final_size = target_file.stat().st_size if target_file.exists() else 0
+        if target_file.exists() and final_size > 0 and (total_size <= 0 or final_size >= total_size):
             log(
                 "info",
                 f"本地整理跳过下载: download_artifact_id={download_artifact_id} reason=本地文件已存在 target={target}",
             )
         else:
+            if target_file.exists() and final_size > 0 and total_size > 0 and final_size < total_size:
+                log(
+                    "warn",
+                    f"检测到疑似未完成最终文件，将重新下载到临时文件: target={target} "
+                    f"current_size={final_size} total_size={total_size}",
+                )
             log(
                 "info",
                 f"本地整理下载: download_artifact_id={download_artifact_id} entry_id={row['entry_id']} "
                 f"episode={row['episode_number']} provider={row['provider'] or '-'} "
                 f"file_id={row['provider_file_id'] or '-'} source={row['remote_path']} "
-                f"target={target} total_size={total_size}",
+                f"target={target} temp={partial_file} total_size={total_size}",
             )
 
             async def progress_cb(percent: int, text: str) -> None:
-                downloaded_size = _local_copy_size(target_file)
+                downloaded_size = _local_copy_size(partial_file)
                 calculated = int(downloaded_size * 100 / total_size) if total_size > 0 and downloaded_size > 0 else 0
                 value = max(0, min(100, max(int(percent or 0), calculated)))
                 if total_size > 0 and downloaded_size > 0:
@@ -177,13 +189,17 @@ async def sync_download_artifact_to_local(
                 await download_remote_file_to_local(
                     str(row["provider_file_id"] or ""),
                     str(row["remote_path"] or ""),
-                    target,
+                    str(partial_file),
                     settings,
                     progress_cb=progress_cb,
                 )
             finally:
                 stop_monitor.set()
                 await monitor_task
+            if not partial_file.exists() or partial_file.stat().st_size <= 0:
+                raise RuntimeError(f"临时下载文件不存在或为空: {partial_file}")
+            target_file.parent.mkdir(parents=True, exist_ok=True)
+            partial_file.replace(target_file)
     except Exception as exc:
         log(
             "error",

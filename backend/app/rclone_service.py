@@ -323,6 +323,7 @@ async def run_rclone_streaming(settings: dict[str, str], args: list[str], progre
         if process.returncode is None:
             process.kill()
             await process.wait()
+        log("warn", f"rclone 任务已取消: args={' '.join(args[:4])}")
         raise
     output = "\n".join(chunks).strip()
     if return_code != 0:

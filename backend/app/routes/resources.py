@@ -861,6 +861,15 @@ async def api_cancel_all_downloads() -> dict[str, Any]:
     ts = now()
     active_placeholders = ",".join("?" for _ in ACTIVE_DOWNLOAD_STATUSES)
     with connect() as conn:
+        target_rows = conn.execute(
+            f"""
+            SELECT target_local_path
+            FROM download_jobs
+            WHERE status IN ({active_placeholders}, 'failed', 'paused')
+              AND target_local_path!=''
+            """,
+            (*ACTIVE_DOWNLOAD_STATUSES,),
+        ).fetchall()
         cursor = conn.execute(
             f"""
             UPDATE download_jobs
@@ -879,6 +888,16 @@ async def api_cancel_all_downloads() -> dict[str, Any]:
             """,
             (ts,),
         )
+    for target_row in target_rows:
+        target_local_path = str(target_row["target_local_path"] or "")
+        if not target_local_path:
+            continue
+        partial_path = Path(target_local_path).with_name(f"{Path(target_local_path).name}.anitrack.part")
+        try:
+            if partial_path.exists() and partial_path.is_file():
+                partial_path.unlink()
+        except OSError as exc:
+            log("warn", f"下载临时文件清理失败: path={partial_path} error={str(exc)[:500]}")
     log(
         "warn",
         f"已取消全部下载任务: runtime={cancelled_runtime} active={cancelled_active} "
@@ -916,7 +935,7 @@ async def _set_episode_download_state_by_entry_episode(
     with connect() as conn:
         active_rows = conn.execute(
             f"""
-            SELECT id
+            SELECT id, target_local_path
             FROM download_jobs
             WHERE entry_id=? AND episode_number=? AND status IN ({active_placeholders}, 'failed', 'paused')
             """,
@@ -952,6 +971,15 @@ async def _set_episode_download_state_by_entry_episode(
     for row in active_rows:
         if cancel_download_job_worker(int(row["id"] or 0)):
             worker_cancelled += 1
+        if status == "cancelled":
+            target_local_path = str(row["target_local_path"] or "")
+            if target_local_path:
+                partial_path = Path(target_local_path).with_name(f"{Path(target_local_path).name}.anitrack.part")
+                try:
+                    if partial_path.exists() and partial_path.is_file():
+                        partial_path.unlink()
+                except OSError as exc:
+                    log("warn", f"下载临时文件清理失败: path={partial_path} error={str(exc)[:500]}")
     return {
         "status": status,
         "runtime_cancelled": cancelled,

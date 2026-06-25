@@ -387,8 +387,10 @@ def list_download_tasks(limit: int = 200) -> list[dict[str, Any]]:
         if target_path:
             try:
                 path = Path(target_path)
-                if path.exists() and path.is_file():
-                    current_size = path.stat().st_size
+                partial_path = path.with_name(f"{path.name}.anitrack.part")
+                size_path = partial_path if status == "local_copying" and partial_path.exists() else path
+                if size_path.exists() and size_path.is_file():
+                    current_size = size_path.stat().st_size
             except OSError:
                 current_size = 0
         total_size = int(item.get("total_size") or 0)
