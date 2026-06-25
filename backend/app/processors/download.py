@@ -24,7 +24,7 @@ from ..sync_service import (
     local_episode_path,
     synthetic_task_id,
     task_retry_after,
-    task_retry_after_minutes,
+    task_retry_after_seconds,
     upsert_download_artifact_for_release,
 )
 
@@ -298,6 +298,14 @@ def _remote_item_ready(item: dict | None) -> bool:
     return _remote_item_size(item) > 0
 
 
+def _download_poll_retry_after(settings: dict[str, str]) -> str:
+    try:
+        seconds = int(settings.get("download_poll_interval_seconds") or 10)
+    except (TypeError, ValueError):
+        seconds = 10
+    return task_retry_after_seconds(max(3, min(60, seconds)))
+
+
 def _local_asset_for_episode(entry_id: int, episode_number: int):
     with connect() as conn:
         return conn.execute(
@@ -376,7 +384,7 @@ async def process_download_presence(context: ProcessorContext, payload: dict) ->
 
     if existing_remote:
         if not _remote_item_ready(existing_remote):
-            retry_after = task_retry_after_minutes(1)
+            retry_after = _download_poll_retry_after(settings)
             _upsert_submission(
                 settings=settings,
                 release=release,
@@ -486,7 +494,7 @@ async def process_download_submit(context: ProcessorContext, payload: dict) -> P
         )
     if existing_remote:
         if not _remote_item_ready(existing_remote):
-            retry_after = task_retry_after_minutes(1)
+            retry_after = _download_poll_retry_after(settings)
             _upsert_submission(
                 settings=settings,
                 release=release,
@@ -677,9 +685,9 @@ async def process_download(context: ProcessorContext, payload: dict) -> Processo
         )
         if asset_id > 0:
             return await _sync_completed_artifact(context, payload, asset_id)
-        retry_after = task_retry_after(settings, context.attempts + 1)
+        retry_after = _download_poll_retry_after(settings)
         return ProcessorResult.retryable(
-            submit_result.message or "下载任务已提交，等待完成",
+            submit_result.message or "下载任务已提交，等待云存储完成",
             retry_after,
             data=submit_result.data,
         )
@@ -800,9 +808,11 @@ async def process_download_poll(context: ProcessorContext, payload: dict) -> Pro
         return ProcessorResult.retryable(str(exc)[:2000], task_retry_after(settings, context.attempts + 1))
 
     if status != "remote_completed":
-        retry_after = task_retry_after(settings, context.attempts + 1)
-        if matched:
-            retry_after = task_retry_after_minutes(1)
+        retry_after = (
+            task_retry_after(settings, context.attempts + 1)
+            if status == "failed"
+            else _download_poll_retry_after(settings)
+        )
         _upsert_submission(
             settings=settings,
             release=release,

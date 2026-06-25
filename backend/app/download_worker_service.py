@@ -15,6 +15,7 @@ from .sync_service import task_retry_after
 
 _active_jobs: dict[int, asyncio.Task] = {}
 _runner_task: asyncio.Task | None = None
+_wakeup_tasks: set[asyncio.Task] = set()
 
 
 def _parse_time(value: str) -> datetime | None:
@@ -35,6 +36,13 @@ def _is_due(value: str) -> bool:
     if parsed is None:
         return True
     return parsed <= datetime.now(timezone.utc)
+
+
+def _seconds_until(value: str) -> float:
+    parsed = _parse_time(value)
+    if parsed is None:
+        return 0
+    return max(0.0, (parsed - datetime.now(timezone.utc)).total_seconds())
 
 
 def download_concurrency() -> int:
@@ -61,6 +69,24 @@ def trigger_download_worker(delay: float = 0) -> None:
         await run_download_worker()
 
     _runner_task = loop.create_task(runner())
+
+
+def _schedule_download_worker_wakeup(delay: float) -> None:
+    if delay <= 0:
+        trigger_download_worker(delay=0)
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+
+    async def wakeup() -> None:
+        await asyncio.sleep(delay)
+        trigger_download_worker(delay=0)
+
+    task = loop.create_task(wakeup())
+    _wakeup_tasks.add(task)
+    task.add_done_callback(lambda finished: _wakeup_tasks.discard(finished))
 
 
 def cancel_download_job_worker(task_id: int) -> bool:
@@ -165,8 +191,10 @@ def _mark_retryable(task_id: int, row, result: ProcessorResult) -> None:
     message = (result.message or "等待后重试")[:500]
     current_status = canonical_download_status(str(row["status"] or "pending"))
     next_status = current_status
+    remote_wait = False
     if "远端" in message or "云存储" in message or "下载器" in message:
         next_status = "remote_downloading"
+        remote_wait = True
     retry_after = result.retry_after or task_retry_after(get_settings(), int(row["attempts"] or 0) + 1)
     _update_job(
         task_id,
@@ -174,11 +202,12 @@ def _mark_retryable(task_id: int, row, result: ProcessorResult) -> None:
         phase=next_status,
         retry_after=retry_after,
         progress=0,
-        progress_text="-",
-        last_error=message,
+        progress_text=message if remote_wait else "-",
+        last_error="" if remote_wait else message,
         updated_at=now(),
         last_seen_at=now(),
     )
+    _schedule_download_worker_wakeup(_seconds_until(retry_after))
 
 
 def _mark_terminal(task_id: int, message: str) -> None:

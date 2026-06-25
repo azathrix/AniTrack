@@ -25,6 +25,12 @@ def task_retry_after_minutes(minutes: int) -> str:
     return (datetime.now(timezone.utc) + timedelta(minutes=max(1, minutes))).isoformat()
 
 
+def task_retry_after_seconds(seconds: int) -> str:
+    from datetime import datetime, timedelta, timezone
+
+    return (datetime.now(timezone.utc) + timedelta(seconds=max(1, seconds))).isoformat()
+
+
 def stale_running_cutoff(minutes: int = 10) -> str:
     from datetime import datetime, timedelta, timezone
 
