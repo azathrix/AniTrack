@@ -73,7 +73,9 @@ async def sync_download_artifact_to_local(
             log(
                 "info",
                 f"本地整理下载: download_artifact_id={download_artifact_id} entry_id={row['entry_id']} "
-                f"episode={row['episode_number']} source={row['remote_path']} target={target}",
+                f"episode={row['episode_number']} provider={row['provider'] or '-'} "
+                f"file_id={row['provider_file_id'] or '-'} source={row['remote_path']} "
+                f"target={target} total_size={total_size}",
             )
 
             async def progress_cb(percent: int, text: str) -> None:
@@ -158,6 +160,11 @@ async def sync_download_artifact_to_local(
                 stop_monitor.set()
                 await monitor_task
     except Exception as exc:
+        log(
+            "error",
+            f"本地整理失败: download_artifact_id={download_artifact_id} entry_id={row['entry_id']} "
+            f"episode={row['episode_number']} source={row['remote_path']} target={target} error={str(exc)[:1500]}",
+        )
         return ProcessorResult.retryable(str(exc)[:2000], task_retry_after(settings, context.attempts + 1))
 
     with connect() as conn:
@@ -244,9 +251,15 @@ async def sync_download_artifact_to_local(
             ),
         )
     local_asset_id = int(local_asset["id"] or 0) if local_asset else 0
+    final_size = 0
+    try:
+        final_size = target_file.stat().st_size if target_file.exists() else 0
+    except OSError:
+        final_size = 0
     log(
         "info",
-        f"本地整理完成: download_artifact_id={download_artifact_id} local_asset_id={local_asset_id} target={target}",
+        f"本地整理完成: download_artifact_id={download_artifact_id} local_asset_id={local_asset_id} "
+        f"target={target} size={final_size}",
     )
     return ProcessorResult.success(
         "本地整理完成",

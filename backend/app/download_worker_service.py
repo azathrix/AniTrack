@@ -228,6 +228,12 @@ async def process_download_job(task_id: int) -> ProcessorResult:
         return ProcessorResult.terminal("下载任务缺少 release_id")
     ts = now()
     attempts = int(row["attempts"] or 0) + 1
+    log(
+        "info",
+        f"下载任务执行开始: task_id={task_id} release_id={release_id} "
+        f"entry_id={int(row['entry_id'] or 0)} episode={int(row['episode_number'] or 0)} "
+        f"status={status} attempt={attempts}",
+    )
     _update_job(task_id, attempts=attempts, updated_at=ts, last_seen_at=ts)
     context = ProcessorContext(
         task_id=0,
@@ -262,4 +268,10 @@ async def process_download_job(task_id: int) -> ProcessorResult:
         _mark_terminal(task_id, result.message)
     elif result.status == "skipped":
         _mark_completed_if_skipped(task_id, result.message)
+    log(
+        "info",
+        f"下载任务执行结束: task_id={task_id} release_id={release_id} "
+        f"entry_id={int(row['entry_id'] or 0)} episode={int(row['episode_number'] or 0)} "
+        f"result={result.status} message={result.message or '-'}",
+    )
     return result

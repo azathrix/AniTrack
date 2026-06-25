@@ -6,6 +6,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from .db import log
+
 
 def enabled(settings: dict[str, str]) -> bool:
     return (settings.get("download_backend") or "rclone").lower() == "rclone"
@@ -191,7 +193,13 @@ async def add_url(settings: dict[str, str], source: str, target_dir: str, name: 
     args = ["backend", "addurl", remote_path(settings, target_dir), source]
     if name:
         args.extend(["-o", f"name={name}"])
-    output = await run_rclone(settings, args, timeout=300)
+    log("info", f"rclone addurl 开始: target_dir={target_dir} name={name or '-'} source={source[:160]}")
+    try:
+        output = await run_rclone(settings, args, timeout=300)
+    except Exception as exc:
+        log("error", f"rclone addurl 失败: target_dir={target_dir} name={name or '-'} error={str(exc)[:1200]}")
+        raise
+    log("info", f"rclone addurl 完成: target_dir={target_dir} name={name or '-'} output={output[:1200] or '-'}")
     if not output:
         return {}
     try:
@@ -209,11 +217,18 @@ async def list_files(settings: dict[str, str], path: str, recursive: bool = True
     args = ["lsjson", remote_path(settings, path)]
     if recursive:
         args.append("--recursive")
-    output = await run_rclone(settings, args, timeout=300)
+    log("info", f"rclone lsjson 开始: path={path} recursive={recursive}")
+    try:
+        output = await run_rclone(settings, args, timeout=300)
+    except Exception as exc:
+        log("error", f"rclone lsjson 失败: path={path} recursive={recursive} error={str(exc)[:1200]}")
+        raise
     if not output:
+        log("info", f"rclone lsjson 完成: path={path} count=0")
         return []
     data = json.loads(output)
     if not isinstance(data, list):
+        log("warn", f"rclone lsjson 返回非列表: path={path} output={output[:1200]}")
         return []
     result: list[dict[str, Any]] = []
     root = path.rstrip("/")
@@ -233,24 +248,35 @@ async def list_files(settings: dict[str, str], path: str, recursive: bool = True
                 "raw": item,
             }
         )
+    summary = "; ".join(
+        f"name={item['name']}, size={item['size']}, dir={item['is_dir']}, path={item['remote_path']}"
+        for item in result[:20]
+    )
+    log("info", f"rclone lsjson 完成: path={path} count={len(result)} items={summary or '-'}")
     return result
 
 
 async def copy_to_local(settings: dict[str, str], source_path: str, target_path: str, progress_cb=None) -> None:
     Path(target_path).parent.mkdir(parents=True, exist_ok=True)
-    await run_rclone_streaming(
-        settings,
-        [
-            "copyto",
-            remote_path(settings, source_path),
-            target_path,
-            "--progress",
-            "--stats",
-            "1s",
-            "--stats-one-line",
-        ],
-        progress_cb=progress_cb,
-    )
+    log("info", f"rclone copyto 开始: source={source_path} target={target_path}")
+    try:
+        await run_rclone_streaming(
+            settings,
+            [
+                "copyto",
+                remote_path(settings, source_path),
+                target_path,
+                "--progress",
+                "--stats",
+                "1s",
+                "--stats-one-line",
+            ],
+            progress_cb=progress_cb,
+        )
+    except Exception as exc:
+        log("error", f"rclone copyto 失败: source={source_path} target={target_path} error={str(exc)[:1200]}")
+        raise
+    log("info", f"rclone copyto 完成: source={source_path} target={target_path}")
 
 
 async def run_rclone_streaming(settings: dict[str, str], args: list[str], progress_cb=None) -> str:

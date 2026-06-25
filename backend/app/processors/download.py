@@ -452,6 +452,12 @@ async def process_download_submit(context: ProcessorContext, payload: dict) -> P
     source = str(release["magnet"] or release["torrent_url"] or "")
     remote_target = target_dir(dict(release), settings)
     remote_name = _remote_name_for_release(release, settings)
+    log(
+        "info",
+        f"下载提交准备: release_id={release_id} entry_id={release['entry_id']} episode={release['episode_number']} "
+        f"provider={provider_key(settings)} target_dir={remote_target} expected_name={remote_name} "
+        f"source={source[:180] or '-'}",
+    )
     await runtime_store.update_task_progress(context.task_id, 5, "检查下载器远端是否已有文件")
     if not source:
         retry_after = task_retry_after(settings, context.attempts + 1)
@@ -560,7 +566,17 @@ async def process_download_submit(context: ProcessorContext, payload: dict) -> P
     )
     try:
         await runtime_store.update_task_progress(context.task_id, 10, "正在提交下载器任务")
+        log(
+            "info",
+            f"下载器提交开始: release_id={release_id} entry_id={release['entry_id']} episode={release['episode_number']} "
+            f"target_dir={remote_target} name={remote_name}",
+        )
         result = await submit_download(settings, source, remote_target, remote_name)
+        log(
+            "info",
+            f"下载器提交返回: release_id={release_id} entry_id={release['entry_id']} episode={release['episode_number']} "
+            f"result={str(result)[:1500] if isinstance(result, dict) else str(result)[:1500]}",
+        )
         task_id = extract_task_id(result) if isinstance(result, dict) else ""
         file_id = extract_file_id(result) if isinstance(result, dict) else ""
     except Exception as exc:
@@ -623,6 +639,11 @@ async def process_download(context: ProcessorContext, payload: dict) -> Processo
 
     entry_id = int(release["entry_id"] or 0)
     episode_number = int(release["episode_number"] or 0)
+    log(
+        "info",
+        f"下载处理开始: release_id={release_id} entry_id={entry_id} episode={episode_number} "
+        f"attempt={context.attempts} title={release['title'] or '-'}",
+    )
     local_asset = _local_asset_for_episode(entry_id, episode_number)
     if _local_asset_exists(local_asset):
         local_asset_id = int(local_asset["id"] or 0)
@@ -639,6 +660,11 @@ async def process_download(context: ProcessorContext, payload: dict) -> Processo
     submission = _submission_for_release(release_id)
     submission_status = canonical_download_status(str(submission["status"] or "")) if submission else ""
     if not submission or submission_status not in {"submitting", "remote_downloading", "remote_completed", "completed"}:
+        log(
+            "info",
+            f"下载处理进入提交阶段: release_id={release_id} entry_id={entry_id} episode={episode_number} "
+            f"submission_status={submission_status or '-'}",
+        )
         submit_result = await process_download_submit(context, payload)
         if submit_result.status == "failed_retryable":
             return submit_result
@@ -658,6 +684,12 @@ async def process_download(context: ProcessorContext, payload: dict) -> Processo
             data=submit_result.data,
         )
 
+    log(
+        "info",
+        f"下载处理进入轮询阶段: release_id={release_id} entry_id={entry_id} episode={episode_number} "
+        f"submission_status={submission_status} submission_id={submission['submission_id'] or '-'} "
+        f"file_id={submission['provider_file_id'] or '-'}",
+    )
     poll_result = await process_download_poll(context, payload)
     if poll_result.status == "failed_retryable":
         return poll_result
@@ -681,6 +713,12 @@ async def _sync_completed_artifact(context: ProcessorContext, payload: dict, dow
     from .sync import sync_download_artifact_to_local
 
     await runtime_store.update_task_progress(context.task_id, 35, "下载器已完成，开始整理到本地")
+    log(
+        "info",
+        f"下载处理进入本地复制: download_artifact_id={download_artifact_id} "
+        f"release_id={payload.get('release_id') or '-'} entry_id={payload.get('entry_id') or '-'} "
+        f"episode={payload.get('episode_number') or '-'}",
+    )
     local_result = await sync_download_artifact_to_local(context, payload, download_artifact_id)
     if local_result.status != "success":
         return local_result
@@ -714,6 +752,12 @@ async def process_download_poll(context: ProcessorContext, payload: dict) -> Pro
     remote_name = _stored_or_expected_remote_name(release, settings, str(submission["normalized_name"] or ""))
     status = canonical_download_status(str(submission["status"] or "remote_downloading"))
     file_id = str(submission["provider_file_id"] or "")
+    log(
+        "info",
+        f"下载轮询准备: release_id={release_id} entry_id={release['entry_id']} episode={release['episode_number']} "
+        f"provider={str(submission['provider'] or '-')} status={status} target_dir={remote_target} "
+        f"expected_name={remote_name} submission_id={submission['submission_id'] or '-'} file_id={file_id or '-'}",
+    )
     matched = None
     message = ""
     try:
@@ -722,6 +766,12 @@ async def process_download_poll(context: ProcessorContext, payload: dict) -> Pro
                 matched = await find_existing_remote_episode(settings, remote_target, remote_name, int(release["episode_number"] or 0))
                 if matched:
                     file_id = download_file_id(matched)
+                    log(
+                        "info",
+                        f"下载轮询远端命中: release_id={release_id} entry_id={release['entry_id']} "
+                        f"episode={release['episode_number']} name={matched.get('name') or '-'} "
+                        f"size={_remote_item_size(matched)} path={matched.get('remote_path') or '-'} file_id={file_id or '-'}",
+                    )
                     if _remote_item_ready(matched):
                         status = "remote_completed"
                     else:
@@ -780,6 +830,12 @@ async def process_download_poll(context: ProcessorContext, payload: dict) -> Pro
             task_retry_after(settings, context.attempts + 1),
         )
     actual_name = str(item.get("name") or remote_name)
+    log(
+        "info",
+        f"下载轮询完成准备登记: release_id={release_id} entry_id={release['entry_id']} "
+        f"episode={release['episode_number']} actual_name={actual_name} size={_remote_item_size(item)} "
+        f"remote_path={item.get('remote_path') or '-'} asset_id={asset_id}",
+    )
     _upsert_submission(
         settings=settings,
         release=release,

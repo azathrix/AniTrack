@@ -101,25 +101,55 @@ async def find_existing_remote_episode(
     expected_name: str,
     episode_number: int,
 ) -> dict | None:
+    expected_basename = Path(str(expected_name or "")).name
+    log(
+        "info",
+        f"远端文件检测开始: target_dir={target_directory} expected={expected_basename or '-'} episode={episode_number}",
+    )
     try:
         files = await list_remote_files(settings, target_directory, recursive=False)
     except Exception as exc:
         if "directory not found" in str(exc).lower():
+            log("info", f"远端文件检测目录不存在: target_dir={target_directory} expected={expected_basename or '-'}")
             return None
+        log(
+            "warn",
+            f"远端文件检测失败: target_dir={target_directory} expected={expected_basename or '-'} error={str(exc)[:1000]}",
+        )
         raise
-    expected_basename = Path(str(expected_name or "")).name
     if Path(expected_basename).suffix.lower() not in VIDEO_SUFFIXES:
         log("warn", f"远端文件检测跳过: expected_name 缺少视频后缀 target_dir={target_directory} expected={expected_name}")
         return None
+    video_candidates = []
     for item in files:
         if item.get("is_dir"):
             continue
         name = str(item.get("name") or "")
         suffix = Path(name).suffix.lower()
-        if suffix not in VIDEO_SUFFIXES:
-            continue
+        if suffix in VIDEO_SUFFIXES:
+            video_candidates.append(item)
+    candidate_summary = "; ".join(
+        f"name={str(item.get('name') or '-')}, size={int(item.get('size') or 0)}, path={str(item.get('remote_path') or '-')}, id={download_file_id(item) or '-'}"
+        for item in video_candidates[:20]
+    )
+    log(
+        "info",
+        f"远端文件检测候选: target_dir={target_directory} expected={expected_basename} "
+        f"total={len(files)} videos={len(video_candidates)} candidates={candidate_summary or '-'}",
+    )
+    for item in video_candidates:
+        name = str(item.get("name") or "")
         if name == expected_basename:
+            log(
+                "info",
+                f"远端文件精确命中: target_dir={target_directory} expected={expected_basename} "
+                f"name={name} size={int(item.get('size') or 0)} path={str(item.get('remote_path') or '-')} id={download_file_id(item) or '-'}",
+            )
             return item
+    log(
+        "info",
+        f"远端文件未命中: target_dir={target_directory} expected={expected_basename} videos={len(video_candidates)}",
+    )
     return None
 
 
