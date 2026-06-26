@@ -6,52 +6,89 @@ export default appContextComponent()
 
 <template>
   <section v-if="view === 'dashboard'" class="content-grid">
+    <!-- Row of 4 gorgeous Mochi-style Stats Cards (高颜值马卡龙卡片) -->
     <div class="metric-card">
-      <span>新番条目</span>
-      <strong>{{ seasonalCatalogTotal }}</strong>
-    </div>
-    <div class="metric-card">
-      <span>可观看</span>
-      <strong>{{ watchableTotal }}</strong>
-    </div>
-    <div class="metric-card">
-      <span>本地资源</span>
-      <strong>{{ localAssetTotal }}</strong>
-    </div>
-    <div class="metric-card">
-      <span>下载任务</span>
-      <strong>{{ dashboard.download_overview?.active || 0 }}</strong>
+      <div class="metric-info">
+        <span class="metric-label">已收录新番契约</span>
+        <strong class="metric-value">{{ seasonalCatalogTotal }} <span class="metric-unit">部</span></strong>
+        <p class="metric-sub">本季度最新追看作品 🍓</p>
+      </div>
+      <div class="metric-icon pink">📺</div>
     </div>
 
-    <el-card class="span-4 console-card scanner-card">
+    <div class="metric-card">
+      <div class="metric-info">
+        <span class="metric-label">就绪可观看剧集</span>
+        <strong class="metric-value">{{ watchableTotal }} <span class="metric-unit">集</span></strong>
+        <p class="metric-sub">随时可以开启追番派对 🍿</p>
+      </div>
+      <div class="metric-icon blue">🎈</div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-info">
+        <span class="metric-label">本地物理契约记录</span>
+        <strong class="metric-value">{{ localAssetTotal }} <span class="metric-unit">个</span></strong>
+        <p class="metric-sub">次元实体数据已安全入档 💾</p>
+      </div>
+      <div class="metric-icon purple">🔮</div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-info">
+        <span class="metric-label">高频传输通道任务</span>
+        <strong class="metric-value">{{ dashboard.download_overview?.active || 0 }} <span class="metric-unit">个</span></strong>
+        <p class="metric-sub">异次元资源高速下载中 📥</p>
+      </div>
+      <div class="metric-icon mint">🚀</div>
+    </div>
+
+    <!-- Scanner Section (重新设计的次元扫描雷达卡墙) -->
+    <el-card class="span-4 console-card scanner-radar-card">
       <template #header>
         <div class="card-header-row">
-          <div>
-            <strong>扫描器</strong>
-            <span>RSS 扫描、同步 Bangumi ID、写入集数资源并创建下载任务</span>
+          <div class="header-desc">
+            <h3>📡 次元雷达扫描器</h3>
+            <p>定时或手动检索订阅源，自动刮削匹配 Bangumi ID 并调度高速资源下载</p>
           </div>
-          <div class="detail-tags">
-            <el-tag :type="dashboard.scanner_status?.status === 'failed' ? 'danger' : (dashboard.scanner_status?.status === 'running' ? 'warning' : 'success')">
+          <div class="header-actions">
+            <el-tag :type="dashboard.scanner_status?.status === 'failed' ? 'danger' : (dashboard.scanner_status?.status === 'running' ? 'warning' : 'success')" class="scanner-badge">
+              <span class="pulse-dot" v-if="dashboard.scanner_status?.status === 'running'"></span>
               {{ scannerStatusText }}
             </el-tag>
-            <el-button type="primary" plain @click="runAction('/scanner/run')">扫描 RSS</el-button>
+            <el-button type="primary" class="radar-scan-btn" @click="runAction('/scanner/run')">⚡ 开启手动雷达共鸣</el-button>
           </div>
         </div>
       </template>
-      <div class="detail-summary-grid">
-        <div><span>当前状态</span><strong>{{ dashboard.scanner_status?.status || 'idle' }}</strong></div>
-        <div><span>最近操作</span><strong>{{ dashboard.scanner_status?.operation_id || '-' }}</strong></div>
-        <div><span>更新时间</span><strong>{{ dashboard.scanner_status?.updated_at || '-' }}</strong></div>
-        <div><span>运行中</span><strong>{{ dashboard.console_overview?.running_operation_count || 0 }}</strong></div>
+      <div class="scanner-status-grid">
+        <div class="status-cell">
+          <span class="cell-label">当前运行相位 (Status)</span>
+          <strong class="cell-value status-text" :class="dashboard.scanner_status?.status || 'idle'">
+            {{ dashboard.scanner_status?.status === 'running' ? '🌀 雷达极速共鸣中...' : (dashboard.scanner_status?.status === 'failed' ? '🚧 连结异常中断' : '✨ 待机中') }}
+          </strong>
+        </div>
+        <div class="status-cell">
+          <span class="cell-label">正在活动法阵 (Active Ops)</span>
+          <strong class="cell-value">{{ dashboard.console_overview?.running_operation_count || 0 }} 项并行操作</strong>
+        </div>
+        <div class="status-cell">
+          <span class="cell-label">最后连结密匙 (Last Ops ID)</span>
+          <strong class="cell-value code-font">{{ dashboard.scanner_status?.operation_id || '-' }}</strong>
+        </div>
+        <div class="status-cell">
+          <span class="cell-label">法阵复核时间 (Updated At)</span>
+          <strong class="cell-value">{{ dashboard.scanner_status?.updated_at || '尚未唤醒' }}</strong>
+        </div>
       </div>
     </el-card>
 
+    <!-- Tasks section -->
     <el-card class="span-4 console-card task-console-card">
       <template #header>
         <div class="card-header-row">
-          <div>
-            <strong>任务</strong>
-            <span>扫描、元数据、下载、本地状态和缓存清理</span>
+          <div class="header-desc">
+            <h3>📂 异次元调度任务列表</h3>
+            <p>管理扫描、元数据、下载、本地状态和缓存清理的并行执行流水线</p>
           </div>
           <div class="detail-tags">
             <el-tag type="warning">下载中 {{ dashboard.download_overview?.active || 0 }}</el-tag>

@@ -20,10 +20,37 @@ export default appContextComponent({ draggable, PriorityList })
                   title="RSS 订阅入口在新番页；这里保留代理、补全和命名规则等全局行为。"
                   class="settings-alert"
                 />
-                <el-form-item label="RSS 代理"><el-input v-model="settings.rss_proxy" placeholder="http://NAS_IP:20171" /></el-form-item>
-                <el-form-item label="TMDB Token"><el-input v-model="settings.tmdb_token" placeholder="用于电影/电视剧搜索，可留空" show-password /></el-form-item>
-                <div class="form-row">
-                  <el-form-item label="补全本季"><el-switch v-model="settings.backfill_current_season" /></el-form-item>
+                <div class="settings-card-container">
+                  <div class="settings-card-item">
+                    <div class="card-item-header">
+                      <h3>🌐 RSS 网络传送代理</h3>
+                      <p>为雷达扫描与订阅推送定制网络代理主机，高效穿透异次元阻碍</p>
+                    </div>
+                    <el-form-item label="RSS 代理主机配置">
+                      <el-input v-model="settings.rss_proxy" placeholder="例: http://NAS_IP:20171 (留空则直连)" class="custom-rounded-input" />
+                    </el-form-item>
+                  </div>
+
+                  <div class="settings-card-item">
+                    <div class="card-item-header">
+                      <h3>🔑 TMDB 异次元密匙 (Token)</h3>
+                      <p>连结影视巨量网络数据库，用于番剧、电影及电视剧的名称智能刮削与高清封面同步</p>
+                    </div>
+                    <el-form-item label="TMDB 开放平台安全 Token">
+                      <el-input v-model="settings.tmdb_token" placeholder="请输入您的 TMDB 访问令牌 (API Read Access Token)..." show-password class="custom-rounded-input" />
+                    </el-form-item>
+                  </div>
+
+                  <div class="settings-card-item">
+                    <div class="card-item-header">
+                      <h3>🍓 新季番剧自动化补全</h3>
+                      <p>当雷达侦测到有新发布时，智能往回追溯扫描，补全当前季度由于网络、发布延迟缺失的集数</p>
+                    </div>
+                    <div class="switch-row-item">
+                      <span class="switch-desc-label">自动激活并补全本季缺失剧集</span>
+                      <el-switch v-model="settings.backfill_current_season" />
+                    </div>
+                  </div>
                 </div>
               </el-tab-pane>
               <el-tab-pane label="自动选择">
