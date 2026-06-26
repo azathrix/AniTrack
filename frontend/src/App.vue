@@ -18,7 +18,6 @@
         <div class="nav-caption">系统</div>
         <button :class="{ active: view === 'dashboard' }" @click="view = 'dashboard'"><el-icon><DataBoard /></el-icon> 控制台</button>
         <button :class="{ active: view === 'logs' }" @click="view = 'logs'"><el-icon><Document /></el-icon> 日志</button>
-        <button :class="{ active: view === 'design' }" @click="view = 'design'"><el-icon><Collection /></el-icon> 设计</button>
         <button :class="{ active: view === 'settings' }" @click="view = 'settings'"><el-icon><Setting /></el-icon> 设置</button>
       </nav>
     </aside>
@@ -38,7 +37,6 @@
       <DiscoveryPage />
       <CalendarPage />
       <MediaCatalogPage />
-      <DesignLabPage />
       <SettingsPage />
     </main>
 
@@ -51,7 +49,6 @@
       <button :class="{ active: view === 'movies' }" @click="view = 'movies'"><el-icon><Collection /></el-icon><b>电影</b></button>
       <button :class="{ active: view === 'tv' }" @click="view = 'tv'"><el-icon><Collection /></el-icon><b>剧集</b></button>
       <button :class="{ active: view === 'logs' }" @click="view = 'logs'"><el-icon><Document /></el-icon><b>日志</b></button>
-      <button :class="{ active: view === 'design' }" @click="view = 'design'"><el-icon><Collection /></el-icon><b>设计</b></button>
       <button :class="{ active: view === 'settings' }" @click="view = 'settings'"><el-icon><Setting /></el-icon><b>设置</b></button>
     </nav>
 
@@ -107,12 +104,11 @@ import SeasonalPage from './components/SeasonalPage.vue'
 import DiscoveryPage from './components/DiscoveryPage.vue'
 import CalendarPage from './components/CalendarPage.vue'
 import MediaCatalogPage from './components/MediaCatalogPage.vue'
-import DesignLabPage from './components/DesignLabPage.vue'
 import SettingsPage from './components/SettingsPage.vue'
 import EntryDrawer from './components/EntryDrawer.vue'
 import EntryDialogs from './components/EntryDialogs.vue'
 
-const validViews = new Set(['dashboard', 'seasonal', 'discovery', 'calendar', 'library', 'movies', 'tv', 'logs', 'design', 'settings'])
+const validViews = new Set(['dashboard', 'seasonal', 'discovery', 'calendar', 'library', 'movies', 'tv', 'logs', 'settings'])
 function initialView() {
   const saved = window.localStorage.getItem('anitrack:view') || ''
   return validViews.has(saved) ? saved : 'seasonal'
@@ -383,7 +379,6 @@ const pageTitle = computed(() => ({
   movies: '电影',
   tv: '电视剧',
   logs: '日志与维护',
-  design: '设计实验室',
   settings: '设置中心'
 }[view.value]))
 
