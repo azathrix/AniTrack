@@ -567,3 +567,1511 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Layout pass 2: restore poster-first product cards and simplify the shell. */
+.sidebar {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 14px;
+  width: 236px;
+  padding: 18px 14px;
+}
+
+.main {
+  margin-left: 236px;
+}
+
+.brand {
+  margin: 0;
+  padding: 6px 4px 12px;
+  border-bottom: 1px dashed rgba(255, 230, 235, 0.95);
+}
+
+.brand-logo {
+  width: 46px;
+  height: 46px;
+  border-radius: 17px;
+}
+
+.brand-wordmark {
+  font-size: 21px;
+}
+
+.brand-subtitle {
+  font-size: 10px;
+  color: #9f8d98;
+}
+
+.sidebar > nav {
+  align-content: start;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.sidebar-mini-stats {
+  margin-top: 0;
+}
+
+.hero {
+  min-height: 104px;
+  padding: 18px 22px;
+}
+
+.hero-sub {
+  font-size: 14px;
+}
+
+.media-command-bar {
+  grid-template-columns: minmax(280px, 1fr) auto;
+  align-items: end;
+  padding: 16px;
+}
+
+.media-search-box {
+  grid-template-columns: 1fr;
+}
+
+.media-search-box strong {
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.media-command-actions {
+  padding-bottom: 1px;
+}
+
+.mochi-media-grid,
+.catalog-card-grid,
+.anime-grid.catalog-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)) !important;
+  gap: 20px;
+  align-items: stretch;
+}
+
+.mochi-media-card,
+.catalog-card.mochi-media-card,
+.anime-card.catalog-card.mochi-media-card {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  grid-template-rows: auto 1fr !important;
+  min-height: 0;
+  padding: 10px;
+  overflow: hidden;
+  border-radius: 26px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 250, 252, 0.92));
+}
+
+.mochi-media-card .media-card-cover,
+.mochi-media-card .cover,
+.catalog-card.mochi-media-card .media-card-cover,
+.catalog-card.mochi-media-card .cover {
+  position: relative;
+  width: 100%;
+  height: auto !important;
+  min-height: 0 !important;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  border-radius: 21px;
+  background: linear-gradient(135deg, var(--mochi-pink), var(--mochi-purple));
+}
+
+.mochi-media-card .media-card-cover img,
+.mochi-media-card .cover img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: center;
+}
+
+.mochi-media-card .media-card-cover > span:not(.media-card-season-badge),
+.mochi-media-card .cover > span:not(.media-card-season-badge) {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 34px;
+  font-weight: 900;
+}
+
+.media-card-poster-shade {
+  position: absolute;
+  inset: auto 0 0;
+  height: 36%;
+  background: linear-gradient(180deg, transparent, rgba(52, 43, 53, 0.5));
+  pointer-events: none;
+}
+
+.media-card-season-badge {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  z-index: 2;
+  max-width: calc(100% - 20px);
+  overflow: hidden;
+  padding: 4px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(52, 43, 53, 0.54);
+  box-shadow: 0 8px 18px -12px rgba(0, 0, 0, 0.55);
+  font-size: 11px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  backdrop-filter: blur(10px);
+}
+
+.mochi-media-card .anime-body {
+  display: grid;
+  grid-template-rows: auto auto minmax(72px, auto) auto;
+  gap: 9px;
+  padding: 13px 4px 2px;
+}
+
+.media-card-kicker {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 17px;
+  font-size: 11px;
+}
+
+.media-card-kicker span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.anime-body h3 {
+  min-height: 46px;
+  font-size: 16px;
+  letter-spacing: 0;
+}
+
+.tagline {
+  min-height: 72px;
+}
+
+.tagline .el-tag {
+  max-width: 100%;
+}
+
+.tagline .el-tag__content {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.media-card-foot {
+  margin-top: 2px;
+  padding: 9px 0 0;
+  font-size: 11px;
+}
+
+.mochi-media-card:hover {
+  transform: translateY(-5px) scale(1.015);
+}
+
+.discovery-card {
+  grid-template-columns: 112px minmax(0, 1fr);
+}
+
+.discovery-cover {
+  width: 112px;
+  height: 150px;
+  border-radius: 18px;
+}
+
+.dashboard-main-grid {
+  grid-template-columns: minmax(0, 1fr) 288px;
+}
+
+.command-card {
+  min-height: 132px;
+}
+
+@media (min-width: 1600px) {
+  .mochi-media-grid,
+  .catalog-card-grid,
+  .anime-grid.catalog-card-grid {
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)) !important;
+  }
+}
+
+@media (max-width: 1180px) {
+  .sidebar {
+    width: 220px;
+  }
+
+  .main {
+    margin-left: 220px;
+  }
+
+  .mochi-media-grid,
+  .catalog-card-grid,
+  .anime-grid.catalog-card-grid {
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)) !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .sidebar {
+    display: none;
+  }
+
+  .main {
+    margin-left: 0;
+  }
+
+  .media-command-bar {
+    align-items: stretch;
+  }
+
+  .mochi-media-grid,
+  .catalog-card-grid,
+  .anime-grid.catalog-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 12px;
+  }
+
+  .mochi-media-card,
+  .catalog-card.mochi-media-card,
+  .anime-card.catalog-card.mochi-media-card {
+    padding: 8px;
+    border-radius: 20px;
+  }
+
+  .mochi-media-card .media-card-cover,
+  .mochi-media-card .cover {
+    border-radius: 16px;
+  }
+
+  .anime-body h3 {
+    min-height: 40px;
+    font-size: 14px;
+  }
+
+  .tagline {
+    min-height: 62px;
+  }
+
+  .dashboard-main-grid,
+  .download-task-card,
+  .task-timeline-item,
+  .discovery-card {
+    grid-template-columns: 1fr;
+  }
+
+  .discovery-cover {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 3 / 4;
+  }
+}
+
+@media (max-width: 560px) {
+  .mochi-media-grid,
+  .catalog-card-grid,
+  .anime-grid.catalog-card-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* AniTrack 2026 visual refresh: light mochi control surface. */
+:root {
+  --ani-blue: #82d9ed;
+  --ani-pink: #ff8da1;
+  --ani-mint: #8ee4d5;
+  --ani-ink: #5c525d;
+  --ani-line: #f3e5e8;
+  --ani-soft: #fff5f6;
+  --mochi-pink: #ff8da1;
+  --mochi-pink-deep: #ff5e7e;
+  --mochi-pink-soft: #fff5f6;
+  --mochi-blue: #82d9ed;
+  --mochi-blue-soft: #f3fcfd;
+  --mochi-purple: #c79fe5;
+  --mochi-purple-soft: #faf5fe;
+  --mochi-yellow: #fcd77f;
+  --mochi-yellow-soft: #fffdf6;
+  --mochi-mint: #8ee4d5;
+  --mochi-mint-soft: #f2fcfa;
+  --mochi-ink: #5c525d;
+  --mochi-heading: #342b35;
+  --mochi-muted: #8c808d;
+  --mochi-border: #f3e5e8;
+  --mochi-border-strong: #ffe6eb;
+  --mochi-card: rgba(255, 255, 255, 0.9);
+  --mochi-card-solid: #ffffff;
+  --mochi-page: #fdf9f9;
+  --mochi-soft-shadow: 0 10px 30px -8px rgba(255, 141, 161, 0.22), 0 4px 12px -4px rgba(92, 82, 93, 0.08);
+  --mochi-panel-shadow: 0 18px 44px -18px rgba(255, 141, 161, 0.34), 0 10px 26px -20px rgba(130, 217, 237, 0.22);
+  --mochi-hover-shadow: 0 22px 52px -18px rgba(255, 141, 161, 0.42), 0 14px 30px -22px rgba(92, 82, 93, 0.2);
+  --mochi-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --mochi-spring: cubic-bezier(0.175, 0.885, 0.32, 1.12);
+}
+
+html {
+  background: var(--mochi-page);
+}
+
+body {
+  background:
+    linear-gradient(180deg, rgba(255, 240, 242, 0.86) 0, rgba(255, 248, 249, 0.78) 230px, rgba(253, 249, 249, 1) 560px),
+    linear-gradient(110deg, rgba(255, 245, 246, 0.92), rgba(243, 252, 253, 0.64) 46%, rgba(250, 245, 254, 0.54));
+  color: var(--mochi-ink);
+  font-family: Nunito, "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  letter-spacing: 0;
+}
+
+body::before,
+body::after {
+  display: none;
+}
+
+.app-shell {
+  min-height: 100vh;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.34), rgba(255, 250, 252, 0.4)),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.28) 0 24px, rgba(255, 245, 248, 0.24) 24px 48px);
+}
+
+::-webkit-scrollbar-track {
+  background: #fff5f6;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #ffb4c1;
+  border: 2px solid #fff5f6;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--mochi-pink);
+}
+
+.sidebar {
+  width: 264px;
+  padding: 18px 14px;
+  border-right: 1px solid var(--mochi-border-strong);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 250, 252, 0.94)),
+    linear-gradient(135deg, rgba(255, 245, 246, 0.9), rgba(243, 252, 253, 0.5));
+  box-shadow: 16px 0 38px -26px rgba(255, 141, 161, 0.55);
+}
+
+.main {
+  margin-left: 264px;
+  padding: 22px 28px 34px;
+}
+
+.brand {
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 8px 6px 10px;
+}
+
+.brand-logo {
+  width: 58px;
+  height: 58px;
+  border: 1px solid rgba(255, 141, 161, 0.28);
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: var(--mochi-soft-shadow);
+}
+
+.brand-wordmark {
+  color: var(--mochi-heading);
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.brand-subtitle {
+  color: var(--mochi-muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.sidebar-status-card,
+.sidebar-quick-card,
+.sidebar-mini-stats,
+.mochi-panel,
+.command-card,
+.media-command-bar,
+.filter-board,
+.anime-card,
+.discovery-hero-card,
+.discovery-search-card,
+.discovery-card,
+.calendar-toolbar,
+.week-day-column,
+.settings-shell-card,
+.entry-hero-card,
+.entry-info-card,
+.log-page-card,
+.maintenance-card,
+.maintenance-group,
+.priority-card,
+.downloader-row,
+.search-source-row,
+.schedule-settings-row,
+.resource-expand-section,
+.guide-preview {
+  border: 1px solid var(--mochi-border-strong);
+  background: var(--mochi-card);
+  box-shadow: var(--mochi-soft-shadow);
+  backdrop-filter: blur(10px);
+}
+
+.sidebar-status-card {
+  grid-template-columns: 46px minmax(0, 1fr);
+  margin-bottom: 14px;
+  padding: 12px;
+  border-radius: 20px;
+}
+
+.sidebar-status-card .el-tag {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+.sidebar-avatar {
+  border-radius: 18px;
+  background: linear-gradient(135deg, var(--mochi-pink), var(--mochi-purple));
+  box-shadow: 0 8px 18px -10px rgba(255, 94, 126, 0.6);
+}
+
+.sidebar-quick-card,
+.sidebar-mini-stats {
+  border-radius: 20px;
+}
+
+.sidebar-quick-card button,
+nav button,
+.task-type-pills button,
+.filter-row button {
+  transition: transform 0.26s var(--mochi-spring), box-shadow 0.26s var(--mochi-ease), background 0.26s var(--mochi-ease), border-color 0.26s var(--mochi-ease), color 0.26s var(--mochi-ease);
+}
+
+.sidebar-quick-card button {
+  min-height: 38px;
+  border-color: var(--mochi-border-strong);
+  border-radius: 14px;
+  color: var(--mochi-ink);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.sidebar-quick-card button:first-of-type {
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--mochi-pink), var(--mochi-pink-deep));
+}
+
+.sidebar-quick-card button:hover,
+nav button:hover,
+.task-type-pills button:hover,
+.filter-row button:hover,
+.anime-card:hover,
+.discovery-card:hover,
+.calendar-entry-card:hover,
+.download-task-card:hover,
+.task-timeline-item:hover {
+  transform: translateY(-2px) scale(1.01);
+}
+
+.sidebar-mini-stats {
+  gap: 10px;
+  padding: 10px;
+}
+
+.sidebar-mini-stats div {
+  border: 1px solid rgba(255, 230, 235, 0.92);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(255, 245, 246, 0.88), rgba(243, 252, 253, 0.72));
+}
+
+nav {
+  gap: 7px;
+}
+
+.nav-caption {
+  margin: 14px 10px 4px;
+  color: #b49ba8;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+}
+
+nav button {
+  min-height: 40px;
+  border: 1px solid transparent;
+  border-radius: 15px;
+  color: #716574;
+  font-size: 14px;
+}
+
+nav button.active,
+nav button:hover {
+  color: var(--mochi-pink-deep);
+  border-color: rgba(255, 230, 235, 0.96);
+  background: linear-gradient(90deg, rgba(255, 245, 246, 0.98), rgba(243, 252, 253, 0.9));
+  box-shadow: inset 4px 0 0 var(--mochi-pink), 0 10px 22px -16px rgba(255, 141, 161, 0.7);
+}
+
+.hero {
+  min-height: 118px;
+  margin-bottom: 20px;
+  padding: 20px 22px;
+  border: 1px solid var(--mochi-border-strong);
+  border-radius: 28px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(255, 245, 246, 0.9) 58%, rgba(243, 252, 253, 0.82)),
+    linear-gradient(90deg, rgba(255, 141, 161, 0.1), rgba(130, 217, 237, 0.1));
+  box-shadow: var(--mochi-panel-shadow);
+}
+
+.hero::after {
+  content: "AniTrack";
+  right: 20px;
+  bottom: -24px;
+  color: rgba(255, 141, 161, 0.08);
+  font-size: clamp(48px, 7vw, 88px);
+  letter-spacing: 0;
+}
+
+.eyebrow {
+  color: var(--mochi-pink-deep);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+}
+
+h1 {
+  color: var(--mochi-heading);
+  font-size: clamp(25px, 3vw, 34px);
+  font-weight: 900;
+  line-height: 1.12;
+}
+
+.hero-sub {
+  max-width: 780px;
+  color: var(--mochi-muted);
+  font-weight: 800;
+  line-height: 1.6;
+}
+
+.build-version {
+  display: inline-flex;
+  margin-left: 10px;
+  color: #b39ca7;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.hero-action-panel {
+  gap: 9px;
+}
+
+.el-button {
+  min-height: 34px;
+  border-radius: 13px;
+  font-weight: 900;
+  letter-spacing: 0;
+  transition: transform 0.24s var(--mochi-spring), box-shadow 0.24s var(--mochi-ease), background 0.24s var(--mochi-ease), border-color 0.24s var(--mochi-ease), color 0.24s var(--mochi-ease);
+}
+
+.el-button:hover {
+  transform: translateY(-2px);
+}
+
+.el-button--primary:not(.is-link):not(.is-text) {
+  background: linear-gradient(135deg, var(--mochi-pink), var(--mochi-pink-deep)) !important;
+  box-shadow: 0 12px 24px -14px rgba(255, 94, 126, 0.9);
+}
+
+.el-button--success:not(.is-link):not(.is-text) {
+  background: linear-gradient(135deg, var(--mochi-mint), #55c9b5) !important;
+}
+
+.el-button--warning:not(.is-link):not(.is-text) {
+  color: #6b4f19 !important;
+  background: linear-gradient(135deg, var(--mochi-yellow), #f1bd55) !important;
+}
+
+.el-button--danger:not(.is-link):not(.is-text) {
+  background: linear-gradient(135deg, #ff7f96, var(--mochi-pink-deep)) !important;
+}
+
+.el-button.is-plain:not(.el-button--primary):not(.el-button--warning):not(.el-button--danger):not(.el-button--success) {
+  border-color: var(--mochi-border-strong);
+  color: var(--mochi-ink);
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.el-button.is-plain:hover {
+  border-color: rgba(255, 141, 161, 0.45);
+  color: var(--mochi-pink-deep);
+  background: var(--mochi-pink-soft);
+}
+
+.el-button--primary.is-plain:not(.is-link):not(.is-text),
+.el-button--primary.is-plain:not(.is-link):not(.is-text) span {
+  color: var(--mochi-pink-deep) !important;
+}
+
+.el-button--primary.is-plain:not(.is-link):not(.is-text) {
+  border-color: rgba(255, 141, 161, 0.42) !important;
+  background: var(--mochi-pink-soft) !important;
+}
+
+.el-button--success.is-plain:not(.is-link):not(.is-text),
+.el-button--success.is-plain:not(.is-link):not(.is-text) span {
+  color: #2b9d84 !important;
+}
+
+.el-button--success.is-plain:not(.is-link):not(.is-text) {
+  border-color: rgba(142, 228, 213, 0.5) !important;
+  background: var(--mochi-mint-soft) !important;
+}
+
+.el-button--warning.is-plain:not(.is-link):not(.is-text),
+.el-button--warning.is-plain:not(.is-link):not(.is-text) span {
+  color: #b97916 !important;
+}
+
+.el-button--warning.is-plain:not(.is-link):not(.is-text) {
+  border-color: rgba(252, 215, 127, 0.62) !important;
+  background: var(--mochi-yellow-soft) !important;
+}
+
+.el-button--danger.is-plain:not(.is-link):not(.is-text),
+.el-button--danger.is-plain:not(.is-link):not(.is-text) span {
+  color: var(--mochi-pink-deep) !important;
+}
+
+.el-button--danger.is-plain:not(.is-link):not(.is-text) {
+  border-color: rgba(255, 141, 161, 0.5) !important;
+  background: var(--mochi-pink-soft) !important;
+}
+
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select__wrapper,
+.el-input-number .el-input__wrapper {
+  border-radius: 14px !important;
+  box-shadow: 0 0 0 1px var(--mochi-border-strong) inset !important;
+  background: rgba(255, 255, 255, 0.94) !important;
+}
+
+.el-input__wrapper.is-focus,
+.el-select__wrapper.is-focused,
+.el-textarea__inner:focus {
+  box-shadow: 0 0 0 1px rgba(255, 141, 161, 0.62) inset, 0 0 0 4px rgba(255, 141, 161, 0.12) !important;
+}
+
+.el-tag {
+  min-height: 24px;
+  border-radius: 999px;
+  font-weight: 900;
+}
+
+.el-tag.el-tag--primary {
+  --el-tag-bg-color: #f3fcfd;
+  --el-tag-border-color: rgba(130, 217, 237, 0.42);
+  --el-tag-text-color: #2c9bb1;
+}
+
+.el-tag.el-tag--success {
+  --el-tag-bg-color: #f2fcfa;
+  --el-tag-border-color: rgba(142, 228, 213, 0.5);
+  --el-tag-text-color: #2b9d84;
+}
+
+.el-tag.el-tag--warning {
+  --el-tag-bg-color: #fffdf6;
+  --el-tag-border-color: rgba(252, 215, 127, 0.68);
+  --el-tag-text-color: #b97916;
+}
+
+.el-tag.el-tag--danger {
+  --el-tag-bg-color: #fff5f6;
+  --el-tag-border-color: rgba(255, 141, 161, 0.52);
+  --el-tag-text-color: var(--mochi-pink-deep);
+}
+
+.el-progress-bar__outer {
+  height: 9px !important;
+  border: 1px solid rgba(255, 230, 235, 0.9);
+  background: #fff5f6;
+}
+
+.el-progress-bar__inner {
+  background:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.26) 0 8px, rgba(255, 255, 255, 0) 8px 16px),
+    linear-gradient(90deg, var(--mochi-pink), var(--mochi-yellow), var(--mochi-blue));
+}
+
+.el-tabs__item {
+  color: #7d7280;
+  font-weight: 900;
+}
+
+.el-tabs__item.is-active {
+  color: var(--mochi-pink-deep);
+}
+
+.el-tabs__active-bar {
+  background: linear-gradient(90deg, var(--mochi-pink), var(--mochi-yellow));
+}
+
+.el-dialog,
+.el-drawer {
+  border: 1px solid var(--mochi-border-strong);
+  border-radius: 28px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(255, 250, 252, 0.98));
+  box-shadow: 0 28px 70px -32px rgba(92, 82, 93, 0.52);
+}
+
+.el-dialog__header,
+.el-drawer__header,
+.app-shell .el-card__header {
+  border-color: var(--mochi-border-strong);
+  background: linear-gradient(90deg, rgba(255, 245, 246, 0.84), rgba(243, 252, 253, 0.58));
+}
+
+.el-table {
+  --el-table-border-color: var(--mochi-border-strong);
+  --el-table-header-bg-color: #fff8fa;
+  --el-table-row-hover-bg-color: #fff5f6;
+  border-radius: 18px;
+}
+
+.card-header-row strong,
+.mochi-panel-head strong,
+.media-search-box strong,
+.settings-shell-head strong,
+.anime-body h3,
+.discovery-card-head h3,
+.entry-hero-main h2,
+.maintenance-group h3 {
+  color: var(--mochi-heading);
+  font-weight: 900;
+}
+
+.card-header-row span,
+.mochi-panel-head span,
+.settings-shell-head span,
+.settings-shell-head p,
+.media-card-kicker,
+.media-card-foot,
+.anime-body p,
+.discovery-summary,
+.discovery-stat-row,
+.calendar-entry-meta span,
+.calendar-entry-card small,
+.maintenance-group p,
+.search-source-row span,
+.search-source-row small {
+  color: var(--mochi-muted);
+  font-weight: 800;
+}
+
+.dashboard-redesign {
+  gap: 18px;
+}
+
+.dashboard-command-grid {
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.command-card {
+  min-height: 148px;
+  padding: 16px;
+  border-radius: 24px;
+  overflow: hidden;
+  transition: transform 0.28s var(--mochi-spring), box-shadow 0.28s var(--mochi-ease), border-color 0.28s var(--mochi-ease);
+}
+
+.command-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(255, 141, 161, 0.38);
+  box-shadow: var(--mochi-hover-shadow);
+}
+
+.command-card::after {
+  right: -34px;
+  bottom: -38px;
+  background: rgba(255, 141, 161, 0.09);
+}
+
+.command-card-mainline {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.command-card-mainline span {
+  color: var(--mochi-muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.command-card-mainline strong {
+  color: var(--mochi-heading);
+  font-size: clamp(24px, 2.5vw, 32px);
+  line-height: 1;
+  text-align: right;
+}
+
+.command-card p {
+  min-height: 38px;
+  color: var(--mochi-muted);
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.scanner-command {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(255, 245, 246, 0.84)),
+    radial-gradient(circle at 88% 12%, rgba(130, 217, 237, 0.22), transparent 34%);
+}
+
+.local-media-card {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(242, 252, 250, 0.78)),
+    radial-gradient(circle at 88% 12%, rgba(142, 228, 213, 0.22), transparent 34%);
+}
+
+.danger-lite {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(255, 245, 246, 0.88)),
+    radial-gradient(circle at 88% 12%, rgba(255, 94, 126, 0.16), transparent 34%);
+}
+
+.dashboard-main-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+  align-items: start;
+  gap: 16px;
+}
+
+.dashboard-side-stack {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.mochi-panel {
+  border-radius: 26px;
+  padding: 16px;
+}
+
+.download-workshop {
+  min-height: 420px;
+}
+
+.mochi-panel-head {
+  align-items: center;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed rgba(255, 230, 235, 0.9);
+}
+
+.download-task-cards {
+  gap: 10px;
+}
+
+.download-task-card {
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 0.42fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--mochi-border-strong);
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(255, 245, 246, 0.52));
+  box-shadow: 0 8px 20px -18px rgba(92, 82, 93, 0.32);
+  transition: transform 0.24s var(--mochi-spring), box-shadow 0.24s var(--mochi-ease), border-color 0.24s var(--mochi-ease);
+}
+
+.download-task-card:hover {
+  border-color: rgba(255, 141, 161, 0.34);
+  box-shadow: var(--mochi-soft-shadow);
+}
+
+.download-task-card.failed {
+  background: linear-gradient(135deg, rgba(255, 245, 246, 0.96), rgba(255, 255, 255, 0.8));
+}
+
+.task-card-main {
+  min-width: 0;
+}
+
+.task-card-main strong {
+  color: var(--mochi-heading);
+}
+
+.task-card-actions,
+.task-timeline-actions {
+  justify-content: flex-end;
+}
+
+.task-type-panel {
+  position: sticky;
+  top: 18px;
+}
+
+.task-type-pills {
+  gap: 8px;
+}
+
+.task-type-pills button {
+  min-height: 42px;
+  border-color: var(--mochi-border-strong);
+  border-radius: 15px;
+  color: var(--mochi-ink);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.task-type-pills button.active,
+.task-type-pills button:hover {
+  color: var(--mochi-pink-deep);
+  border-color: rgba(255, 141, 161, 0.42);
+  background: linear-gradient(90deg, rgba(255, 245, 246, 0.98), rgba(243, 252, 253, 0.86));
+}
+
+.task-type-pills b {
+  min-width: 28px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--mochi-pink-deep);
+  background: #fff5f6;
+  text-align: center;
+}
+
+.task-timeline-panel {
+  padding-bottom: 18px;
+}
+
+.task-timeline {
+  gap: 9px;
+}
+
+.task-timeline-item {
+  grid-template-columns: 20px minmax(220px, 1.1fr) minmax(160px, 0.8fr) auto;
+  gap: 12px;
+  padding: 11px 12px;
+  border: 1px solid var(--mochi-border-strong);
+  border-radius: 17px;
+  background: rgba(255, 255, 255, 0.78);
+  transition: transform 0.24s var(--mochi-spring), box-shadow 0.24s var(--mochi-ease), border-color 0.24s var(--mochi-ease);
+}
+
+.task-timeline-item:hover {
+  border-color: rgba(255, 141, 161, 0.32);
+  box-shadow: 0 10px 26px -22px rgba(92, 82, 93, 0.42);
+}
+
+.task-timeline-item i {
+  width: 11px;
+  height: 11px;
+  background: var(--mochi-blue);
+  box-shadow: 0 0 0 5px rgba(130, 217, 237, 0.16);
+}
+
+.task-timeline-item.failed i {
+  background: var(--mochi-pink-deep);
+  box-shadow: 0 0 0 5px rgba(255, 94, 126, 0.14);
+}
+
+.task-timeline-copy {
+  min-width: 0;
+}
+
+.media-command-bar {
+  grid-template-columns: minmax(260px, 1fr) auto;
+  padding: 14px;
+  border-radius: 24px;
+}
+
+.media-search-box {
+  gap: 8px;
+}
+
+.media-command-actions {
+  align-items: center;
+}
+
+.filter-board {
+  padding: 14px;
+  border-radius: 22px;
+}
+
+.filter-row {
+  gap: 8px;
+}
+
+.filter-row > span {
+  min-width: 44px;
+  color: #a8909d;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.filter-row button {
+  min-height: 30px;
+  border: 1px solid var(--mochi-border-strong);
+  border-radius: 999px;
+  color: var(--mochi-ink);
+  background: rgba(255, 255, 255, 0.82);
+  font-weight: 900;
+}
+
+.filter-row button.active {
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--mochi-pink), var(--mochi-pink-deep));
+  box-shadow: 0 10px 18px -14px rgba(255, 94, 126, 0.9);
+}
+
+.mochi-media-grid,
+.catalog-card-grid {
+  grid-template-columns: repeat(auto-fill, minmax(236px, 1fr));
+  gap: 18px;
+}
+
+.mochi-media-card,
+.anime-card {
+  border-radius: 26px;
+  background: rgba(255, 255, 255, 0.9);
+  transition: transform 0.28s var(--mochi-spring), box-shadow 0.28s var(--mochi-ease), border-color 0.28s var(--mochi-ease);
+}
+
+.mochi-media-card {
+  grid-template-rows: minmax(270px, 54%) 1fr;
+  min-height: 438px;
+  overflow: hidden;
+  padding: 0;
+}
+
+.mochi-media-card:hover,
+.anime-card:hover {
+  border-color: rgba(255, 141, 161, 0.38);
+  box-shadow: var(--mochi-hover-shadow);
+}
+
+.mochi-media-card::after {
+  display: none;
+}
+
+.mochi-media-card .media-card-cover,
+.mochi-media-card .cover {
+  height: 270px;
+  min-height: 270px;
+  border-radius: 26px 26px 18px 18px;
+}
+
+.cover,
+.poster-cover,
+.calendar-entry-cover,
+.discovery-cover {
+  background: linear-gradient(135deg, var(--mochi-pink), var(--mochi-purple));
+}
+
+.cover span,
+.poster-cover span,
+.calendar-entry-cover span,
+.discovery-cover span {
+  color: #fff;
+  font-weight: 900;
+}
+
+.mochi-media-card .anime-body {
+  gap: 8px;
+  padding: 14px;
+}
+
+.anime-body h3 {
+  display: -webkit-box;
+  min-height: 44px;
+  margin: 0;
+  overflow: hidden;
+  font-size: 16px;
+  line-height: 1.36;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.tagline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-content: flex-start;
+}
+
+.media-card-foot {
+  padding-top: 8px;
+  border-top: 1px dashed rgba(255, 230, 235, 0.88);
+}
+
+.discovery-hero-card {
+  grid-template-columns: minmax(220px, 0.62fr) minmax(360px, 1.38fr);
+  padding: 18px;
+  border-radius: 26px;
+}
+
+.discovery-page .discovery-hero-card > div:first-child {
+  display: grid;
+  gap: 8px;
+}
+
+.discovery-page .discovery-hero-card > div:first-child span {
+  color: var(--mochi-pink-deep);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.discovery-page .discovery-hero-card > div:first-child strong {
+  color: var(--mochi-heading);
+  font-size: clamp(22px, 3vw, 30px);
+  line-height: 1.18;
+}
+
+.discovery-page .discovery-hero-card > div:first-child p {
+  margin: 0;
+  color: var(--mochi-muted);
+  font-weight: 800;
+  line-height: 1.55;
+}
+
+.discovery-search-card {
+  border-radius: 22px;
+}
+
+.discovery-search-options {
+  grid-template-columns: minmax(110px, 0.72fr) minmax(90px, 0.5fr) minmax(160px, 1fr) auto;
+}
+
+.mochi-discovery-grid {
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 16px;
+}
+
+.discovery-card {
+  border-radius: 24px;
+  transition: transform 0.28s var(--mochi-spring), box-shadow 0.28s var(--mochi-ease), border-color 0.28s var(--mochi-ease);
+}
+
+.discovery-card:hover {
+  border-color: rgba(255, 141, 161, 0.38);
+  box-shadow: var(--mochi-hover-shadow);
+}
+
+.calendar-toolbar {
+  padding: 14px;
+  border-radius: 24px;
+}
+
+.week-calendar-grid {
+  grid-template-columns: repeat(7, minmax(168px, 1fr));
+  gap: 12px;
+}
+
+.week-day-column {
+  min-height: 390px;
+  padding: 11px;
+  border-radius: 22px;
+}
+
+.week-day-column.today {
+  border-color: rgba(255, 141, 161, 0.42);
+  background: linear-gradient(180deg, rgba(255, 245, 246, 0.96), rgba(255, 255, 255, 0.82));
+}
+
+.week-day-column header {
+  padding-bottom: 8px;
+  border-bottom: 1px dashed rgba(255, 230, 235, 0.9);
+}
+
+.calendar-entry-card {
+  border: 1px solid var(--mochi-border-strong);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: none;
+}
+
+.calendar-entry-cover {
+  border-radius: 15px;
+}
+
+.calendar-empty {
+  min-height: 120px;
+  border: 1px dashed var(--mochi-border-strong);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.54);
+}
+
+.settings-shell-card {
+  overflow: hidden;
+  border-radius: 28px;
+}
+
+.settings-shell-card > .el-card__header {
+  padding: 0;
+}
+
+.settings-shell-head {
+  padding: 18px 20px;
+  border-bottom: 0;
+  background: linear-gradient(90deg, rgba(255, 245, 246, 0.92), rgba(243, 252, 253, 0.72));
+}
+
+.settings-shell-head strong {
+  display: block;
+  font-size: 22px;
+}
+
+.settings-workbench-tabs.el-tabs {
+  grid-template-columns: 200px minmax(0, 1fr);
+  min-height: 620px;
+}
+
+.settings-workbench-tabs > .el-tabs__header {
+  padding: 14px;
+  border-right: 1px solid var(--mochi-border-strong);
+  background: rgba(255, 250, 252, 0.68);
+}
+
+.settings-workbench-tabs .el-tabs__item {
+  height: 42px;
+  margin-bottom: 6px;
+  border-radius: 14px;
+}
+
+.settings-workbench-tabs .el-tabs__item.is-active {
+  background: linear-gradient(90deg, var(--mochi-pink-soft), var(--mochi-blue-soft));
+}
+
+.settings-section-toolbar,
+.nfo-config-panel,
+.switch-setting,
+.priority-card,
+.downloader-row,
+.search-source-row,
+.media-root-grid div,
+.schedule-settings-row,
+.resource-expand,
+.wizard-intro,
+.guided-step,
+.guide-preview,
+.wizard-resource-list {
+  border-color: var(--mochi-border-strong);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.switch-setting:hover,
+.search-source-row:hover,
+.downloader-row:hover,
+.priority-card:hover {
+  border-color: rgba(255, 141, 161, 0.34);
+  box-shadow: var(--mochi-soft-shadow);
+}
+
+.logs-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.log-page-card {
+  border-radius: 28px;
+}
+
+.detail-summary-grid div {
+  border: 1px solid var(--mochi-border-strong);
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(255, 245, 246, 0.72), rgba(243, 252, 253, 0.5));
+}
+
+.log-console {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.log-toolbar {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto auto;
+  gap: 10px;
+}
+
+.server-log,
+.log-viewer {
+  border: 1px solid rgba(92, 82, 93, 0.18);
+  border-radius: 20px;
+  background: #332b35;
+  color: #fff6f8;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.entry-hero-card {
+  border-radius: 28px;
+}
+
+.entry-hero-cover {
+  border-radius: 24px;
+}
+
+.entry-info-card {
+  border-radius: 18px;
+}
+
+.mobile-nav {
+  border-top: 1px solid var(--mochi-border-strong);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 -14px 34px -24px rgba(255, 141, 161, 0.5);
+  backdrop-filter: blur(14px);
+}
+
+.mobile-nav button {
+  border-radius: 16px;
+  color: #7d7280;
+}
+
+.mobile-nav button.active {
+  color: var(--mochi-pink-deep);
+  background: linear-gradient(180deg, var(--mochi-pink-soft), rgba(243, 252, 253, 0.88));
+}
+
+@media (max-width: 1400px) {
+  .dashboard-command-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .download-task-card {
+    grid-template-columns: minmax(0, 1fr) minmax(150px, 0.5fr);
+  }
+
+  .download-task-card .task-card-actions {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 1180px) {
+  .main {
+    padding: 18px 20px 30px;
+  }
+
+  .dashboard-main-grid,
+  .discovery-hero-card,
+  .settings-workbench-tabs.el-tabs {
+    grid-template-columns: 1fr;
+  }
+
+  .task-type-panel {
+    position: static;
+  }
+
+  .task-type-pills {
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  }
+
+  .settings-workbench-tabs > .el-tabs__header {
+    border-right: 0;
+    border-bottom: 1px solid var(--mochi-border-strong);
+  }
+
+  .settings-workbench-tabs .el-tabs__nav {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .discovery-search-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .sidebar {
+    display: none;
+  }
+
+  .main {
+    margin-left: 0;
+    padding: 14px 12px 88px;
+  }
+
+  .hero {
+    display: grid;
+    min-height: 0;
+    padding: 18px;
+    border-radius: 24px;
+  }
+
+  .hero::after {
+    display: none;
+  }
+
+  .hero-action-panel {
+    justify-content: flex-start;
+  }
+
+  .dashboard-command-grid,
+  .dashboard-main-grid,
+  .download-task-card,
+  .task-timeline-item,
+  .media-command-bar,
+  .mochi-media-grid,
+  .catalog-card-grid,
+  .anime-grid,
+  .discovery-search-options,
+  .log-toolbar,
+  .entry-hero-card,
+  .entry-info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .mochi-media-card {
+    grid-template-rows: 220px 1fr;
+    min-height: 0;
+  }
+
+  .mochi-media-card .media-card-cover,
+  .mochi-media-card .cover {
+    height: 220px;
+    min-height: 220px;
+  }
+
+  .task-card-main span {
+    grid-column: 1 / -1;
+  }
+
+  .task-card-actions,
+  .task-timeline-actions,
+  .media-command-actions {
+    justify-content: flex-start;
+  }
+
+  .week-calendar-grid {
+    grid-template-columns: repeat(7, minmax(172px, 72vw));
+  }
+
+  .entry-info-card.wide {
+    grid-column: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

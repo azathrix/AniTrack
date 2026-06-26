@@ -88,9 +88,14 @@ export default appContextComponent()
             <div class="cover poster-cover media-card-cover">
               <img v-if="item.poster_url" :src="item.poster_url" />
               <span v-else>{{ cardInitials(item) }}</span>
+              <div class="media-card-poster-shade"></div>
+              <span class="media-card-season-badge">{{ cardSubtitle(item) }}</span>
             </div>
             <div class="anime-body">
-              <div class="media-card-kicker">{{ cardSubtitle(item) }}</div>
+              <div class="media-card-kicker">
+                <span>{{ item.year || '未知年份' }}</span>
+                <span>{{ mediaTypeLabel(entryMediaType(item)) }}</span>
+              </div>
               <h3>{{ entryTitle(item) }}</h3>
               <div class="tagline">
                 <el-tag size="small" type="success">可观看 {{ watchableCount(item) }} 集</el-tag>
@@ -98,8 +103,8 @@ export default appContextComponent()
                 <el-tag v-for="score in metadataScores(item)" :key="score.key" size="small" type="warning">{{ score.label }}</el-tag>
               </div>
               <div class="media-card-foot">
-                <span>{{ item.year || '未知年份' }}</span>
-                <span>{{ mediaTypeLabel(entryMediaType(item)) }}</span>
+                <span>{{ cardSubtitle(item) }}</span>
+                <span>{{ hasRecentUpdate(item) ? '最近更新' : '已收录' }}</span>
               </div>
             </div>
           </article>

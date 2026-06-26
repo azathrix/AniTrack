@@ -5,11 +5,13 @@ export default appContextComponent()
 </script>
 
 <template>
-  <section v-if="view === 'dashboard'" class="mochi-dashboard">
+  <section v-if="view === 'dashboard'" class="mochi-dashboard dashboard-redesign">
     <div class="dashboard-command-grid">
       <article class="command-card scanner-command">
-        <span>扫描器</span>
-        <strong>{{ scannerStatusText }}</strong>
+        <div class="command-card-mainline">
+          <span>扫描器</span>
+          <strong>{{ scannerStatusText }}</strong>
+        </div>
         <p>RSS 扫描、同步 Bangumi ID、写入集数资源。</p>
         <div class="command-card-footer">
           <el-tag :type="dashboard.scanner_status?.status === 'failed' ? 'danger' : (dashboard.scanner_status?.status === 'running' ? 'warning' : 'success')">
@@ -19,17 +21,21 @@ export default appContextComponent()
         </div>
       </article>
       <article class="command-card">
-        <span>下载任务</span>
-        <strong>{{ dashboard.download_overview?.active || 0 }}</strong>
+        <div class="command-card-mainline">
+          <span>下载任务</span>
+          <strong>{{ dashboard.download_overview?.active || 0 }}</strong>
+        </div>
         <p>{{ dashboard.download_overview?.failed ? `${dashboard.download_overview.failed} 个失败任务待处理` : '下载器与本地整理运行状态' }}</p>
         <div class="command-card-footer">
           <el-button plain @click="openProcessorSettings">并发设置</el-button>
           <el-button plain @click="clearCompletedDownloadTasks">清除已完成</el-button>
         </div>
       </article>
-      <article class="command-card">
-        <span>本地媒体</span>
-        <strong>{{ watchableTotal }}</strong>
+      <article class="command-card local-media-card">
+        <div class="command-card-mainline">
+          <span>本地媒体</span>
+          <strong>{{ watchableTotal }}</strong>
+        </div>
         <p>已可观看条目和本地资源状态。</p>
         <div class="command-card-footer">
           <el-tag type="success">本地 {{ localAssetTotal }}</el-tag>
@@ -37,8 +43,10 @@ export default appContextComponent()
         </div>
       </article>
       <article class="command-card danger-lite">
-        <span>告警</span>
-        <strong>{{ dashboard.download_overview?.failed || logsData.console_overview?.recent_error_count || 0 }}</strong>
+        <div class="command-card-mainline">
+          <span>告警</span>
+          <strong>{{ dashboard.download_overview?.failed || logsData.console_overview?.recent_error_count || 0 }}</strong>
+        </div>
         <p>下载失败、最近错误或需要人工处理的任务。</p>
         <div class="command-card-footer">
           <el-button plain @click="view = 'logs'">查看日志</el-button>
@@ -87,27 +95,29 @@ export default appContextComponent()
         </div>
       </div>
 
-      <aside class="mochi-panel task-type-panel">
-        <header class="mochi-panel-head">
-          <div>
-            <strong>任务类型</strong>
-            <span>选择类型查看下方流水</span>
+      <aside class="dashboard-side-stack">
+        <section class="mochi-panel task-type-panel">
+          <header class="mochi-panel-head">
+            <div>
+              <strong>任务类型</strong>
+              <span>选择类型查看下方流水</span>
+            </div>
+          </header>
+          <div class="task-type-pills">
+            <button :class="{ active: !selectedTaskType }" @click="selectedTaskType = ''">
+              <span>全部</span><b>{{ (dashboard.tasks || []).length }}</b>
+            </button>
+            <button
+              v-for="item in taskTypeRows"
+              :key="item.type"
+              :class="{ active: selectedTaskType === item.type }"
+              @click="selectedTaskType = item.type"
+            >
+              <span>{{ item.name }}</span>
+              <b>{{ item.running || item.pending || item.failed || item.total || 0 }}</b>
+            </button>
           </div>
-        </header>
-        <div class="task-type-pills">
-          <button :class="{ active: !selectedTaskType }" @click="selectedTaskType = ''">
-            <span>全部</span><b>{{ (dashboard.tasks || []).length }}</b>
-          </button>
-          <button
-            v-for="item in taskTypeRows"
-            :key="item.type"
-            :class="{ active: selectedTaskType === item.type }"
-            @click="selectedTaskType = item.type"
-          >
-            <span>{{ item.name }}</span>
-            <b>{{ item.running || item.pending || item.failed || item.total || 0 }}</b>
-          </button>
-        </div>
+        </section>
       </aside>
     </section>
 
@@ -121,7 +131,7 @@ export default appContextComponent()
       <div class="task-timeline">
         <article v-for="row in filteredConsoleTasks.slice(0, 12)" :key="row.id" class="task-timeline-item" :class="row.status">
           <i></i>
-          <div>
+          <div class="task-timeline-copy">
             <strong>{{ row.title || row.type_name || row.type }}</strong>
             <span>{{ row.type_name || row.type }} · {{ row.updated_at || '-' }}</span>
           </div>

@@ -5,17 +5,9 @@
         <img class="brand-logo" src="/anitrack-logo.png" alt="AniTrack logo" />
         <div>
           <strong class="brand-wordmark">AniTrack</strong>
-          <span class="brand-subtitle">Mochi media workshop</span>
+          <span class="brand-subtitle">自动追番控制台</span>
         </div>
       </div>
-      <section class="sidebar-status-card">
-        <div class="sidebar-avatar">AN</div>
-        <div>
-          <strong>媒体工坊</strong>
-          <span>{{ liveConnected ? '实时连接中' : '等待连接' }}</span>
-        </div>
-        <el-tag size="small" :type="liveConnected ? 'success' : 'info'">{{ liveConnected ? 'Live' : 'Idle' }}</el-tag>
-      </section>
       <nav>
         <div class="nav-caption">媒体</div>
         <button :class="{ active: view === 'seasonal' }" @click="view = 'seasonal'"><el-icon><Collection /></el-icon> 新番</button>
@@ -29,11 +21,6 @@
         <button :class="{ active: view === 'logs' }" @click="view = 'logs'"><el-icon><Document /></el-icon> 日志</button>
         <button :class="{ active: view === 'settings' }" @click="view = 'settings'"><el-icon><Setting /></el-icon> 设置</button>
       </nav>
-      <section class="sidebar-quick-card">
-        <strong>快捷操作</strong>
-        <button @click="view = 'seasonal'; runAction('/scan')">扫描 RSS</button>
-        <button @click="view = 'discovery'">发现资源</button>
-      </section>
       <section class="sidebar-mini-stats">
         <div><b>{{ seasonalCatalogTotal }}</b><span>新番</span></div>
         <div><b>{{ watchableTotal }}</b><span>可看</span></div>
