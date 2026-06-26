@@ -330,6 +330,12 @@ def init_db() -> None:
                 release_id INTEGER NOT NULL DEFAULT 0,
                 last_download_job_id INTEGER NOT NULL DEFAULT 0,
                 status_note TEXT NOT NULL DEFAULT '',
+                bangumi_episode_id TEXT NOT NULL DEFAULT '',
+                tmdb_episode_id TEXT NOT NULL DEFAULT '',
+                metadata_title TEXT NOT NULL DEFAULT '',
+                metadata_original_title TEXT NOT NULL DEFAULT '',
+                metadata_summary TEXT NOT NULL DEFAULT '',
+                metadata_air_date TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 UNIQUE(series_id, episode_number)
@@ -980,6 +986,12 @@ def migrate(conn: sqlite3.Connection) -> None:
         "release_id": "INTEGER NOT NULL DEFAULT 0",
         "last_download_job_id": "INTEGER NOT NULL DEFAULT 0",
         "status_note": "TEXT NOT NULL DEFAULT ''",
+        "bangumi_episode_id": "TEXT NOT NULL DEFAULT ''",
+        "tmdb_episode_id": "TEXT NOT NULL DEFAULT ''",
+        "metadata_title": "TEXT NOT NULL DEFAULT ''",
+        "metadata_original_title": "TEXT NOT NULL DEFAULT ''",
+        "metadata_summary": "TEXT NOT NULL DEFAULT ''",
+        "metadata_air_date": "TEXT NOT NULL DEFAULT ''",
     }
     for column, ddl in episode_additions.items():
         if column not in episode_columns:

@@ -20,6 +20,7 @@ DEFAULT_SETTINGS = {
     "auto_download_unique": "true",
     "auto_download_by_priority": "true",
     "auto_generate_nfo": "false",
+    "nfo_write_mode": "fill_missing",
     "generate_bangumi_ini": "false",
     "backfill_current_season": "false",
     "default_backfill": "none",

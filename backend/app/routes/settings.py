@@ -52,6 +52,7 @@ async def api_update_settings(payload: SettingsPayload) -> dict:
             "auto_download_unique": "true",
             "auto_download_by_priority": "true",
             "auto_generate_nfo": str(payload.auto_generate_nfo).lower(),
+            "nfo_write_mode": payload.nfo_write_mode.strip() if payload.nfo_write_mode.strip() in {"fill_missing", "overwrite"} else "fill_missing",
             "generate_bangumi_ini": str(payload.generate_bangumi_ini).lower(),
             "backfill_current_season": str(payload.backfill_current_season).lower(),
             "default_backfill": "season" if payload.backfill_current_season else "none",

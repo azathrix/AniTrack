@@ -11,6 +11,7 @@ import feedparser
 from .database import connect
 from .db import get_settings, hide_orphan_series, log, merge_duplicate_series, now
 from .library import expected_local_episode_path, parse_entry_labels
+from .metadata import apply_bangumi_episode_metadata
 from .parser import ParsedRelease, fingerprint, normalize_title_key, parse_entry, parse_episode, parse_group, parse_language, parse_resolution, parse_series_title, parse_subtitle_format, parse_year, split_lines
 from .processing_cache import first_resource_ref, get_cached_json, set_cached_json
 from .retry_utils import extract_file_id, extract_task_id, is_rate_limited_error, retry_after_time, task_retry_after
@@ -736,6 +737,13 @@ def upsert_release(item: ParsedRelease, metadata: dict | None = None) -> tuple[i
             (entry_id, release_id),
         )
         sync_episode_resource_for_release(conn, int(release_id), ts)
+    if metadata.get("bangumi_episodes") and entry_id:
+        apply_bangumi_episode_metadata(
+            int(entry_id),
+            metadata.get("bangumi_episodes") or [],
+            int(metadata.get("episode_offset") or 0),
+            prefer=True,
+        )
     return series_id, entry_id, release_id
 
 

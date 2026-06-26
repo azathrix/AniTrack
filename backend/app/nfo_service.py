@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 from typing import Any
@@ -79,6 +80,42 @@ def _set_required(root: ET.Element, tag: str, value: Any) -> bool:
     return False
 
 
+def _set_managed(root: ET.Element, tag: str, value: Any, mode: str) -> bool:
+    text = _text(value)
+    if not text:
+        return False
+    if mode == "overwrite":
+        return _set_required(root, tag, text)
+    return _set_if_blank(root, tag, text)
+
+
+def _remove_children(root: ET.Element, tag: str) -> bool:
+    nodes = list(root.findall(tag))
+    for node in nodes:
+        root.remove(node)
+    return bool(nodes)
+
+
+def _ensure_repeated(root: ET.Element, tag: str, values: list[str], mode: str) -> bool:
+    values = list(dict.fromkeys([_text(value) for value in values if _text(value)]))
+    if not values:
+        return False
+    changed = False
+    if mode == "overwrite":
+        changed = _remove_children(root, tag) or changed
+    existing = {_text(node.text) for node in root.findall(tag) if _text(node.text)}
+    if mode != "overwrite" and existing:
+        return changed
+    for value in values:
+        if value in existing:
+            continue
+        node = ET.SubElement(root, tag)
+        node.text = value
+        existing.add(value)
+        changed = True
+    return changed
+
+
 def _ensure_tmdb_id(root: ET.Element, tmdb_id: str) -> bool:
     tmdb_id = _text(tmdb_id)
     if not tmdb_id:
@@ -101,6 +138,15 @@ def _ensure_tmdb_id(root: ET.Element, tmdb_id: str) -> bool:
     return changed
 
 
+def _ensure_bangumi_id(root: ET.Element, bangumi_id: str) -> bool:
+    return _set_required(root, "bangumiid", _text(bangumi_id))
+
+
+def _write_mode(settings: dict[str, str]) -> str:
+    mode = _text(settings.get("nfo_write_mode") or "fill_missing")
+    return mode if mode in {"fill_missing", "overwrite"} else "fill_missing"
+
+
 def _write_if_changed(path: Path, tree: ET.ElementTree, changed: bool) -> bool:
     if not changed:
         return False
@@ -117,46 +163,102 @@ def _entry_title(entry: dict[str, Any]) -> str:
     return _text(entry.get("title_cn") or entry.get("display_title") or entry.get("title_raw"))
 
 
-def _ensure_show_nfo(path: Path, entry: dict[str, Any]) -> bool:
+def _json_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [_text(item) for item in value if _text(item)]
+    try:
+        data = json.loads(str(value or "[]"))
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, list):
+        return []
+    return [_text(item) for item in data if _text(item)]
+
+
+def _entry_tags(entry: dict[str, Any]) -> list[str]:
+    return list(dict.fromkeys(_json_list(entry.get("tags_json")) + _json_list(entry.get("genres_json"))))
+
+
+def _entry_summary(entry: dict[str, Any]) -> str:
+    return _text(entry.get("summary"))
+
+
+def _rating(value: Any) -> str:
+    try:
+        score = float(value or 0)
+    except (TypeError, ValueError):
+        return ""
+    return f"{score:.3f}".rstrip("0").rstrip(".") if score > 0 else ""
+
+
+def _entry_rating(entry: dict[str, Any]) -> str:
+    return _rating(entry.get("tmdb_score") or entry.get("bangumi_score"))
+
+
+def _ensure_show_nfo(path: Path, entry: dict[str, Any], mode: str) -> bool:
     tree, root, changed = _load_or_create(path, "tvshow")
     changed = _ensure_tmdb_id(root, _text(entry.get("tmdb_id"))) or changed
-    changed = _set_if_blank(root, "title", _entry_title(entry)) or changed
-    changed = _set_if_blank(root, "originaltitle", entry.get("title_raw")) or changed
-    changed = _set_if_blank(root, "plot", entry.get("summary")) or changed
-    changed = _set_if_blank(root, "year", entry.get("year")) or changed
+    changed = _ensure_bangumi_id(root, _text(entry.get("bangumi_id"))) or changed
+    changed = _set_managed(root, "title", _entry_title(entry), mode) or changed
+    changed = _set_managed(root, "originaltitle", entry.get("title_raw"), mode) or changed
+    changed = _set_managed(root, "plot", _entry_summary(entry), mode) or changed
+    changed = _set_managed(root, "outline", _entry_summary(entry), mode) or changed
+    changed = _set_managed(root, "rating", _entry_rating(entry), mode) or changed
+    changed = _set_managed(root, "year", entry.get("year"), mode) or changed
+    changed = _ensure_repeated(root, "genre", _entry_tags(entry), mode) or changed
+    changed = _ensure_repeated(root, "tag", _entry_tags(entry), mode) or changed
     return _write_if_changed(path, tree, changed)
 
 
-def _ensure_movie_nfo(path: Path, entry: dict[str, Any]) -> bool:
+def _ensure_movie_nfo(path: Path, entry: dict[str, Any], mode: str) -> bool:
     tree, root, changed = _load_or_create(path, "movie")
     changed = _ensure_tmdb_id(root, _text(entry.get("tmdb_id"))) or changed
-    changed = _set_if_blank(root, "title", _entry_title(entry)) or changed
-    changed = _set_if_blank(root, "originaltitle", entry.get("title_raw")) or changed
-    changed = _set_if_blank(root, "plot", entry.get("summary")) or changed
-    changed = _set_if_blank(root, "year", entry.get("year")) or changed
+    changed = _ensure_bangumi_id(root, _text(entry.get("bangumi_id"))) or changed
+    changed = _set_managed(root, "title", _entry_title(entry), mode) or changed
+    changed = _set_managed(root, "originaltitle", entry.get("title_raw"), mode) or changed
+    changed = _set_managed(root, "plot", _entry_summary(entry), mode) or changed
+    changed = _set_managed(root, "outline", _entry_summary(entry), mode) or changed
+    changed = _set_managed(root, "rating", _entry_rating(entry), mode) or changed
+    changed = _set_managed(root, "year", entry.get("year"), mode) or changed
+    changed = _ensure_repeated(root, "genre", _entry_tags(entry), mode) or changed
+    changed = _ensure_repeated(root, "tag", _entry_tags(entry), mode) or changed
     return _write_if_changed(path, tree, changed)
 
 
-def _ensure_season_nfo(path: Path, entry: dict[str, Any]) -> bool:
+def _ensure_season_nfo(path: Path, entry: dict[str, Any], mode: str) -> bool:
     season = int(entry.get("season_number") or 1)
     tree, root, changed = _load_or_create(path, "season")
     changed = _ensure_tmdb_id(root, _text(entry.get("tmdb_id"))) or changed
-    changed = _set_if_blank(root, "title", f"Season {season:02d}") or changed
-    changed = _set_if_blank(root, "seasonnumber", season) or changed
+    changed = _ensure_bangumi_id(root, _text(entry.get("bangumi_id"))) or changed
+    changed = _set_managed(root, "title", _entry_title(entry), mode) or changed
+    changed = _set_managed(root, "originaltitle", entry.get("title_raw"), mode) or changed
+    changed = _set_managed(root, "plot", _entry_summary(entry), mode) or changed
+    changed = _set_managed(root, "outline", _entry_summary(entry), mode) or changed
+    changed = _set_managed(root, "rating", _entry_rating(entry), mode) or changed
+    changed = _set_managed(root, "year", entry.get("year"), mode) or changed
+    changed = _set_managed(root, "seasonnumber", season, mode) or changed
+    changed = _ensure_repeated(root, "genre", _entry_tags(entry), mode) or changed
+    changed = _ensure_repeated(root, "tag", _entry_tags(entry), mode) or changed
     return _write_if_changed(path, tree, changed)
 
 
-def _ensure_episode_nfo(path: Path, entry: dict[str, Any], episode: dict[str, Any]) -> bool:
+def _ensure_episode_nfo(path: Path, entry: dict[str, Any], episode: dict[str, Any], mode: str) -> bool:
     episode_number = int(episode.get("episode_number") or 0)
     if episode_number <= 0:
         return False
     tree, root, changed = _load_or_create(path, "episodedetails")
     changed = _ensure_tmdb_id(root, _text(entry.get("tmdb_id"))) or changed
-    changed = _set_if_blank(root, "title", episode.get("title") or f"第 {episode_number:02d} 话") or changed
-    changed = _set_if_blank(root, "season", int(entry.get("season_number") or 1)) or changed
-    changed = _set_if_blank(root, "episode", episode_number) or changed
-    changed = _set_if_blank(root, "showtitle", _entry_title(entry)) or changed
-    changed = _set_if_blank(root, "aired", episode.get("air_date")) or changed
+    changed = _ensure_bangumi_id(root, _text(episode.get("bangumi_episode_id"))) or changed
+    episode_title = episode.get("metadata_title") or episode.get("title") or f"第 {episode_number:02d} 话"
+    changed = _set_managed(root, "title", episode_title, mode) or changed
+    changed = _set_managed(root, "originaltitle", episode.get("metadata_original_title"), mode) or changed
+    changed = _set_managed(root, "plot", episode.get("metadata_summary"), mode) or changed
+    changed = _set_managed(root, "outline", episode.get("metadata_summary"), mode) or changed
+    changed = _set_managed(root, "year", entry.get("year"), mode) or changed
+    changed = _set_managed(root, "season", int(entry.get("season_number") or 1), mode) or changed
+    changed = _set_managed(root, "episode", episode_number, mode) or changed
+    changed = _set_managed(root, "showtitle", _entry_title(entry), mode) or changed
+    changed = _set_managed(root, "aired", episode.get("metadata_air_date") or episode.get("air_date"), mode) or changed
     return _write_if_changed(path, tree, changed)
 
 
@@ -204,31 +306,33 @@ def generate_jellyfin_nfo_for_entry(entry_id: int, settings: dict[str, str] | No
         return {"generated": False, "reason": "not_found", "changed": 0}
     entry = dict(row)
     tmdb_id = _text(entry.get("tmdb_id"))
-    if not tmdb_id:
-        return {"generated": False, "reason": "missing_tmdb_id", "changed": 0}
+    bangumi_id = _text(entry.get("bangumi_id"))
+    if not tmdb_id and not bangumi_id:
+        return {"generated": False, "reason": "missing_provider_id", "changed": 0}
 
     media_type = _text(entry.get("media_type")).lower()
     base_dir = local_series_path(entry, settings)
+    mode = _write_mode(settings)
     changed = 0
     paths: list[str] = []
     if media_type == "movie":
         path = base_dir / "movie.nfo"
-        changed += 1 if _ensure_movie_nfo(path, entry) else 0
+        changed += 1 if _ensure_movie_nfo(path, entry, mode) else 0
         paths.append(str(path))
     else:
         show_path = base_dir / "tvshow.nfo"
-        changed += 1 if _ensure_show_nfo(show_path, entry) else 0
+        changed += 1 if _ensure_show_nfo(show_path, entry, mode) else 0
         paths.append(str(show_path))
         season_dir = base_dir / render_season_dir(int(entry.get("season_number") or 1), settings)
         season_path = season_dir / "season.nfo"
-        changed += 1 if _ensure_season_nfo(season_path, entry) else 0
+        changed += 1 if _ensure_season_nfo(season_path, entry, mode) else 0
         paths.append(str(season_path))
         for episode_row in episodes:
             episode = dict(episode_row)
             episode_path = _episode_nfo_path(entry, episode, settings)
             if episode_path is None:
                 continue
-            changed += 1 if _ensure_episode_nfo(episode_path, entry, episode) else 0
+            changed += 1 if _ensure_episode_nfo(episode_path, entry, episode, mode) else 0
             paths.append(str(episode_path))
 
     with connect() as conn:

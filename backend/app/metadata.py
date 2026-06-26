@@ -21,6 +21,8 @@ TMDB_API = "https://api.themoviedb.org/3"
 USER_AGENT = "AniTrack/0.1 (private NAS media automation)"
 BANGUMI_TIMEOUT = httpx.Timeout(15.0, connect=5.0)
 BANGUMI_SUBJECT_CACHE_TTL = 30 * 24 * 60 * 60
+BANGUMI_EPISODES_CACHE_TTL = 30 * 24 * 60 * 60
+TMDB_SEASON_CACHE_TTL = 30 * 24 * 60 * 60
 
 
 async def fetch_bangumi_subject(subject_id: str, proxy: str = "") -> dict[str, Any]:
@@ -44,6 +46,11 @@ async def fetch_bangumi_subject(subject_id: str, proxy: str = "") -> dict[str, A
 
 async def fetch_bangumi_metadata(subject_id: str, proxy: str = "") -> dict[str, Any]:
     subject = await fetch_bangumi_subject(subject_id, proxy)
+    try:
+        episodes = await fetch_bangumi_episodes(subject_id, proxy)
+    except Exception as exc:
+        log("warn", f"Bangumi 集数元数据失败: subject_id={subject_id} error={exc}")
+        episodes = []
     title_cn = subject_cn_name(subject) or subject.get("name") or ""
     images = subject.get("images") or {}
     return {
@@ -55,6 +62,8 @@ async def fetch_bangumi_metadata(subject_id: str, proxy: str = "") -> dict[str, 
         "month": subject_month(subject),
         "tags_json": subject_tags_json(subject),
         "bangumi_score": subject_score(subject),
+        "episode_offset": bangumi_episode_offset(episodes),
+        "bangumi_episodes": episodes,
     }
 
 
@@ -62,6 +71,10 @@ async def fetch_bangumi_episodes(subject_id: str, proxy: str = "") -> list[dict[
     subject_id = str(subject_id or "").strip()
     if not subject_id:
         return []
+    cached = get_cached_json("bangumi_episodes", subject_id)
+    if isinstance(cached, list):
+        log("info", f"Bangumi 集数缓存命中: subject_id={subject_id}")
+        return [item for item in cached if isinstance(item, dict)]
     rows: list[dict[str, Any]] = []
     offset = 0
     limit = 100
@@ -86,6 +99,7 @@ async def fetch_bangumi_episodes(subject_id: str, proxy: str = "") -> list[dict[
             if offset >= total or len(batch) < limit:
                 break
 
+    set_cached_json("bangumi_episodes", subject_id, rows, ttl_seconds=BANGUMI_EPISODES_CACHE_TTL)
     return rows
 
 
@@ -212,6 +226,38 @@ async def fetch_tmdb_metadata(item_id: str, media_type: str, token: str, proxy: 
     }
 
 
+async def fetch_tmdb_season_episodes(
+    item_id: str,
+    season_number: int,
+    token: str,
+    proxy: str = "",
+) -> list[dict[str, Any]]:
+    item_id = str(item_id or "").strip()
+    season_number = max(1, int(season_number or 1))
+    if not item_id or not token:
+        return []
+    cache_key = f"{item_id}:S{season_number}"
+    cached = get_cached_json("tmdb_season_episodes", cache_key)
+    if isinstance(cached, list):
+        log("info", f"TMDB 季集数缓存命中: tmdb_id={item_id} season={season_number}")
+        return [item for item in cached if isinstance(item, dict)]
+    async with httpx.AsyncClient(
+        proxy=proxy or None,
+        timeout=BANGUMI_TIMEOUT,
+        headers={"Authorization": f"Bearer {token}", "Accept": "application/json", "User-Agent": USER_AGENT},
+    ) as client:
+        resp = await client.get(
+            f"{TMDB_API}/tv/{item_id}/season/{season_number}",
+            params={"language": "zh-CN"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    rows = data.get("episodes") if isinstance(data, dict) else []
+    result = [item for item in rows or [] if isinstance(item, dict)]
+    set_cached_json("tmdb_season_episodes", cache_key, result, ttl_seconds=TMDB_SEASON_CACHE_TTL)
+    return result
+
+
 async def fetch_tmdb_keywords(client: httpx.AsyncClient, media_type: str, item_id: str) -> list[str]:
     try:
         resp = await client.get(f"{TMDB_API}/{media_type}/{item_id}/keywords")
@@ -293,6 +339,142 @@ def subject_tags_json(subject: dict[str, Any], limit: int = 16) -> str:
     return json.dumps(list(dict.fromkeys(tags))[:limit], ensure_ascii=False)
 
 
+def _episode_summary(row: dict[str, Any]) -> str:
+    for key in ("desc", "description", "overview", "summary"):
+        value = str(row.get(key) or "").strip()
+        if value:
+            return chinese_summary(value)
+    return ""
+
+
+def _bangumi_relative_episode_number(row: dict[str, Any], episode_offset: int) -> int:
+    ep_number = _number_value(row.get("ep"))
+    sort_number = _number_value(row.get("sort"))
+    if episode_offset > 0:
+        candidates = [
+            ep_number - episode_offset,
+            sort_number - episode_offset,
+            sort_number if 0 < sort_number <= 36 else 0,
+            ep_number if 0 < ep_number <= 36 else 0,
+        ]
+        for candidate in candidates:
+            if candidate > 0:
+                return candidate
+    if ep_number > 0:
+        return ep_number
+    return sort_number
+
+
+def _set_episode_metadata(
+    entry_id: int,
+    episode_number: int,
+    *,
+    provider_id_column: str,
+    provider_id: Any,
+    title: str = "",
+    original_title: str = "",
+    summary: str = "",
+    air_date: str = "",
+    prefer: bool = True,
+) -> bool:
+    episode_number = int(episode_number or 0)
+    if episode_number <= 0:
+        return False
+    provider_id = str(provider_id or "").strip()
+    title = str(title or "").strip()
+    original_title = str(original_title or "").strip()
+    summary = str(summary or "").strip()
+    air_date = str(air_date or "").strip()
+    prefer_value = 1 if prefer else 0
+    ts = now()
+    with connect() as conn:
+        before = conn.total_changes
+        conn.execute(
+            f"""
+            UPDATE episodes
+            SET {provider_id_column}=CASE WHEN ?!='' THEN ? ELSE {provider_id_column} END,
+                metadata_title=CASE WHEN ?!='' AND (?=1 OR metadata_title='') THEN ? ELSE metadata_title END,
+                metadata_original_title=CASE WHEN ?!='' AND (?=1 OR metadata_original_title='') THEN ? ELSE metadata_original_title END,
+                metadata_summary=CASE WHEN ?!='' AND (?=1 OR metadata_summary='') THEN ? ELSE metadata_summary END,
+                metadata_air_date=CASE WHEN ?!='' AND (?=1 OR metadata_air_date='') THEN ? ELSE metadata_air_date END,
+                updated_at=?
+            WHERE entry_id=? AND episode_number=?
+            """,
+            (
+                provider_id,
+                provider_id,
+                title,
+                prefer_value,
+                title,
+                original_title,
+                prefer_value,
+                original_title,
+                summary,
+                prefer_value,
+                summary,
+                air_date,
+                prefer_value,
+                air_date,
+                ts,
+                entry_id,
+                episode_number,
+            ),
+        )
+        return conn.total_changes > before
+
+
+def apply_bangumi_episode_metadata(
+    entry_id: int,
+    rows: list[dict[str, Any]],
+    episode_offset: int,
+    *,
+    prefer: bool = True,
+) -> int:
+    updated = 0
+    for row in rows or []:
+        episode_number = _bangumi_relative_episode_number(row, episode_offset)
+        title = str(row.get("name_cn") or row.get("name") or "").strip()
+        original_title = str(row.get("name") or "").strip()
+        if _set_episode_metadata(
+            entry_id,
+            episode_number,
+            provider_id_column="bangumi_episode_id",
+            provider_id=row.get("id"),
+            title=title,
+            original_title=original_title,
+            summary=_episode_summary(row),
+            air_date=str(row.get("airdate") or row.get("date") or "").strip(),
+            prefer=prefer,
+        ):
+            updated += 1
+    return updated
+
+
+def apply_tmdb_episode_metadata(
+    entry_id: int,
+    rows: list[dict[str, Any]],
+    *,
+    prefer: bool = True,
+) -> int:
+    updated = 0
+    for row in rows or []:
+        episode_number = _number_value(row.get("episode_number"))
+        title = str(row.get("name") or "").strip()
+        if _set_episode_metadata(
+            entry_id,
+            episode_number,
+            provider_id_column="tmdb_episode_id",
+            provider_id=row.get("id"),
+            title=title,
+            original_title=title,
+            summary=_episode_summary(row),
+            air_date=str(row.get("air_date") or "").strip(),
+            prefer=prefer,
+        ):
+            updated += 1
+    return updated
+
+
 def metadata_root_labels(title: str) -> dict[str, str | int]:
     labels = parse_entry_labels(title)
     if not str(labels.get("title_root") or "").strip():
@@ -331,8 +513,10 @@ async def apply_bangumi_metadata(entry_id: int, bangumi_id: str, proxy: str = ""
     year = subject_year(subject) or entry["year"]
     month = subject_month(subject) or entry["month"]
     bangumi_score = subject_score(subject)
+    bangumi_episodes: list[dict[str, Any]] = []
     try:
-        episode_offset = bangumi_episode_offset(await fetch_bangumi_episodes(bangumi_id, proxy))
+        bangumi_episodes = await fetch_bangumi_episodes(bangumi_id, proxy)
+        episode_offset = bangumi_episode_offset(bangumi_episodes)
     except Exception as exc:
         episode_offset = int(entry["episode_offset"] or 0) if "episode_offset" in entry.keys() else 0
         log("warn", f"Bangumi 集数 offset 获取失败: entry_id={entry_id} bangumi_id={bangumi_id} error={exc}")
@@ -433,12 +617,18 @@ async def apply_bangumi_metadata(entry_id: int, bangumi_id: str, proxy: str = ""
                 (title_raw, title_cn, bangumi_id, poster, summary, year, month, now(), series["id"]),
             )
             merge_duplicate_series(conn)
+    episode_updates = apply_bangumi_episode_metadata(
+        entry_id,
+        bangumi_episodes,
+        episode_offset,
+        prefer=force or str(entry["media_type"] or "").lower() == "anime",
+    )
     settings = get_settings()
     if setting_enabled(settings.get("generate_bangumi_ini", "false")):
         generate_bangumi_ini(entry_id, settings)
     if setting_enabled(settings.get("auto_generate_nfo", "false")):
         generate_jellyfin_nfo_for_entry(entry_id, settings)
-    log("info", f"已刷新 Bangumi 元数据: {title_cn}")
+    log("info", f"已刷新 Bangumi 元数据: {title_cn} episode_updates={episode_updates}")
     return True
 
 
@@ -463,6 +653,18 @@ async def apply_tmdb_metadata(
     except Exception as exc:
         log("error", f"TMDB 元数据失败: entry_id={entry_id} tmdb_id={tmdb_id} - {exc}")
         return False
+    tmdb_episodes: list[dict[str, Any]] = []
+    normalized_type = "movie" if str(media_type or "").lower() == "movie" else "tv"
+    if normalized_type == "tv":
+        try:
+            tmdb_episodes = await fetch_tmdb_season_episodes(
+                tmdb_id,
+                int(entry["season_number"] or 1),
+                token,
+                proxy,
+            )
+        except Exception as exc:
+            log("warn", f"TMDB 季集数获取失败: entry_id={entry_id} tmdb_id={tmdb_id} error={exc}")
     title_cn = metadata.get("title_cn") or entry["title_cn"] or entry["display_title"]
     title_raw = metadata.get("title_raw") or entry["title_raw"] or title_cn
     labels = metadata_root_labels(title_cn)
@@ -542,10 +744,15 @@ async def apply_tmdb_metadata(
                 """,
                 (title_root, title_raw, now(), int(entry["work_id"] or 0)),
             )
+    episode_updates = apply_tmdb_episode_metadata(
+        entry_id,
+        tmdb_episodes,
+        prefer=force or str(entry["media_type"] or "").lower() != "anime",
+    )
     settings = get_settings()
     if setting_enabled(settings.get("auto_generate_nfo", "false")):
         generate_jellyfin_nfo_for_entry(entry_id, settings)
-    log("info", f"已刷新 TMDB 元数据: {title_cn}")
+    log("info", f"已刷新 TMDB 元数据: {title_cn} episode_updates={episode_updates}")
     return True
 
 

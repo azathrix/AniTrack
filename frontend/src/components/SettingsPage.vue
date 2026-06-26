@@ -149,14 +149,20 @@ export default appContextComponent({ draggable, PriorityList })
                 <h3 class="settings-subtitle">生成配置</h3>
                 <div class="config-toggle-list">
                   <label>
-                    <span>生成 bangumi.ini</span>
-                    <el-switch v-model="settings.generate_bangumi_ini" />
-                  </label>
-                  <label>
-                    <span>生成 TMDB NFO</span>
+                    <span>生成 NFO 元数据</span>
                     <el-switch v-model="settings.auto_generate_nfo" />
                   </label>
+                  <label>
+                    <span>旧兼容：生成 bangumi.ini</span>
+                    <el-switch v-model="settings.generate_bangumi_ini" />
+                  </label>
                 </div>
+                <el-form-item label="NFO 写入模式">
+                  <el-radio-group v-model="settings.nfo_write_mode">
+                    <el-radio-button label="fill_missing">空缺补齐</el-radio-button>
+                    <el-radio-button label="overwrite">覆盖更新</el-radio-button>
+                  </el-radio-group>
+                </el-form-item>
                 <el-form-item label="动画命名模板"><el-input v-model="settings.episode_name_template" /></el-form-item>
                 <el-form-item label="电影命名模板"><el-input v-model="settings.movie_name_template" /></el-form-item>
                 <el-form-item label="电视剧命名模板"><el-input v-model="settings.tv_name_template" /></el-form-item>
