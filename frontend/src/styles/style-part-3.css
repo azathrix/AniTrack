@@ -31,7 +31,8 @@
   background: var(--ani-pink-light);
   border-radius: 14px !important;
   display: flex;
-  height: 200px !important;
+  height: auto !important; /* Adapt dynamically to aspect-ratio */
+  aspect-ratio: 2 / 3 !important; /* Perfect golden 2:3 ratio */
   width: 100% !important;
   justify-content: center;
   overflow: hidden;

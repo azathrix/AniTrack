@@ -12,7 +12,8 @@ export default appContextComponent()
           <el-button plain @click="advancedFilterOpen = !advancedFilterOpen">{{ advancedFilterOpen ? '收起筛选' : '高级筛选' }}</el-button>
           <el-button type="primary" @click="openMediaWizard">收录{{ currentMediaPageTitle }}</el-button>
         </div>
-        <div v-if="advancedFilterOpen" class="filter-board">
+        <transition name="fade-slide">
+          <div v-if="advancedFilterOpen" class="filter-board">
           <div class="filter-row">
             <span>年份</span>
             <button :class="{ active: !libraryYearFilter }" @click="libraryYearFilter = ''">全部</button>
@@ -74,6 +75,7 @@ export default appContextComponent()
             >{{ tag }}</button>
           </div>
         </div>
+        </transition>
         <div
           v-infinite-scroll="loadMoreCatalog"
           :infinite-scroll-disabled="catalogState.loading || catalogState.loading_more || !catalogState.has_more"

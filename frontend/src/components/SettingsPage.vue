@@ -47,7 +47,7 @@ export default appContextComponent({ draggable, PriorityList })
                     <div class="settings-section-toolbar">
                       <div>
                         <strong>电影自动选集</strong>
-                        <span>只影响电影页面和电影导入资源</span>
+                        <span>只影响电影页面 and 电影导入资源</span>
                       </div>
                       <el-button plain @click="resetSelectionRules('movie')">重置电影规则</el-button>
                     </div>
@@ -61,7 +61,7 @@ export default appContextComponent({ draggable, PriorityList })
                     <div class="settings-section-toolbar">
                       <div>
                         <strong>电视剧自动选集</strong>
-                        <span>只影响电视剧页面和电视剧导入资源</span>
+                        <span>只影响电视剧页面 and 电视剧导入资源</span>
                       </div>
                       <el-button plain @click="resetSelectionRules('tv')">重置电视剧规则</el-button>
                     </div>
@@ -70,6 +70,7 @@ export default appContextComponent({ draggable, PriorityList })
                       <PriorityList title="来源优先级" v-model="settings.tv_source_priority" placeholder="添加来源，如 WEB-DL" />
                       <PriorityList title="字幕优先级" v-model="settings.tv_subtitle_priority" placeholder="添加字幕，如 双语" />
                     </div>
+                  </-priority-layout>
                   </el-tab-pane>
                 </el-tabs>
               </el-tab-pane>
@@ -149,93 +150,28 @@ export default appContextComponent({ draggable, PriorityList })
                         <span>{{ item.kind }} · 优先级 {{ item.priority || 0 }}</span>
                         <small v-if="item.last_error">{{ item.last_error }}</small>
                       </div>
-                      <el-tag :type="Number(item.enabled || 0) ? 'success' : 'info'">{{ Number(item.enabled || 0) ? '启用' : '关闭' }}</el-tag>
-                      <el-tag v-if="item.last_status" :type="item.last_status === 'failed' ? 'danger' : 'success'">{{ item.last_status }}</el-tag>
-                      <el-button plain @click="editSearchSource(item)">编辑</el-button>
-                      <el-button plain @click="testSearchSource(item)">测试</el-button>
-                      <el-popconfirm title="删除这个搜索源？" @confirm="deleteSearchSource(item.id)">
-                        <template #reference>
-                          <el-button type="danger" plain>删除</el-button>
-                        </template>
-                      </el-popconfirm>
+                      <div class="rss-row-actions">
+                        <el-switch :model-value="Number(item.enabled || 0)" :active-value="1" :inactive-value="0" @change="toggleSearchSource(item)" />
+                        <el-button type="primary" link @click="openSearchSourceDialog(item.id)">编辑</el-button>
+                        <el-popconfirm title="确定删除该搜索源？" @confirm="deleteSearchSource(item.id)">
+                          <template #reference><el-button type="danger" link>删除</el-button></template>
+                        </el-popconfirm>
+                      </div>
                     </div>
                     <el-empty v-if="!searchSources.length" description="暂无搜索源" />
                   </div>
                   <div class="search-source-form">
-                    <div class="settings-section-toolbar">
-                      <div>
-                        <strong>{{ searchSourceEditingId ? '编辑搜索源' : '新增搜索源' }}</strong>
-                        <span>配置资源站、RSS 或 Torznab API</span>
-                      </div>
-                      <el-button plain @click="resetSearchSourceForm">清空</el-button>
-                    </div>
-                    <div class="form-row">
-                      <el-form-item label="名称"><el-input v-model="searchSourceForm.name" placeholder="Mikan / Prowlarr" /></el-form-item>
-                      <el-form-item label="类型">
-                        <el-select v-model="searchSourceForm.kind">
-                          <el-option label="Mikan RSS" value="mikan" />
-                          <el-option label="RSS" value="rss" />
-                          <el-option label="Torznab / Prowlarr / Jackett" value="torznab" />
-                          <el-option label="HTML 爬虫占位" value="generic_html" />
-                        </el-select>
-                      </el-form-item>
-                    </div>
-                    <el-form-item label="Base URL">
-                      <el-input v-model="searchSourceForm.base_url" placeholder="Mikan: https://mikanani.me/RSS/Search?searchstr={keyword}；Torznab: http://host:9696/1/api" />
-                    </el-form-item>
-                    <div class="form-row">
-                      <el-form-item label="Token / API Key"><el-input v-model="searchSourceForm.api_key" show-password /></el-form-item>
-                      <el-form-item label="分类"><el-input v-model="searchSourceForm.categories" placeholder="Torznab cat，用逗号分隔" /></el-form-item>
-                    </div>
-                    <div class="form-row">
-                      <el-form-item label="代理"><el-input v-model="searchSourceForm.proxy" placeholder="可留空，默认使用 RSS 代理" /></el-form-item>
-                      <el-form-item label="优先级"><el-input-number v-model="searchSourceForm.priority" :min="0" :max="999" /></el-form-item>
-                    </div>
-                    <div class="form-row">
-                      <el-form-item label="超时秒数"><el-input-number v-model="searchSourceForm.timeout_seconds" :min="3" :max="120" /></el-form-item>
-                      <el-form-item label="限速秒数"><el-input-number v-model="searchSourceForm.rate_limit_seconds" :min="0" :max="3600" /></el-form-item>
-                      <el-form-item label="启用"><el-switch v-model="searchSourceForm.enabled" /></el-form-item>
-                    </div>
-                    <el-button type="primary" @click="saveSearchSource">{{ searchSourceEditingId ? '保存搜索源' : '添加搜索源' }}</el-button>
+                    <el-button type="primary" @click="openSearchSourceDialog(null)">添加 Mikan RSS 搜索源</el-button>
+                    <el-button type="primary" @click="openTorznabDialog">添加 Torznab/Prowlarr 搜索源</el-button>
                   </div>
                 </div>
               </el-tab-pane>
-              <el-tab-pane label="媒体库">
+              <el-tab-pane label="定时任务">
                 <el-alert
                   type="info"
                   show-icon
                   :closable="false"
-                  title="媒体根目录固定为容器内 media，系统会自动使用 media/anime、media/movies、media/tv。"
-                  class="settings-alert"
-                />
-                <div class="media-root-grid">
-                  <div><span>动画</span><code>media/anime</code></div>
-                  <div><span>电影</span><code>media/movies</code></div>
-                  <div><span>电视剧</span><code>media/tv</code></div>
-                </div>
-                <h3 class="settings-subtitle">生成配置</h3>
-                <div class="config-toggle-list">
-                  <label>
-                    <span>生成 NFO 元数据</span>
-                    <el-switch v-model="settings.auto_generate_nfo" />
-                  </label>
-                </div>
-                <el-form-item label="NFO 写入模式">
-                  <el-radio-group v-model="settings.nfo_write_mode">
-                    <el-radio-button label="fill_missing">空缺补齐</el-radio-button>
-                    <el-radio-button label="overwrite">覆盖更新</el-radio-button>
-                  </el-radio-group>
-                </el-form-item>
-                <el-form-item label="动画命名模板"><el-input v-model="settings.episode_name_template" /></el-form-item>
-                <el-form-item label="电影命名模板"><el-input v-model="settings.movie_name_template" /></el-form-item>
-                <el-form-item label="电视剧命名模板"><el-input v-model="settings.tv_name_template" /></el-form-item>
-              </el-tab-pane>
-              <el-tab-pane label="定时器">
-                <el-alert
-                  type="info"
-                  show-icon
-                  :closable="false"
-                  title="定时器只负责触发动作；具体执行会显示在控制台任务列表。"
+                  title="定时器控制系统自动同步、补全和下载等后台行为间隔。"
                   class="settings-alert"
                 />
                 <div class="schedule-settings-list">
@@ -254,51 +190,155 @@ export default appContextComponent({ draggable, PriorityList })
                 </div>
               </el-tab-pane>
               <el-tab-pane label="维护">
-                <div class="detail-summary-grid maintenance-summary-grid">
-                  <div><span>待处理任务</span><strong>{{ dashboard.console_overview?.pending_task_count || 0 }}</strong></div>
-                  <div><span>失败任务</span><strong>{{ dashboard.console_overview?.failed_task_count || 0 }}</strong></div>
-                  <div><span>等待重试</span><strong>{{ dashboard.console_overview?.waiting_retry_count || 0 }}</strong></div>
-                  <div><span>运行队列</span><strong>{{ dashboard.console_overview?.running_queue_count || 0 }}</strong></div>
+                <!-- Status dashboard row (高颜值横向状态块) -->
+                <div class="maintenance-stats-bar">
+                  <div class="m-stat-box pink">
+                    <span class="m-label">⏳ 待处理任务</span>
+                    <strong class="m-value">{{ dashboard.console_overview?.pending_task_count || 0 }}</strong>
+                  </div>
+                  <div class="m-stat-box red">
+                    <span class="m-label">⚠️ 失败任务</span>
+                    <strong class="m-value">{{ dashboard.console_overview?.failed_task_count || 0 }}</strong>
+                  </div>
+                  <div class="m-stat-box purple">
+                    <span class="m-label">🔄 等待重试</span>
+                    <strong class="m-value">{{ dashboard.console_overview?.waiting_retry_count || 0 }}</strong>
+                  </div>
+                  <div class="m-stat-box blue">
+                    <span class="m-label">⚡ 运行中队列</span>
+                    <strong class="m-value">{{ dashboard.console_overview?.running_queue_count || 0 }}</strong>
+                  </div>
                 </div>
-                <div class="maintenance-actions maintenance-pane">
-                  <el-button type="primary" plain @click="runAction('/cache/rss/clear')">清除 RSS 缓存</el-button>
-                  <el-button type="primary" plain @click="runAction('/cache/expired/clear')">清除过期缓存</el-button>
-                  <el-popconfirm title="会清空全部处理缓存，包括元数据和匹配缓存。确定？" @confirm="runAction('/cache/clear')">
-                    <template #reference>
-                      <el-button type="warning">清除全部处理缓存</el-button>
-                    </template>
-                  </el-popconfirm>
-                  <el-button type="primary" @click="refreshAllLocalStatus">刷新全部本地状态</el-button>
-                  <el-popconfirm title="会按现有 Bangumi/TMDB ID 刷新所有条目元数据，并按设置校验 NFO。确定执行？" @confirm="refreshAllMetadata">
-                    <template #reference>
-                      <el-button type="primary">刷新全部元数据</el-button>
-                    </template>
-                  </el-popconfirm>
-                  <el-popconfirm title="会把已绑定且存在的本地文件整理到当前命名规则路径，目标同名文件会被覆盖。确定执行？" @confirm="organizeAllLocalFiles">
-                    <template #reference>
-                      <el-button type="primary">整理全部本地资源</el-button>
-                    </template>
-                  </el-popconfirm>
-                  <el-popconfirm title="迁移前会自动备份数据库。确定把旧资源模型迁移为每集一条资源，并按纯作品名目录计算路径？" @confirm="migrateEpisodeModel">
-                    <template #reference>
-                      <el-button type="primary">迁移集数模型</el-button>
-                    </template>
-                  </el-popconfirm>
-                  <el-popconfirm title="会把已识别到的旧本地文件移动到纯作品名目录，并同步修复数据库状态。确定执行？" @confirm="repairLocalPaths">
-                    <template #reference>
-                      <el-button type="primary">修复为纯作品名路径</el-button>
-                    </template>
-                  </el-popconfirm>
-                  <el-popconfirm title="会清理无法识别集数的发布、资源、字幕和下载记录。确定执行？" @confirm="runAction('/maintenance/cleanup-invalid-episodes')">
-                    <template #reference>
-                      <el-button type="warning">清理无效集数</el-button>
-                    </template>
-                  </el-popconfirm>
-                  <el-popconfirm title="会清空番剧、候选、任务、下载记录、本地资源记录和日志。确定？" @confirm="runAction('/system/clear-data')">
-                    <template #reference>
-                      <el-button type="danger" plain>清除所有数据</el-button>
-                    </template>
-                  </el-popconfirm>
+
+                <!-- Structured Action Groups (三大功能维护净化舱) -->
+                <div class="maintenance-grid-layout">
+                  <!-- Group 1: Cache Control -->
+                  <div class="maintenance-group-card">
+                    <div class="group-header">
+                      <h3>🧹 缓存净化舱</h3>
+                      <p>管理系统临时索引、元数据与静态网页缓存</p>
+                    </div>
+                    <div class="group-body">
+                      <div class="action-item-row">
+                        <div class="action-desc">
+                          <strong>清除 RSS 缓存</strong>
+                          <span>清空保存在本地的 RSS 订阅临时哈希与发布项缓存</span>
+                        </div>
+                        <el-button type="primary" plain @click="runAction('/cache/rss/clear')">立即清除</el-button>
+                      </div>
+                      <div class="action-item-row">
+                        <div class="action-desc">
+                          <strong>清除过期缓存</strong>
+                          <span>自动检索并清理已经失效或长时间未更新的系统缓存</span>
+                        </div>
+                        <el-button type="primary" plain @click="runAction('/cache/expired/clear')">立即清理</el-button>
+                      </div>
+                      <div class="action-item-row warning-border">
+                        <div class="action-desc">
+                          <strong>清空全部处理缓存</strong>
+                          <span>强力清除包括作品元数据、海报、索引在内的所有临时缓存</span>
+                        </div>
+                        <el-popconfirm title="会清空全部处理缓存，包括元数据和匹配缓存。确定？" @confirm="runAction('/cache/clear')">
+                          <template #reference>
+                            <el-button type="warning">彻底清空</el-button>
+                          </template>
+                        </el-popconfirm>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Group 2: Media Database Maintenance -->
+                  <div class="maintenance-group-card">
+                    <div class="group-header">
+                      <h3>📦 契约与资源维护</h3>
+                      <p>校验本地文件一致性，更新媒体库元数据索引</p>
+                    </div>
+                    <div class="group-body">
+                      <div class="action-item-row">
+                        <div class="action-desc">
+                          <strong>刷新全部本地状态</strong>
+                          <span>遍历检测本地已下载文件的物理存在状态，同步数据库标记</span>
+                        </div>
+                        <el-button type="primary" @click="refreshAllLocalStatus">执行刷新</el-button>
+                      </div>
+                      <div class="action-item-row">
+                        <div class="action-desc">
+                          <strong>刷新全部元数据</strong>
+                          <span>从 Bangumi/TMDB 重新全量抓取并复核本地已收录的作品信息</span>
+                        </div>
+                        <el-popconfirm title="会按现有 Bangumi/TMDB ID 刷新所有条目元数据，并按设置校验 NFO。确定执行？" @confirm="refreshAllMetadata">
+                          <template #reference>
+                            <el-button type="primary">重抓元数</el-button>
+                          </template>
+                        </el-popconfirm>
+                      </div>
+                      <div class="action-item-row">
+                        <div class="action-desc">
+                          <strong>整理全部本地资源</strong>
+                          <span>根据当前设置的命名规则，重新分类整理已识别的本地作品</span>
+                        </div>
+                        <el-popconfirm title="会把已绑定且存在的本地文件整理到当前命名规则路径，目标同名文件会被覆盖。确定执行？" @confirm="organizeAllLocalFiles">
+                          <template #reference>
+                            <el-button type="primary">整理归档</el-button>
+                          </template>
+                        </el-popconfirm>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Group 3: Migrations & Dangerous Resets -->
+                  <div class="maintenance-group-card full-row-card">
+                    <div class="group-header">
+                      <h3>🛠️ 数据迁移与系统格式化</h3>
+                      <p>执行底层数据表结构升级或彻底格式化系统记录（敏感操作）</p>
+                    </div>
+                    <div class="group-body flex-grid-body">
+                      <div class="action-item-row">
+                        <div class="action-desc">
+                          <strong>迁移集数模型</strong>
+                          <span>将原有作品下的集数条目迁移为单集单纪录的高级调度模型</span>
+                        </div>
+                        <el-popconfirm title="迁移前会自动备份数据库。确定把旧资源模型迁移为每集一条资源，并按纯作品名目录计算路径？" @confirm="migrateEpisodeModel">
+                          <template #reference>
+                            <el-button type="primary">运行迁移</el-button>
+                          </template>
+                        </el-popconfirm>
+                      </div>
+                      <div class="action-item-row">
+                        <div class="action-desc">
+                          <strong>修复为纯作品名路径</strong>
+                          <span>把老版本的识别文件迁移至全新规划的作品独立层级文件夹中</span>
+                        </div>
+                        <el-popconfirm title="会把已识别到的旧本地文件移动到纯作品名目录，并同步修复数据库状态。确定执行？" @confirm="repairLocalPaths">
+                          <template #reference>
+                            <el-button type="primary">运行修复</el-button>
+                          </template>
+                        </el-popconfirm>
+                      </div>
+                      <div class="action-item-row warning-border">
+                        <div class="action-desc">
+                          <strong>清理无效集数</strong>
+                          <span>自动扫描并清理破损、信息丢失或者无法成功关联的集数记录</span>
+                        </div>
+                        <el-popconfirm title="会清理无法识别集数的发布、资源、字幕和下载记录。确定执行？" @confirm="runAction('/maintenance/cleanup-invalid-episodes')">
+                          <template #reference>
+                            <el-button type="warning">清理无效</el-button>
+                          </template>
+                        </el-popconfirm>
+                      </div>
+                      <div class="action-item-row danger-border">
+                        <div class="action-desc">
+                          <strong>💥 擦除全部契约数据</strong>
+                          <span>格式化并清空所有番剧、候选、任务、本地资源记录及历史日志</span>
+                        </div>
+                        <el-popconfirm title="会清空番剧、候选、任务、下载记录、本地资源记录和日志。确定？" @confirm="runAction('/system/clear-data')">
+                          <template #reference>
+                            <el-button type="danger">格式化系统</el-button>
+                          </template>
+                        </el-popconfirm>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </el-tab-pane>
             </el-tabs>

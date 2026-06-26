@@ -13,7 +13,8 @@ export default appContextComponent()
           <el-button type="primary" :icon="Search" :disabled="scanRunning" @click="runAction('/scan')">扫描全部</el-button>
           <el-button type="primary" @click="openRssDialog">添加 RSS 订阅</el-button>
         </div>
-        <div v-if="advancedFilterOpen" class="filter-board">
+        <transition name="fade-slide">
+          <div v-if="advancedFilterOpen" class="filter-board">
           <div class="filter-row">
             <span>年份</span>
             <button :class="{ active: !libraryYearFilter }" @click="libraryYearFilter = ''">全部</button>
@@ -75,6 +76,7 @@ export default appContextComponent()
             >{{ tag }}</button>
           </div>
         </div>
+        </transition>
         <div
           v-infinite-scroll="loadMoreCatalog"
           :infinite-scroll-disabled="catalogState.loading || catalogState.loading_more || !catalogState.has_more"
