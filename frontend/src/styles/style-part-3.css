@@ -1,44 +1,67 @@
 
 .anime-card {
-  background: rgba(255, 255, 255, 0.88);
-  backdrop-filter: blur(8px);
-  border: 2px solid var(--ani-line);
-  border-radius: 18px;
+  background: #ffffff !important;
+  border: 2px solid var(--ani-line) !important;
+  border-radius: 4px 4px 16px 16px !important;
   cursor: pointer;
-  display: grid;
-  gap: 14px;
-  grid-template-columns: 84px 1fr;
-  min-height: 132px;
-  padding: 14px;
-  box-shadow: 0 8px 24px rgba(255, 142, 187, 0.03);
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 12px;
+  min-height: 360px !important;
+  padding: 12px 12px 18px 12px !important;
+  box-shadow: 4px 4px 0px var(--ani-line) !important;
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.25);
+  position: relative;
+  overflow: visible !important;
 }
 
 .anime-card:hover {
-  border-color: var(--ani-pink);
-  box-shadow: 0 14px 32px rgba(255, 142, 187, 0.14);
-  transform: translateY(-5px) scale(1.01);
+  border-color: var(--ani-pink) !important;
+  box-shadow: 6px 8px 20px rgba(255, 142, 187, 0.16) !important;
+  transform: translateY(-8px) rotate(-1deg) scale(1.02);
+}
+
+/* Hovering cute pink heart stamp */
+.anime-card::before {
+  content: "♥";
+  position: absolute;
+  top: 16px;
+  right: 18px;
+  font-size: 18px;
+  color: #ff73a1;
+  opacity: 0;
+  transform: scale(0.6);
+  transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.25);
+  z-index: 10;
+  text-shadow: 0 2px 4px rgba(255, 142, 187, 0.3);
+}
+
+.anime-card:hover::before {
+  opacity: 1;
+  transform: scale(1.2) rotate(10deg);
 }
 
 .cover {
   align-items: center;
   background: linear-gradient(135deg, rgba(255, 240, 245, 0.9), rgba(240, 243, 255, 0.9));
-  border-radius: 12px;
+  border-radius: 4px !important; /* Sharp polaroid photo bounds */
   display: flex;
-  height: 112px;
+  height: 200px !important;
+  width: 100% !important;
   justify-content: center;
   overflow: hidden;
   border: 1.5px solid rgba(255, 142, 187, 0.15);
 }
 
 .catalog-card {
-  grid-template-columns: 96px minmax(0, 1fr);
+  display: flex !important;
+  flex-direction: column !important;
 }
 
 .cover.small {
-  height: 72px;
-  width: 72px;
-  border-radius: 8px;
+  height: 72px !important;
+  width: 72px !important;
+  border-radius: 8px !important;
 }
 
 .poster-cover {
@@ -55,7 +78,7 @@
 
 .cover img {
   height: 100%;
-  object-fit: cover;
+  object-fit: cover !important; /* Fill Polaroid photo frame */
   width: 100%;
 }
 
@@ -66,23 +89,29 @@
 
 .anime-body {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-grow: 1;
+  text-align: center; /* Center Polaroid notes */
 }
 
 .anime-body h3 {
   color: var(--ani-ink);
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1.35;
-  margin: 2px 0 6px;
-  max-height: 44px;
+  margin: 4px 0 6px;
+  max-height: 40px;
   overflow: hidden;
   font-weight: 800;
+  font-family: inherit;
 }
 
 .anime-body p {
   color: #8c82a5;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
-  margin: 0 0 8px;
+  margin: 0 0 6px;
 }
 
 .tagline {

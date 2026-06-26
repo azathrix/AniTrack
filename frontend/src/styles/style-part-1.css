@@ -52,27 +52,51 @@
 
 body {
   margin: 0;
-  background:
-    linear-gradient(135deg, rgba(255, 142, 187, 0.12) 0%, transparent 40%),
-    linear-gradient(225deg, rgba(130, 158, 255, 0.14) 0%, transparent 45%),
-    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.8) 0 20px, rgba(255, 245, 249, 0.85) 20px 40px);
+  background: #f7ebe6; /* Warm desk wood background color */
+  background-image: 
+    radial-gradient(rgba(255, 142, 187, 0.08) 1.5px, transparent 1.5px),
+    linear-gradient(135deg, #f4e9e5 0%, #e8dcd8 100%);
+  background-size: 24px 24px, 100% 100%;
 }
 
 .app-shell {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.65), rgba(255, 255, 255, 0.35)),
-    linear-gradient(90deg, rgba(255, 218, 233, 0.38), rgba(218, 233, 255, 0.42) 50%, rgba(228, 255, 248, 0.32));
   min-height: 100vh;
   max-width: 100vw;
   overflow-x: hidden;
+  position: relative;
+}
+
+/* Beautiful Metallic Binder Rings (活页圈) */
+.app-shell::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 228px;
+  width: 16px;
+  height: 100vh;
+  z-index: 35;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 24px,
+    #cbd5e1 24px,
+    #f8fafc 26px,
+    #ffffff 28px,
+    #94a3b8 30px,
+    #64748b 32px,
+    transparent 32px,
+    transparent 56px
+  );
+  filter: drop-shadow(2px 3px 3px rgba(86, 76, 126, 0.22));
 }
 
 .sidebar {
-  background: rgba(255, 255, 255, 0.82);
+  background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(16px) saturate(110%);
   -webkit-backdrop-filter: blur(16px) saturate(110%);
-  border-right: 1px dashed var(--ani-line);
-  box-shadow: 8px 0 30px rgba(255, 142, 187, 0.08);
+  border-right: 2px dashed var(--ani-line);
+  box-shadow: 6px 0 24px rgba(255, 142, 187, 0.04);
   color: #564c7a;
   display: flex;
   flex-direction: column;
@@ -186,37 +210,87 @@ nav button:hover {
   border-color: #f56c6c;
 }
 
+/* Notebook Page Spread styling (手撕线圈本内页) */
 .main {
-  margin-left: 236px;
+  margin-left: 256px;
   min-width: 0;
-  padding: 20px 24px 28px;
+  padding: 24px 32px 36px;
+  background: #fffdfa; /* Cream paper color */
+  border: 2px solid var(--ani-line);
+  border-left: 4px solid var(--ani-pink); /* Thick pink book spine edge */
+  border-radius: 4px 24px 24px 4px;
+  box-shadow: 
+    6px 6px 0px rgba(255, 142, 187, 0.12),
+    12px 12px 30px rgba(86, 76, 126, 0.08);
+  min-height: calc(100vh - 40px);
+  margin-top: 20px;
+  margin-bottom: 20px;
+  margin-right: 20px;
+  position: relative;
+  /* Notebook pink grid line effect */
+  background-image: 
+    linear-gradient(rgba(255, 142, 187, 0.04) 1.5px, transparent 1.5px),
+    linear-gradient(90deg, rgba(255, 142, 187, 0.04) 1.5px, transparent 1.5px);
+  background-size: 22px 22px;
 }
 
+/* Notebook standard red margin vertical line */
+.main::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 48px;
+  width: 2px;
+  height: 100%;
+  background: rgba(255, 115, 161, 0.22);
+  pointer-events: none;
+}
+
+/* Washi Tape Pinned Card Header (胶带粘贴便签卡) */
 .hero {
   align-items: center;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(255, 248, 252, 0.90)),
-    linear-gradient(90deg, rgba(255, 142, 187, 0.22), rgba(130, 158, 255, 0.16));
-  border: 2px solid var(--ani-line);
-  border-radius: 22px;
-  box-shadow: 0 16px 36px rgba(255, 142, 187, 0.08);
+  background: #fff !important;
+  border: 2px solid var(--ani-line) !important;
+  border-radius: 18px !important;
+  box-shadow: 4px 4px 0px var(--ani-line) !important;
   display: flex;
   justify-content: space-between;
-  margin-bottom: 20px;
-  padding: 22px 26px;
+  margin-bottom: 28px;
+  padding: 24px 28px !important;
   position: relative;
-  overflow: hidden;
+  overflow: visible !important;
 }
 
+/* Pink transparent washi tape on the top left */
+.hero::before {
+  content: "";
+  position: absolute;
+  top: -12px;
+  left: 24px;
+  width: 90px;
+  height: 22px;
+  background: rgba(255, 142, 187, 0.42);
+  transform: rotate(-4deg);
+  border-left: 2px dashed rgba(255, 255, 255, 0.6);
+  border-right: 2px dashed rgba(255, 255, 255, 0.6);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03);
+  z-index: 10;
+}
+
+/* Blue transparent washi tape on the top right */
 .hero::after {
   content: "";
   position: absolute;
-  top: -50%;
-  right: -20%;
-  width: 200px;
-  height: 200px;
-  background: radial-gradient(circle, rgba(255, 142, 187, 0.15) 0%, transparent 70%);
-  pointer-events: none;
+  top: -10px;
+  right: 24px;
+  width: 90px;
+  height: 22px;
+  background: rgba(130, 158, 255, 0.42);
+  transform: rotate(3deg);
+  border-left: 2px dashed rgba(255, 255, 255, 0.6);
+  border-right: 2px dashed rgba(255, 255, 255, 0.6);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03);
+  z-index: 10;
 }
 
 .hero > div:first-child {
@@ -386,53 +460,84 @@ h1 {
 
 .content-grid {
   display: grid;
-  gap: 14px;
+  gap: 20px;
   grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding-top: 10px;
 }
 
 .metric-card {
-  background: rgba(255, 255, 255, 0.88);
-  border: 2px solid var(--ani-line);
-  border-radius: 18px;
-  box-shadow: 0 12px 28px rgba(255, 142, 187, 0.04);
-  padding: 20px;
+  background: #ffffff !important;
+  border: 2px solid var(--ani-line) !important;
+  border-radius: 4px 4px 18px 18px !important;
+  box-shadow: 4px 6px 16px rgba(86, 76, 126, 0.05) !important;
+  padding: 16px 16px 28px 16px !important; /* Thick bottom margin for handwritten label */
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.25);
   cursor: pointer;
+  position: relative;
+  overflow: visible !important;
+  transform: rotate(-1.8deg);
+}
+
+.content-grid .metric-card:nth-child(even) {
+  transform: rotate(1.8deg);
 }
 
 .metric-card:hover {
-  transform: translateY(-4px) scale(1.02);
-  box-shadow: 0 16px 36px rgba(255, 142, 187, 0.12);
+  transform: translateY(-8px) rotate(0deg) scale(1.03) !important;
+  box-shadow: 0 16px 36px rgba(255, 142, 187, 0.15) !important;
+  z-index: 10;
+  border-color: var(--ani-pink) !important;
 }
 
-/* Metric candy color overrides */
+/* Semi-transparent tape sticker on top of Polaroids */
+.metric-card::after {
+  content: "";
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 58px;
+  height: 20px;
+  background: rgba(255, 142, 187, 0.35); /* pink tape */
+  border-left: 2px dashed rgba(255, 255, 255, 0.5);
+  border-right: 2px dashed rgba(255, 255, 255, 0.5);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+  z-index: 5;
+  pointer-events: none;
+}
+
+.content-grid .metric-card:nth-child(even)::after {
+  background: rgba(130, 158, 255, 0.35); /* blue tape */
+}
+
+/* Metric candy color overrides inside the Polaroid frame */
 .content-grid .metric-card:nth-child(1) {
-  background: rgba(255, 222, 235, 0.55);
-  border-color: rgba(255, 142, 187, 0.28);
+  background: #fffdf9 !important; /* Polaroid photo white */
+  border-color: rgba(255, 142, 187, 0.3) !important;
 }
 .content-grid .metric-card:nth-child(1) span { color: #cc6086; font-weight: 800; }
-.content-grid .metric-card:nth-child(1) strong { color: #9c3358; font-weight: 900; }
+.content-grid .metric-card:nth-child(1) strong { color: #9c3358; font-weight: 900; background: rgba(255, 222, 235, 0.4); border-radius: 8px; padding: 4px; display: inline-block; width: 100%; text-align: center; }
 
 .content-grid .metric-card:nth-child(2) {
-  background: rgba(222, 235, 255, 0.55);
-  border-color: rgba(130, 158, 255, 0.28);
+  background: #fffdf9 !important;
+  border-color: rgba(130, 158, 255, 0.3) !important;
 }
 .content-grid .metric-card:nth-child(2) span { color: #5a7bbb; font-weight: 800; }
-.content-grid .metric-card:nth-child(2) strong { color: #32518f; font-weight: 900; }
+.content-grid .metric-card:nth-child(2) strong { color: #32518f; font-weight: 900; background: rgba(222, 235, 255, 0.4); border-radius: 8px; padding: 4px; display: inline-block; width: 100%; text-align: center; }
 
 .content-grid .metric-card:nth-child(3) {
-  background: rgba(255, 246, 212, 0.6);
-  border-color: rgba(255, 190, 118, 0.35);
+  background: #fffdf9 !important;
+  border-color: rgba(255, 190, 118, 0.3) !important;
 }
 .content-grid .metric-card:nth-child(3) span { color: #bca053; font-weight: 800; }
-.content-grid .metric-card:nth-child(3) strong { color: #8e6d1c; font-weight: 900; }
+.content-grid .metric-card:nth-child(3) strong { color: #8e6d1c; font-weight: 900; background: rgba(255, 246, 212, 0.5); border-radius: 8px; padding: 4px; display: inline-block; width: 100%; text-align: center; }
 
 .content-grid .metric-card:nth-child(4) {
-  background: rgba(212, 255, 238, 0.55);
-  border-color: rgba(123, 237, 159, 0.35);
+  background: #fffdf9 !important;
+  border-color: rgba(123, 237, 159, 0.3) !important;
 }
 .content-grid .metric-card:nth-child(4) span { color: #4ca671; font-weight: 800; }
-.content-grid .metric-card:nth-child(4) strong { color: #206d3f; font-weight: 900; }
+.content-grid .metric-card:nth-child(4) strong { color: #206d3f; font-weight: 900; background: rgba(212, 255, 238, 0.4); border-radius: 8px; padding: 4px; display: inline-block; width: 100%; text-align: center; }
 
 .metric-card span {
   display: block;
@@ -538,19 +643,31 @@ h1 {
 
 .scheduled-job-row {
   align-items: center;
-  background: #f8fafc;
-  border: 1px solid #dbe4ef;
-  border-radius: 8px;
+  background: #fff;
+  border: 2px solid var(--ani-line);
+  border-radius: 12px;
   display: flex;
   gap: 12px;
   justify-content: space-between;
   padding: 12px;
+  box-shadow: 0 4px 10px rgba(86, 76, 126, 0.02);
+  transition: all 0.25s ease;
+}
+
+.scheduled-job-row:hover {
+  border-color: var(--ani-pink);
+  box-shadow: 0 6px 14px rgba(255, 142, 187, 0.08);
 }
 
 .scheduled-job-row div:first-child {
   display: grid;
   gap: 4px;
   min-width: 0;
+}
+
+.scheduled-job-row strong {
+  color: var(--ani-ink);
+  font-weight: 800;
 }
 
 .scheduled-job-row strong,
@@ -561,8 +678,9 @@ h1 {
 }
 
 .scheduled-job-row span {
-  color: #64748b;
+  color: #8c82a5;
   font-size: 12px;
+  font-weight: 700;
 }
 
 .scheduled-job-meta {
@@ -582,14 +700,23 @@ h1 {
 .scheduled-pill {
   align-items: center;
   background: #fff;
-  border: 1px solid #dbe4ef;
+  border: 2px solid var(--ani-line);
   border-radius: 999px;
-  color: #334155;
+  color: #645a85;
   cursor: pointer;
   display: inline-flex;
   gap: 8px;
   min-height: 34px;
-  padding: 6px 10px 6px 14px;
+  padding: 6px 12px 6px 14px;
+  transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.25);
+  font-weight: 700;
+}
+
+.scheduled-pill:hover {
+  border-color: var(--ani-pink);
+  transform: translateY(-2px);
+  color: var(--ani-pink-hover);
+  box-shadow: 0 4px 10px rgba(255, 142, 187, 0.1);
 }
 
 .scheduled-pill span {
