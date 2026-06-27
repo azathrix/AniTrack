@@ -20,6 +20,7 @@ from ..runtime_service import reschedule
 from ..schedule_service import upsert_schedule
 from ..schemas import ProcessorSettingsPayload, ScheduledJobPayload, SettingsPayload
 from ..settings_service import clean_downloader_items, derived_downloader_settings, settings_response, sync_download_processor_concurrency
+from ..operation_service import record_operation_event
 from ..utils import int_setting
 
 
@@ -79,6 +80,7 @@ async def api_update_settings(payload: SettingsPayload) -> dict:
     sync_download_processor_concurrency(int_setting(payload.download_concurrency, 2, 1, 12))
     reschedule()
     log("info", "全局设置已保存")
+    record_operation_event("settings", "全局设置已保存", "基础设置、下载器和媒体库配置已更新")
     return settings_response()
 
 
@@ -103,6 +105,7 @@ async def api_update_scheduled_job(job_key: str, payload: ScheduledJobPayload) -
         raise HTTPException(status_code=404, detail="定时任务不存在")
     reschedule()
     log("info", f"定时任务已更新: job_key={job_key} enabled={enabled} interval={interval}m")
+    record_operation_event("settings", "定时任务已更新", f"{job_key} · {interval} 分钟 · {'启用' if payload.enabled else '关闭'}")
     return {"status": "saved", "settings": settings_response()}
 
 
@@ -114,6 +117,7 @@ async def api_update_processor_settings(processor_key: str, payload: ProcessorSe
     concurrency = sync_download_processor_concurrency(payload.download_concurrency)
     save_settings({"download_concurrency": str(concurrency)})
     log("info", f"下载处理器并发已更新: {concurrency}")
+    record_operation_event("settings", "下载并发已更新", f"当前并发 {concurrency}")
     return {"status": "saved", "settings": settings_response()}
 
 

@@ -297,6 +297,33 @@ async def process_download_job(task_id: int) -> ProcessorResult:
         _mark_terminal(task_id, result.message)
     elif result.status == "skipped":
         _mark_completed_if_skipped(task_id, result.message)
+    if result.status == "success":
+        try:
+            from .operation_service import record_operation_event
+
+            record_operation_event(
+                "download",
+                "下载整理完成",
+                f"entry_id={int(row['entry_id'] or 0)} episode={int(row['episode_number'] or 0)}",
+                ref_type="download_job",
+                ref_id=task_id,
+            )
+        except Exception:
+            pass
+    elif result.status in {"failed_retryable", "failed_terminal", "conflict"}:
+        try:
+            from .operation_service import record_operation_event
+
+            record_operation_event(
+                "download",
+                "下载任务异常",
+                result.message or "下载失败",
+                level="error" if result.status != "failed_retryable" else "warn",
+                ref_type="download_job",
+                ref_id=task_id,
+            )
+        except Exception:
+            pass
     log(
         "info",
         f"下载任务执行结束: task_id={task_id} release_id={release_id} "

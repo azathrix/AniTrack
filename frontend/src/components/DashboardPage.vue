@@ -157,8 +157,11 @@ export default appContextComponent({
             <p>管理自动同步、元数据抓取和缓存流水线</p>
           </div>
           <div class="header-taglines">
-            <el-tag type="warning">下载中 {{ dashboard.download_overview?.active || 0 }}</el-tag>
-            <el-button size="small" type="primary" plain @click="clearCompletedDownloadTasks">清理已完成</el-button>
+            <el-button size="small" plain @click="cancelAllGenericTasks">取消全部</el-button>
+            <el-button size="small" plain @click="pauseAllGenericTasks">暂停全部</el-button>
+            <el-button size="small" plain @click="resumeAllGenericTasks">继续全部</el-button>
+            <el-button size="small" type="primary" plain @click="retryFailedGenericTasks">重试失败</el-button>
+            <el-button size="small" type="primary" plain @click="clearCompletedDownloadTasks">清理</el-button>
           </div>
         </div>
 
@@ -225,50 +228,29 @@ export default appContextComponent({
         </div>
       </div>
 
-      <!-- 3.2 右半边：扫描雷达与近期日志 (Micro Scanner & Timeline Logs) -->
+      <!-- 3.2 右半边：最近操作 -->
       <div class="mochi-radar-logs-panel">
-        
-        <!-- Radar Scanning Widget -->
-        <div class="mini-radar-widget">
-          <div class="radar-header">
-            <div class="radar-titles">
-            <h4>RSS 扫描</h4>
-              <span class="radar-status-dot" :class="dashboard.scanner_status?.status || 'idle'">
-                <span class="pulse-ring" v-if="dashboard.scanner_status?.status === 'running'"></span>
-              </span>
-            </div>
-            <el-button type="primary" size="small" class="radar-mini-btn" @click="runAction('/scan')">
-              立即扫描
-            </el-button>
-          </div>
-          <p class="radar-mini-desc">
-            状态: <b class="highlight">{{ dashboard.scanner_status?.status === 'running' ? '扫描中...' : '空闲' }}</b>
-            · 时间: <span class="dim-label">{{ dashboard.scanner_status?.updated_at || '尚未扫描' }}</span>
-          </p>
-        </div>
-
-        <!-- Live Log Timeline Stream (Real dynamic dotted Timeline Logs) -->
         <div class="live-timeline-box">
           <div class="timeline-title-row">
-            <h4>最近任务</h4>
-            <span class="live-badge">实时</span>
+            <h4>最近操作</h4>
+            <span class="live-badge">持久记录</span>
           </div>
 
           <div class="timeline-stream">
             <div class="stream-line"></div>
             
-            <div v-for="t in (dashboard.tasks || []).slice(0, 3)" :key="t.id" class="stream-item" :class="t.status === 'failed' ? 'pink' : (t.status === 'completed' ? 'blue' : 'purple')">
+            <div v-for="item in recentOperations" :key="item.id" class="stream-item" :class="item.level === 'error' ? 'pink' : (item.level === 'warn' ? 'purple' : 'blue')">
               <span class="stream-dot"></span>
               <div class="stream-content">
                 <div class="content-meta">
-                  <strong>{{ t.title }}</strong>
-                  <span class="time">{{ t.updated_at || '-' }}</span>
+                  <strong>{{ item.title }}</strong>
+                  <span class="time">{{ item.created_at || '-' }}</span>
                 </div>
-                <p class="comment">类型: {{ t.type_name }} · 进度: {{ Number(t.progress || 0) }}% · 状态: {{ t.status_text || t.status }}</p>
+                <p class="comment">{{ item.message || item.action }}</p>
               </div>
             </div>
 
-            <el-empty v-if="!(dashboard.tasks || []).length" description="暂无实况日志" :image-size="40" />
+            <el-empty v-if="!recentOperations.length" description="暂无最近操作" :image-size="40" />
           </div>
         </div>
 

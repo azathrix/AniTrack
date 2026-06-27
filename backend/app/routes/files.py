@@ -55,7 +55,7 @@ def _item_payload(path: Path) -> dict[str, Any] | None:
 
 
 @router.get("/api/files/browse")
-async def api_browse_files(path: str = Query("")) -> dict[str, Any]:
+async def api_browse_files(path: str = Query(""), recursive: bool = Query(False)) -> dict[str, Any]:
     root = _media_root()
     current = _resolve_media_path(path)
     parent = ""
@@ -63,10 +63,18 @@ async def api_browse_files(path: str = Query("")) -> dict[str, Any]:
     if current != root and (current_parent == root or root in current_parent.parents):
         parent = str(current_parent)
     items = []
-    for child in sorted(current.iterdir(), key=lambda item: (not item.is_dir(), item.name.lower())):
-        payload = _item_payload(child)
-        if payload:
-            items.append(payload)
+    if recursive:
+        for child in sorted(current.rglob("*"), key=lambda item: (not item.is_dir(), str(item).lower())):
+            payload = _item_payload(child)
+            if payload and payload["kind"] != "directory":
+                items.append(payload)
+                if len(items) >= 500:
+                    break
+    else:
+        for child in sorted(current.iterdir(), key=lambda item: (not item.is_dir(), item.name.lower())):
+            payload = _item_payload(child)
+            if payload:
+                items.append(payload)
     return {
         "root": str(root),
         "current": str(current),

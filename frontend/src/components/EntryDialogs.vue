@@ -478,7 +478,10 @@ export default appContextComponent()
             </el-tab-pane>
             <el-tab-pane label="本地上传" name="upload">
               <div class="wizard-upload-panel">
-                <input type="file" multiple @change="uploadMediaWizardFiles($event, 'auto')" />
+                <div class="wizard-file-actions">
+                  <label class="mochi-file-button">选择文件<input type="file" multiple @change="uploadMediaWizardFiles($event, 'auto')" /></label>
+                  <label class="mochi-file-button">选择文件夹<input type="file" multiple webkitdirectory directory @change="uploadMediaWizardFiles($event, 'auto')" /></label>
+                </div>
                 <el-progress v-if="mediaWizardUploading || mediaWizardUploadProgress" :percentage="mediaWizardUploadProgress" />
                 <p>上传到临时目录，不会直接标记可观看；收录后会按命名规则整理。</p>
               </div>
@@ -558,7 +561,10 @@ export default appContextComponent()
             </el-tab-pane>
             <el-tab-pane label="上传文件 / 目录" name="upload">
               <div class="wizard-upload-panel compact">
-                <input type="file" multiple @change="uploadMediaWizardFiles($event, 'auto')" />
+                <div class="wizard-file-actions">
+                  <label class="mochi-file-button">选择文件<input type="file" multiple @change="uploadMediaWizardFiles($event, 'auto')" /></label>
+                  <label class="mochi-file-button">选择文件夹<input type="file" multiple webkitdirectory directory @change="uploadMediaWizardFiles($event, 'auto')" /></label>
+                </div>
                 <el-progress v-if="mediaWizardUploading || mediaWizardUploadProgress" :percentage="mediaWizardUploadProgress" />
               </div>
             </el-tab-pane>
@@ -574,7 +580,7 @@ export default appContextComponent()
               <span>片源 {{ mediaWizardResourceRows.length }} · 字幕 {{ mediaWizardSubtitleRows.length }}</span>
             </div>
             <div v-for="(item, index) in mediaWizardResourceItems" :key="item.id" class="wizard-resource-row">
-              <el-input-number v-model="item.episode_number" :min="1" :max="999" controls-position="right" />
+              <el-input-number v-model="item.episode_number" :min="0" :max="999" controls-position="right" />
               <el-input v-model="item.title" placeholder="归一化名称 / 来源标题" />
               <el-input v-model="item.source_ref" placeholder="片源磁链 / 种子 / 下载链接" />
               <div class="field-with-action">
@@ -594,7 +600,7 @@ export default appContextComponent()
               <el-button type="danger" plain @click="removeMediaWizardResourceItem(index)">删除</el-button>
             </div>
             <div v-for="(item, index) in mediaWizardSubtitleItems" :key="item.id" class="wizard-resource-row subtitle-only">
-              <el-input-number v-model="item.episode_number" :min="1" :max="999" controls-position="right" />
+              <el-input-number v-model="item.episode_number" :min="0" :max="999" controls-position="right" />
               <el-tag type="warning">字幕</el-tag>
               <el-input v-model="item.subtitle_ref" placeholder="字幕磁链 / 下载链接" />
               <div class="field-with-action">

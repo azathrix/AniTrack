@@ -261,17 +261,29 @@ def run_operation(name: str, coro_factory, start_message: str = "") -> int:
     operation_id = runtime_store.start_operation_sync(name, start_message)
     log("info", f"{name} 已启动: {start_message or '处理中'}")
 
+    def record(status: str, message: str) -> None:
+        try:
+            from .operation_service import record_operation_event
+
+            level = "error" if status == "failed" else ("warn" if status == "cancelled" else "info")
+            record_operation_event("operation", name, message, level=level, ref_type="operation", ref_id=operation_id)
+        except Exception:
+            pass
+
     async def runner() -> None:
         try:
             message = await coro_factory()
         except asyncio.CancelledError:
             runtime_store.finish_operation_sync(operation_id, "cancelled", "操作已取消")
+            record("cancelled", "操作已取消")
             return
         except Exception as exc:
             runtime_store.finish_operation_sync(operation_id, "failed", str(exc))
+            record("failed", str(exc))
             log("error", f"{name} 失败: {exc}")
             return
         runtime_store.finish_operation_sync(operation_id, "completed", str(message or "完成"))
+        record("completed", str(message or "完成"))
         log("info", f"{name} 完成: {message or '完成'}")
 
     task = asyncio.create_task(runner())
@@ -283,17 +295,29 @@ def run_progress_operation(name: str, coro_factory, start_message: str = "") -> 
     operation_id = runtime_store.start_operation_sync(name, start_message)
     log("info", f"{name} 已启动: {start_message or '处理中'}")
 
+    def record(status: str, message: str) -> None:
+        try:
+            from .operation_service import record_operation_event
+
+            level = "error" if status == "failed" else ("warn" if status == "cancelled" else "info")
+            record_operation_event("operation", name, message, level=level, ref_type="operation", ref_id=operation_id)
+        except Exception:
+            pass
+
     async def runner() -> None:
         try:
             message = await coro_factory(operation_id)
         except asyncio.CancelledError:
             runtime_store.finish_operation_sync(operation_id, "cancelled", "操作已取消")
+            record("cancelled", "操作已取消")
             return
         except Exception as exc:
             runtime_store.finish_operation_sync(operation_id, "failed", str(exc))
+            record("failed", str(exc))
             log("error", f"{name} 失败: {exc}")
             return
         runtime_store.finish_operation_sync(operation_id, "completed", str(message or "完成"))
+        record("completed", str(message or "完成"))
         log("info", f"{name} 完成: {message or '完成'}")
 
     task = asyncio.create_task(runner())
@@ -308,6 +332,12 @@ async def cancel_operation(operation_id: int) -> bool:
         return False
     task.cancel()
     runtime_store.finish_operation_sync(operation_id, "cancelled", "用户取消操作")
+    try:
+        from .operation_service import record_operation_event
+
+        record_operation_event("operation", "操作已取消", f"operation_id={operation_id}", level="warn", ref_type="operation", ref_id=operation_id)
+    except Exception:
+        pass
     try:
         await task
     except asyncio.CancelledError:

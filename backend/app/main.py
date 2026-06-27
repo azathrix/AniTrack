@@ -3,16 +3,18 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import APP_DIR
+from .auth_service import ensure_auth_defaults, is_public_api, request_user
 from .db import get_settings, init_db, log
 from .download_worker_service import trigger_download_worker
 from .media_service import reset_orphaned_download_jobs
 from .processors import register_builtin_processors
-from .routes import cache, dashboard, discovery, downloads, files, media, resources, rss, runtime, schedules, settings, tasks
+from .routes import auth, cache, dashboard, discovery, downloads, files, media, operations, resources, rss, runtime, schedules, settings, tasks, uploads
 from .runtime_service import reschedule, scheduler
 from .settings_service import sync_download_processor_concurrency
 from .utils import int_setting
@@ -21,6 +23,7 @@ from .utils import int_setting
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
+    ensure_auth_defaults()
     sync_download_processor_concurrency(int_setting(get_settings().get("download_concurrency"), 2, 1, 12))
     recovered = reset_orphaned_download_jobs()
     if recovered:
@@ -34,6 +37,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="AniTrack", lifespan=lifespan)
+app.include_router(auth.router)
 app.include_router(dashboard.router)
 app.include_router(runtime.router)
 app.include_router(settings.router)
@@ -46,6 +50,16 @@ app.include_router(media.router)
 app.include_router(resources.router)
 app.include_router(downloads.router)
 app.include_router(files.router)
+app.include_router(uploads.router)
+app.include_router(operations.router)
+
+
+@app.middleware("http")
+async def api_auth_middleware(request: Request, call_next):
+    path = request.url.path
+    if path.startswith("/api/") and not is_public_api(path) and request_user(request) is None:
+        return JSONResponse({"detail": "请先登录"}, status_code=401)
+    return await call_next(request)
 
 FRONTEND_DIR = APP_DIR.parent / "frontend_dist"
 if FRONTEND_DIR.exists():

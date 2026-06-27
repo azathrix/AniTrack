@@ -1,5 +1,28 @@
 <template>
-  <div class="app-shell">
+  <div v-if="authLoading" class="auth-loading-shell">
+    <img src="/anitrack-logo.png" alt="AniTrack" />
+    <strong>AniTrack 正在唤醒...</strong>
+  </div>
+
+  <div v-else-if="!authState.authenticated" class="login-shell">
+    <section class="login-card cute-cat-ears">
+      <img src="/anitrack-logo.png" alt="AniTrack" />
+      <h1>AniTrack</h1>
+      <p>登录后继续管理你的番剧下载与本地媒体库。</p>
+      <el-form :model="authForm" label-position="top" @submit.prevent>
+        <el-form-item label="账号">
+          <el-input v-model="authForm.username" autocomplete="username" @keyup.enter="submitLogin" />
+        </el-form-item>
+        <el-form-item label="密码">
+          <el-input v-model="authForm.password" type="password" show-password autocomplete="current-password" @keyup.enter="submitLogin" />
+        </el-form-item>
+        <el-button type="primary" :loading="authForm.saving" @click="submitLogin">登录</el-button>
+      </el-form>
+      <small>默认账号密码：admin / admin，建议首次登录后在设置里修改。</small>
+    </section>
+  </div>
+
+  <div v-else class="app-shell">
     <aside class="sidebar">
       <div class="brand">
         <img class="brand-logo" src="/anitrack-logo.png" alt="AniTrack logo" />
@@ -34,6 +57,13 @@
         <button :class="{ active: view === 'logs' }" @click="view = 'logs'"><el-icon><Document /></el-icon> 日志</button>
         <button :class="{ active: view === 'settings' }" @click="view = 'settings'"><el-icon><Setting /></el-icon> 设置</button>
       </nav>
+      <div class="sidebar-account-card">
+        <span>👤 {{ authState.username || 'admin' }}</span>
+        <div>
+          <button type="button" @click="accountDialogOpen = true">账号</button>
+          <button type="button" @click="submitLogout">退出</button>
+        </div>
+      </div>
     </aside>
 
     <main class="main">
@@ -60,6 +90,21 @@
 
     <EntryDrawer />
     <EntryDialogs />
+
+    <el-dialog v-model="accountDialogOpen" title="账号设置" width="460px" top="8vh" class="config-dialog">
+      <el-form :model="accountForm" label-position="top">
+        <el-form-item label="管理员账号">
+          <el-input v-model="accountForm.username" autocomplete="username" />
+        </el-form-item>
+        <el-form-item label="新密码">
+          <el-input v-model="accountForm.password" type="password" show-password autocomplete="new-password" placeholder="留空则不修改密码" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="accountDialogOpen = false">取消</el-button>
+        <el-button type="primary" @click="saveAccountSettings">保存账号</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -67,7 +112,7 @@
 import { computed, isRef, onMounted, onUnmounted, provide, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Calendar, Collection, DataBoard, Document, Refresh, Search, Setting } from '@element-plus/icons-vue'
-import { deleteAction, getAction, getCalendar, getCatalog, getDashboard, getDiagnostics, getLogs, getMediaItem, getSettings, postAction, putAction, saveMediaItem, saveSettings, uploadFile } from './api'
+import { deleteAction, getAction, getAuthMe, getCalendar, getCatalog, getDashboard, getDiagnostics, getLogs, getMediaItem, getRecentOperations, getSettings, login, logout, postAction, putAction, saveMediaItem, saveSettings, updateAccount, uploadFile } from './api'
 import { APP_BUILD, APP_VERSION } from './version'
 import { createAppActions } from './composables/appActions'
 import { createDiscoveryActions } from './composables/discoveryActions'
@@ -123,6 +168,12 @@ function initialView() {
 const view = ref(initialView())
 const appVersion = APP_VERSION
 const appBuild = APP_BUILD
+const authLoading = ref(true)
+const authState = reactive({ authenticated: false, username: '' })
+const authForm = reactive({ username: 'admin', password: 'admin', saving: false })
+const accountDialogOpen = ref(false)
+const accountForm = reactive({ username: 'admin', password: '' })
+const recentOperations = ref([])
 const selectedConsoleSection = ref('')
 const selectedTaskType = ref('')
 const scheduleEditingId = ref(0)
@@ -255,6 +306,7 @@ const downloaderForm = reactive({
   max_attempts: 3,
 })
 const calendarItems = ref([])
+const selectedCalendarDay = ref(formatDateKey(new Date()))
 const logsData = reactive({
   server_logs: [],
   console_overview: {},
@@ -462,6 +514,13 @@ const weekDays = computed(() => {
     }
   })
 })
+const selectedCalendarDayData = computed(() => {
+  return weekDays.value.find(day => day.key === selectedCalendarDay.value)
+    || weekDays.value.find(day => day.isToday)
+    || weekDays.value[0]
+    || { items: [] }
+})
+const selectedCalendarItems = computed(() => selectedCalendarDayData.value?.items || [])
 const scheduledConsoleSections = computed(() => (dashboard.console_sections || []).filter(section => section.kind === 'scheduled'))
 const selectedSectionMeta = computed(() => {
   return scheduledConsoleSections.value.find(item => item.key === selectedConsoleSection.value) || null
@@ -655,11 +714,14 @@ const episodeImportCanSave = computed(() => episodeImportResourceRows.value.leng
 const mediaWizardResourceRows = computed(() => mediaWizardResourceItems.value.map((item, index) => {
   const text = item.source_ref || item.local_path || item.file_name || ''
   const valid = Boolean(item.local_path) || isValidResourceReference(text)
+  const parsedEpisode = Number(item.episode_number ?? 0)
+  const fallbackEpisode = inferEpisodeFromText(text, currentMediaType.value === 'movie' ? 1 : index + 1)
+  const episode = parsedEpisode > 0 ? parsedEpisode : (parsedEpisode === 0 ? 0 : fallbackEpisode)
   return {
     ...item,
     key: item.id || `wizard-resource:${index}:${text}`,
     text,
-    episode: Number(item.episode_number || 0) || inferEpisodeFromText(text, currentMediaType.value === 'movie' ? 1 : index + 1),
+    episode,
     valid,
     kind: item.local_path ? '本地路径' : resourceReferenceKind(text),
     reason: valid ? '' : '不是可用资源',
@@ -668,11 +730,14 @@ const mediaWizardResourceRows = computed(() => mediaWizardResourceItems.value.ma
 const mediaWizardSubtitleRows = computed(() => mediaWizardSubtitleItems.value.map((item, index) => {
   const text = item.subtitle_ref || item.subtitle_path || item.file_name || ''
   const valid = Boolean(item.subtitle_path) || isValidSubtitleReference(text) || isValidResourceReference(text)
+  const parsedEpisode = Number(item.episode_number ?? 0)
+  const fallbackEpisode = inferEpisodeFromText(text, currentMediaType.value === 'movie' ? 1 : index + 1)
+  const episode = parsedEpisode > 0 ? parsedEpisode : (parsedEpisode === 0 ? 0 : fallbackEpisode)
   return {
     ...item,
     key: item.id || `wizard-subtitle:${index}:${text}`,
     text,
-    episode: Number(item.episode_number || 0) || inferEpisodeFromText(text, currentMediaType.value === 'movie' ? 1 : index + 1),
+    episode,
     valid,
     reason: valid ? '' : '格式无效',
   }
@@ -726,6 +791,7 @@ function searchSourceKindText(kind) {
     torznab: 'Torznab',
     prowlarr: 'Prowlarr',
     jackett: 'Jackett',
+    qmp4: 'QMP4 七味',
   }
   return map[kind] || kind || '-'
 }
@@ -800,6 +866,7 @@ function openEpisodeImportDialog() {
 
 function setCalendarThisWeek() {
   calendarWeek.value = formatDateKey(startOfWeek(new Date()))
+  selectedCalendarDay.value = formatDateKey(new Date())
 }
 
 function shiftCalendarWeek(delta) {
@@ -924,6 +991,7 @@ async function reloadCurrentPageData() {
 }
 
 async function reload() {
+  if (!authState.authenticated) return
   if (loading.value) return
   loading.value = true
   try {
@@ -933,6 +1001,83 @@ async function reload() {
     await reloadCurrentPageData()
   } finally {
     loading.value = false
+  }
+}
+
+async function loadRecentOperationEvents() {
+  if (!authState.authenticated) return
+  try {
+    const data = await getRecentOperations(20)
+    recentOperations.value = data.items || []
+  } catch {
+    recentOperations.value = []
+  }
+}
+
+async function bootstrapApp() {
+  setCalendarThisWeek()
+  await reload()
+  await loadRecentOperationEvents()
+  startDashboardStream()
+}
+
+async function checkAuth() {
+  authLoading.value = true
+  try {
+    const data = await getAuthMe()
+    authState.authenticated = Boolean(data.authenticated)
+    authState.username = data.username || ''
+    if (authState.authenticated) {
+      accountForm.username = authState.username || 'admin'
+      await bootstrapApp()
+    }
+  } finally {
+    authLoading.value = false
+  }
+}
+
+async function submitLogin() {
+  authForm.saving = true
+  try {
+    const data = await login({ username: authForm.username, password: authForm.password })
+    authState.authenticated = Boolean(data.authenticated)
+    authState.username = data.username || authForm.username
+    accountForm.username = authState.username || 'admin'
+    accountForm.password = ''
+    ElMessage.success('登录成功')
+    await bootstrapApp()
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    authForm.saving = false
+  }
+}
+
+async function submitLogout() {
+  try {
+    await logout()
+  } finally {
+    stopDashboardStream()
+    authState.authenticated = false
+    authState.username = ''
+    recentOperations.value = []
+  }
+}
+
+async function saveAccountSettings() {
+  try {
+    const data = await updateAccount({
+      username: accountForm.username,
+      password: accountForm.password,
+    })
+    authState.username = data.username || accountForm.username || 'admin'
+    accountForm.username = authState.username
+    accountForm.password = ''
+    accountDialogOpen.value = false
+    ElMessage.success('账号设置已保存')
+    await loadRecentOperationEvents()
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
   }
 }
 
@@ -954,6 +1099,7 @@ function stopDashboardStream() {
 
 function startDashboardStream() {
   stopDashboardStream()
+  if (!authState.authenticated) return
   if (!window.EventSource) return
   dashboardStream = new EventSource('/api/dashboard/stream')
   dashboardStream.onopen = () => {
@@ -962,6 +1108,7 @@ function startDashboardStream() {
   dashboardStream.onmessage = event => {
     try {
       applyDashboard(JSON.parse(event.data))
+      loadRecentOperationEvents().catch(() => {})
       scheduleCatalogRefresh()
       if (view.value === 'logs') loadLogsPage().catch(() => {})
     } catch {
@@ -987,6 +1134,10 @@ exposeAppContext({
   advancedFilterOpen,
   appBuild,
   appVersion,
+  accountDialogOpen,
+  accountForm,
+  authState,
+  authForm,
   batchSubtitleCanAdvance,
   batchSubtitleCanSave,
   batchSubtitleDialogOpen,
@@ -1101,6 +1252,7 @@ exposeAppContext({
   processorSettingsDialogOpen,
   processorSettingsForm,
   regionLabel,
+  recentOperations,
   reload,
   reloadDiagnostics,
   resourceReferenceKind,
@@ -1128,6 +1280,9 @@ exposeAppContext({
   seasonalCatalogTotal,
   seasonalRows,
   selectedConsoleSection,
+  selectedCalendarDay,
+  selectedCalendarDayData,
+  selectedCalendarItems,
   selectedEntry,
   selectedEntryDetail,
   selectedEntryDomain,
@@ -1137,6 +1292,9 @@ exposeAppContext({
   selectedSectionMeta,
   selectedTaskType,
   settings,
+  saveAccountSettings,
+  setCalendarThisWeek,
+  submitLogout,
   downloaderDialogOpen,
   downloaderEditingIndex,
   downloaderForm,
@@ -1169,8 +1327,8 @@ provide('appContext', appContext)
 const {
   addDownloader, addMediaWizardResourceLines, addMediaWizardServerFile, addMediaWizardSubtitleLines, advanceMediaWizard, apiErrorMessage, applyMetadataToWizard,
   browseServerFiles,
-  archiveCurrentEntry, backfillCurrentEntrySeason, cancelAllDownloads, cancelDownloadTask, cancelEpisodeDownload, cancelQueueDownload, clearCompletedDownloadTasks, clearEntryEditForm,
-  cancelGenericTask, clearGenericTask, pauseGenericTask, resumeGenericTask,
+  archiveCurrentEntry, backfillCurrentEntrySeason, cancelAllDownloads, cancelAllGenericTasks, cancelDownloadTask, cancelEpisodeDownload, cancelQueueDownload, clearCompletedDownloadTasks, clearEntryEditForm,
+  cancelGenericTask, clearGenericTask, pauseAllGenericTasks, pauseGenericTask, resumeAllGenericTasks, resumeGenericTask, retryFailedGenericTasks,
   commitEpisodeImport, commitMediaWizard,
   deleteCurrentEntry, deleteDownloadTask, deleteEpisodeResource, deleteRssSubscription, downloadCurrentEntryResources, downloadEpisodeResource,
   editRssSubscription, entryEditPayload, exportLogs, fetchEntryMetadata, loadRssSubscriptions, normalizeSettingsShape, openEntry,
@@ -1220,8 +1378,8 @@ exposeAppContext({
   applyBackfillResult,
   addDownloader, addMediaWizardResourceLines, addMediaWizardServerFile, addMediaWizardSubtitleLines, advanceMediaWizard, apiErrorMessage, applyMetadataToWizard,
   browseServerFiles,
-  archiveCurrentEntry, backfillCurrentEntrySeason, cancelAllDownloads, cancelDownloadTask, cancelEpisodeDownload, cancelQueueDownload, clearCompletedDownloadTasks, clearEntryEditForm,
-  cancelGenericTask, clearGenericTask, pauseGenericTask, resumeGenericTask,
+  archiveCurrentEntry, backfillCurrentEntrySeason, cancelAllDownloads, cancelAllGenericTasks, cancelDownloadTask, cancelEpisodeDownload, cancelQueueDownload, clearCompletedDownloadTasks, clearEntryEditForm,
+  cancelGenericTask, clearGenericTask, pauseAllGenericTasks, pauseGenericTask, resumeAllGenericTasks, resumeGenericTask, retryFailedGenericTasks,
   commitEpisodeImport, commitMediaWizard,
   deleteCurrentEntry, deleteDownloadTask, deleteEpisodeResource, deleteRssSubscription, deleteSearchSource, downloadCurrentEntryResources, downloadEpisodeResource,
   editRssSubscription, editSearchSource, entryEditPayload, exportLogs, fetchEntryMetadata, loadRssSubscriptions, loadSearchSources, normalizeSettingsShape, openDiscoveryCollectDraft, openEntry,
@@ -1276,11 +1434,14 @@ watch(
 watch(calendarWeek, () => {
   if (view.value === 'calendar') loadCalendarPage().catch(error => ElMessage.error(apiErrorMessage(error)))
 })
+watch(weekDays, days => {
+  if (!days.some(day => day.key === selectedCalendarDay.value)) {
+    selectedCalendarDay.value = days.find(day => day.isToday)?.key || days[0]?.key || formatDateKey(new Date())
+  }
+})
 
 onMounted(async () => {
-  setCalendarThisWeek()
-  await reload()
-  startDashboardStream()
+  await checkAuth()
 })
 
 onUnmounted(() => {

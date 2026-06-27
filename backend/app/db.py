@@ -611,6 +611,20 @@ def init_db() -> None:
                 UNIQUE(entry_id, event_date)
             );
 
+            CREATE TABLE IF NOT EXISTS operation_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                action TEXT NOT NULL DEFAULT '',
+                title TEXT NOT NULL DEFAULT '',
+                message TEXT NOT NULL DEFAULT '',
+                level TEXT NOT NULL DEFAULT 'info',
+                ref_type TEXT NOT NULL DEFAULT '',
+                ref_id INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_operation_events_created
+            ON operation_events(created_at DESC);
+
             CREATE UNIQUE INDEX IF NOT EXISTS idx_download_artifacts_provider_file
             ON download_artifacts(provider, provider_file_id)
             WHERE provider_file_id != '';

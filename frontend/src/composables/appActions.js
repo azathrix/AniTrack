@@ -265,12 +265,38 @@ export function createAppActions(app, deps) {
 
   async function clearCompletedDownloadTasks() {
     try {
-      const result = await postAction('/tasks/clear-completed')
-      ElMessage.success(result?.message || '已清除完成任务')
+      const result = await postAction('/tasks/clear')
+      ElMessage.success(result?.message || '已清理任务')
       await app.reload()
     } catch (error) {
       ElMessage.error(apiErrorMessage(error))
     }
+  }
+
+  async function runBulkTaskAction(path, fallback) {
+    try {
+      const result = await postAction(path)
+      ElMessage.success(result?.message || fallback)
+      await app.reload()
+    } catch (error) {
+      ElMessage.error(apiErrorMessage(error))
+    }
+  }
+
+  function cancelAllGenericTasks() {
+    return runBulkTaskAction('/tasks/cancel-all', '已取消可取消任务')
+  }
+
+  function pauseAllGenericTasks() {
+    return runBulkTaskAction('/tasks/pause-all', '已暂停可暂停任务')
+  }
+
+  function resumeAllGenericTasks() {
+    return runBulkTaskAction('/tasks/resume-all', '已继续可继续任务')
+  }
+
+  function retryFailedGenericTasks() {
+    return runBulkTaskAction('/tasks/retry-failed', '已重试失败任务')
   }
 
   async function refreshEpisodeResource(row) {
@@ -699,6 +725,9 @@ export function createAppActions(app, deps) {
 
   function addMediaWizardServerFile(item, mediaKind = 'auto') {
     if (!item?.path) return
+    if (!app.mediaWizardDraft.title) {
+      app.mediaWizardDraft.title = titleFromResourceSeed(item.name || item.path || '') || app.mediaWizardDraft.title
+    }
     const kind = mediaKind === 'auto'
       ? (item.kind === 'subtitle' || isSubtitleLike(item.path || item.name) ? 'subtitle' : 'video')
       : mediaKind
@@ -730,7 +759,12 @@ export function createAppActions(app, deps) {
     try {
       let uploaded = 0
       for (const file of files) {
-        const result = await uploadFile('/uploads/local', file, { session_id: session }, progressEvent => {
+        const relativePath = file.webkitRelativePath || file.name
+        if (!app.mediaWizardDraft.title) {
+          const rootName = String(relativePath || file.name).split('/')[0] || file.name
+          app.mediaWizardDraft.title = titleFromResourceSeed(rootName || file.name) || app.mediaWizardDraft.title
+        }
+        const result = await uploadFile('/uploads/local', file, { session_id: session, relative_path: relativePath }, progressEvent => {
           const percent = progressEvent.total ? Math.round((progressEvent.loaded / progressEvent.total) * 100) : 0
           app.mediaWizardUploadProgress = Math.min(99, Math.round(((uploaded * 100) + percent) / files.length))
         })
@@ -741,7 +775,7 @@ export function createAppActions(app, deps) {
           : mediaKind
         addMediaWizardServerFile({
           path,
-          name: result.file_name || file.name,
+          name: relativePath || result.file_name || file.name,
           kind: kind === 'subtitle' ? 'subtitle' : 'video',
           size: result.size || file.size || 0,
           episode_number: Number(preferredEpisode || 0),
@@ -1281,13 +1315,13 @@ export function createAppActions(app, deps) {
 
   return {
     addDownloader, addMediaWizardResourceLines, addMediaWizardServerFile, addMediaWizardSubtitleLines, advanceMediaWizard, apiErrorMessage, applyMetadataToWizard,
-    archiveCurrentEntry, backfillCurrentEntrySeason, browseServerFiles, cancelAllDownloads, cancelDownloadTask, cancelEpisodeDownload, cancelGenericTask, cancelQueueDownload, clearCompletedDownloadTasks, clearEntryEditForm,
+    archiveCurrentEntry, backfillCurrentEntrySeason, browseServerFiles, cancelAllDownloads, cancelAllGenericTasks, cancelDownloadTask, cancelEpisodeDownload, cancelGenericTask, cancelQueueDownload, clearCompletedDownloadTasks, clearEntryEditForm,
     clearGenericTask,
     commitEpisodeImport, commitMediaWizard,
     deleteCurrentEntry, deleteDownloadTask, deleteEpisodeResource, deleteRssSubscription, downloadCurrentEntryResources, downloadEpisodeResource,
     editRssSubscription, entryEditPayload, exportLogs, fetchEntryMetadata, loadRssSubscriptions, normalizeSettingsShape, openEntry,
     openEntryEditDialog, openEpisodeResourceEditor, openMediaWizard, openMetadataSearch, openProcessorSettings, openQueueEntry, openRssDialog, openServerFileBrowser,
-    openScheduledSettings, openDownloaderDialog, migrateEpisodeModel, organizeAllLocalFiles, organizeCurrentEntryLocalFiles, pauseGenericTask, refreshAllMetadata, refreshAllLocalStatus, refreshCurrentEntryLocalStatus, refreshEntryMetadata, repairLocalPaths, resumeGenericTask, retryDownloadTask, retryGenericTask, refreshEpisodeResource, removeDownloader, removeMediaWizardResourceItem,
+    openScheduledSettings, openDownloaderDialog, migrateEpisodeModel, organizeAllLocalFiles, organizeCurrentEntryLocalFiles, pauseAllGenericTasks, pauseGenericTask, refreshAllMetadata, refreshAllLocalStatus, refreshCurrentEntryLocalStatus, refreshEntryMetadata, repairLocalPaths, resumeAllGenericTasks, resumeGenericTask, retryDownloadTask, retryFailedGenericTasks, retryGenericTask, refreshEpisodeResource, removeDownloader, removeMediaWizardResourceItem,
     removeMediaWizardSubtitleItem, resetRssForm, resetSelectionRules, runAction, runMetadataSearch, saveAllSettings, saveBatchSubtitles,
     saveDownloaderDialog, saveEntryEditForm, saveEpisodeResource, saveProcessorSettings, saveRssSubscription, saveScheduledJob, searchWizardMetadata, selectServerFile, setCurrentEntryFollowing,
     confirmMetadataMatch, selectedMetadataCandidate, selectMetadataCandidate, skipMetadataProvider, toggleEntryResourceRow,

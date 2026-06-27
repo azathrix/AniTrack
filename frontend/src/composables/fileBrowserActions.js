@@ -19,16 +19,21 @@ export function createFileBrowserActions(app, deps) {
     app.episodeImportLocalItems = next
   }
 
-  async function browseServerFiles(path = '') {
+  async function browseServerFiles(path = '', recursive = false) {
     app.fileBrowser.loading = true
     try {
-      const query = path ? `?path=${encodeURIComponent(path)}` : ''
+      const params = new URLSearchParams()
+      if (path) params.set('path', path)
+      if (recursive) params.set('recursive', 'true')
+      const query = params.toString() ? `?${params.toString()}` : ''
       const result = await getAction(`/files/browse${query}`)
       app.fileBrowser.current = result.current || ''
       app.fileBrowser.parent = result.parent || ''
       app.fileBrowser.items = result.items || []
+      return result
     } catch (error) {
       ElMessage.error(apiErrorMessage(error))
+      return null
     } finally {
       app.fileBrowser.loading = false
     }
@@ -61,8 +66,10 @@ export function createFileBrowserActions(app, deps) {
     }
     if (app.fileBrowser.mode === 'episode-import-local') {
       if (item.kind === 'directory' && item.selectCurrent) {
-        appendEpisodeImportFiles(app.fileBrowser.items || [])
-        ElMessage.success('已加入当前目录的视频文件')
+        browseServerFiles(item.path || app.fileBrowser.current, true).then(result => {
+          appendEpisodeImportFiles(result?.items || app.fileBrowser.items || [])
+          ElMessage.success('已递归加入目录视频文件')
+        })
         app.fileBrowser.open = false
         return
       }
@@ -82,10 +89,12 @@ export function createFileBrowserActions(app, deps) {
     if (app.fileBrowser.mode === 'media-wizard' || app.fileBrowser.mode === 'media-wizard-video' || app.fileBrowser.mode === 'media-wizard-subtitle') {
       if (item.kind === 'directory' && item.selectCurrent) {
         const mode = app.fileBrowser.mode === 'media-wizard-subtitle' ? 'subtitle' : app.fileBrowser.mode === 'media-wizard-video' ? 'video' : 'auto'
-        for (const file of app.fileBrowser.items || []) {
-          if (file.kind === 'video' || file.kind === 'subtitle') app.addMediaWizardServerFile?.(file, mode)
-        }
-        ElMessage.success('已加入当前目录资源')
+        browseServerFiles(item.path || app.fileBrowser.current, true).then(result => {
+          for (const file of result?.items || []) {
+            if (file.kind === 'video' || file.kind === 'subtitle') app.addMediaWizardServerFile?.(file, mode)
+          }
+          ElMessage.success('已递归加入目录资源')
+        })
         app.fileBrowser.open = false
         return
       }

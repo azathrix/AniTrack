@@ -44,6 +44,17 @@ export default appContextComponent({ draggable, PriorityList })
               </div>
 
               <div class="settings-summary-card">
+                <div class="settings-summary-head">
+                  <h3>管理员账号</h3>
+                  <p>当前账号：{{ authState.username || 'admin' }}。用于保护 NAS 上的 AniTrack 控制台。</p>
+                </div>
+                <div class="settings-toolbar-actions">
+                  <el-button plain @click="accountDialogOpen = true">修改账号</el-button>
+                  <el-button plain @click="submitLogout">退出登录</el-button>
+                </div>
+              </div>
+
+              <div class="settings-summary-card">
                 <label class="settings-switch-line">
                   <el-switch v-model="settings.backfill_current_season" />
                   <span><strong>补全本季</strong><em>RSS 扫描新番后尝试补齐当前季缺失集数。</em></span>
@@ -233,10 +244,11 @@ export default appContextComponent({ draggable, PriorityList })
             <el-option label="Torznab" value="torznab" />
             <el-option label="Prowlarr" value="prowlarr" />
             <el-option label="Jackett" value="jackett" />
+            <el-option label="QMP4 七味" value="qmp4" />
           </el-select>
         </el-form-item>
       </div>
-      <el-form-item label="地址"><el-input v-model="searchSourceForm.base_url" placeholder="https://..." /></el-form-item>
+      <el-form-item label="地址"><el-input v-model="searchSourceForm.base_url" placeholder="https://www.qmp4.com" /></el-form-item>
       <el-form-item label="API Key / Token"><el-input v-model="searchSourceForm.api_key" show-password placeholder="可选" /></el-form-item>
       <el-form-item label="分类"><el-input v-model="searchSourceForm.categories" placeholder="可选，例如 5070,5080" /></el-form-item>
       <div class="form-row">

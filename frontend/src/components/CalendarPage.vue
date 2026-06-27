@@ -20,36 +20,50 @@ export default appContextComponent()
             <el-button @click="shiftCalendarWeek(1)">下一周</el-button>
           </el-button-group>
         </div>
-        <div class="week-calendar-grid">
-          <section v-for="day in weekDays" :key="day.key" class="week-day-column" :class="{ today: day.isToday }">
-            <header>
-              <div>
-                <strong>{{ day.label }}</strong>
-                <span>{{ day.dateLabel }}</span>
-              </div>
-              <em v-if="day.isToday">今天</em>
-            </header>
+        <div class="calendar-day-tabs">
+          <button
+            v-for="day in weekDays"
+            :key="day.key"
+            :class="{ active: selectedCalendarDay === day.key, today: day.isToday }"
+            @click="selectedCalendarDay = day.key"
+          >
+            <strong>{{ day.label }}</strong>
+            <span>{{ day.dateLabel }}</span>
+            <em v-if="day.isToday">今天</em>
+            <b v-if="day.items.length">{{ day.items.length }}</b>
+          </button>
+        </div>
+        <div class="calendar-selected-panel">
+          <div class="calendar-selected-head">
+            <div>
+              <strong>{{ selectedCalendarDayData.label }} · {{ selectedCalendarDayData.dateLabel }}</strong>
+              <span>{{ selectedCalendarItems.length ? `当天更新 ${selectedCalendarItems.length} 部` : '当天暂无更新' }}</span>
+            </div>
+            <el-tag v-if="selectedCalendarDayData.isToday" type="primary">今天</el-tag>
+          </div>
+          <div v-if="selectedCalendarItems.length" class="calendar-update-grid">
             <article
-              v-for="item in day.items"
-              :key="`${day.key}-${item.entry_id}-${item.episode_number}-${item.updated_at}`"
-              class="calendar-entry-card"
+              v-for="item in selectedCalendarItems"
+              :key="`${selectedCalendarDayData.key}-${item.entry_id}-${item.episode_number}-${item.updated_at}`"
+              class="calendar-update-card"
               @click="openEntry(item.entry_id, 'seasonal', 'anime')"
             >
-              <div class="calendar-entry-cover">
+              <div class="calendar-update-cover">
                 <img v-if="item.poster_url" :src="item.poster_url" />
                 <span v-else>{{ (item.work_display_title || item.entry_display_title || item.display_title || 'AN').slice(0, 2) }}</span>
               </div>
-              <div class="calendar-entry-meta">
+              <div class="calendar-update-meta">
                 <strong>{{ item.work_display_title || item.entry_display_title || item.display_title }}</strong>
                 <span>{{ item.entry_scope_label || item.entry_secondary_title || '-' }}</span>
-              </div>
-              <div class="calendar-entry-tags">
-                <el-tag size="small" type="primary">第 {{ item.episode_number || '?' }} 集</el-tag>
-                <el-tag size="small" :type="item.synced ? 'success' : 'warning'">{{ item.synced ? '已下载' : '已更新' }}</el-tag>
+                <div>
+                  <el-tag size="small" type="primary">第 {{ item.episode_number || '?' }} 集</el-tag>
+                  <el-tag size="small" type="warning">已更新</el-tag>
+                  <el-tag v-if="item.synced" size="small" type="success">可观看</el-tag>
+                </div>
               </div>
             </article>
-            <div v-if="!day.items.length" class="calendar-empty">无更新</div>
-          </section>
+          </div>
+          <el-empty v-else description="这一天没有更新" />
         </div>
       </section>
 

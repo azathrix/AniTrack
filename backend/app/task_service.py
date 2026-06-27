@@ -298,9 +298,64 @@ async def clear_completed_tasks() -> dict[str, int]:
         "info",
         f"已清除完成任务: total={total} runtime={runtime_count} operation={operation_count} download={download_count}",
     )
+    try:
+        from .operation_service import record_operation_event
+
+        record_operation_event("task", "任务记录已清理", f"共清理 {total} 条任务记录")
+    except Exception:
+        pass
     return {
         "total": total,
         "runtime": runtime_count,
         "operation": operation_count,
         "download": download_count,
     }
+
+
+async def bulk_task_action(action: str, task_type: str = "") -> dict[str, int]:
+    selected = str(task_type or "").strip()
+    rows = list_tasks(selected)
+    total = 0
+    changed = 0
+    action_key = str(action or "").strip()
+
+    async def apply(row: dict[str, Any]) -> bool:
+        task_id = str(row.get("id") or "")
+        status = str(row.get("status") or "")
+        if not task_id:
+            return False
+        if action_key == "cancel":
+            if status in {"completed", "failed", "cancelled", "skipped"}:
+                return False
+            return await cancel_task(task_id)
+        if action_key == "pause":
+            if status not in {"pending", "running", "waiting", "submitting", "remote_downloading", "remote_completed", "local_copying", "downloading"}:
+                return False
+            return await pause_task(task_id)
+        if action_key == "resume":
+            if status != "paused":
+                return False
+            return await resume_task(task_id)
+        if action_key == "retry":
+            if status not in {"failed", "cancelled", "waiting", "paused"}:
+                return False
+            return await retry_task(task_id)
+        return False
+
+    for row in rows:
+        total += 1
+        if await apply(row):
+            changed += 1
+    try:
+        from .operation_service import record_operation_event
+
+        labels = {
+            "cancel": "批量取消任务",
+            "pause": "批量暂停任务",
+            "resume": "批量继续任务",
+            "retry": "批量重试任务",
+        }
+        record_operation_event("task", labels.get(action_key, "批量任务操作"), f"处理 {changed}/{total} 条任务")
+    except Exception:
+        pass
+    return {"total": total, "changed": changed}

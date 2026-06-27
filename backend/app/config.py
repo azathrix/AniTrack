@@ -62,5 +62,8 @@ DEFAULT_SETTINGS = {
     "tv_source_priority": "WEB-DL,WebRip,HDTV",
     "tv_subtitle_priority": "简体,繁体,双语",
     "downloaders_json": "[]",
+    "auth_username": "admin",
+    "auth_password_hash": "",
+    "auth_secret": "",
 }
 

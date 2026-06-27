@@ -10,6 +10,7 @@ from fastapi.concurrency import run_in_threadpool
 from ..database import connect
 from ..db import log, now
 from ..media_service import build_entry_response
+from ..operation_service import record_operation_event
 from ..pipeline_orchestrator import start_pipeline
 from ..runtime_service import trigger_queue
 from ..schemas import LocalUploadImportPayload
@@ -48,6 +49,7 @@ async def save_upload_file(file: UploadFile, subdir: str = "") -> dict[str, Any]
     finally:
         await file.close()
     log("info", f"本地文件已上传到临时区: name={original_name} size={size}")
+    record_operation_event("upload", "本地文件已上传", f"{original_name} · {size} bytes")
     return {
         "status": "uploaded",
         "token": token,
@@ -57,9 +59,29 @@ async def save_upload_file(file: UploadFile, subdir: str = "") -> dict[str, Any]
     }
 
 
+def _safe_relative_parts(value: str) -> list[str]:
+    parts = []
+    for part in str(value or "").replace("\\", "/").split("/"):
+        safe = safe_upload_filename(part)
+        if safe and safe not in {".", ".."}:
+            parts.append(safe)
+    return parts
+
+
 @router.post("/api/uploads/local")
-async def api_upload_local_file(file: UploadFile = File(...), session_id: str = Form("")) -> dict[str, Any]:
-    return await save_upload_file(file, _safe_upload_session(session_id))
+async def api_upload_local_file(
+    file: UploadFile = File(...),
+    session_id: str = Form(""),
+    relative_path: str = Form(""),
+) -> dict[str, Any]:
+    safe_session = _safe_upload_session(session_id)
+    parts = _safe_relative_parts(relative_path)
+    subdir = safe_session
+    if len(parts) > 1:
+        subdir = "/".join([safe_session, *parts[:-1]]) if safe_session else "/".join(parts[:-1])
+    result = await save_upload_file(file, subdir)
+    result["relative_path"] = "/".join(parts) if parts else result["file_name"]
+    return result
 
 
 @router.post("/api/subtitles/upload")

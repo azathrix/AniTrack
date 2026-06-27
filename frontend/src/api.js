@@ -2,8 +2,29 @@ import axios from 'axios'
 
 const api = axios.create({
   baseURL: '/api',
-  timeout: 30000
+  timeout: 30000,
+  withCredentials: true
 })
+
+export async function getAuthMe() {
+  return (await api.get('/auth/me')).data
+}
+
+export async function login(payload) {
+  return (await api.post('/auth/login', payload)).data
+}
+
+export async function logout() {
+  return (await api.post('/auth/logout')).data
+}
+
+export async function updateAccount(payload) {
+  return (await api.put('/auth/account', payload)).data
+}
+
+export async function getRecentOperations(limit = 20) {
+  return (await api.get('/operations/recent', { params: { limit } })).data
+}
 
 export async function getDashboard() {
   return (await api.get('/dashboard')).data

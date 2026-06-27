@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
-from ..task_service import cancel_task, clear_completed_tasks, delete_task, list_tasks, pause_task, resume_task, retry_task, task_overview
+from ..task_service import bulk_task_action, cancel_task, clear_completed_tasks, delete_task, list_tasks, pause_task, resume_task, retry_task, task_overview
 
 
 router = APIRouter()
@@ -53,6 +53,35 @@ async def api_clear_completed_tasks() -> dict[str, Any]:
         "message": f"已清理 {result['total']} 条已完成任务",
         "detail": result,
     }
+
+
+@router.post("/api/tasks/clear")
+async def api_clear_tasks() -> dict[str, Any]:
+    return await api_clear_completed_tasks()
+
+
+@router.post("/api/tasks/cancel-all")
+async def api_cancel_all_tasks(type: str = Query("")) -> dict[str, Any]:
+    result = await bulk_task_action("cancel", type)
+    return {"status": "ok", "message": f"已取消 {result['changed']} 条任务", **result}
+
+
+@router.post("/api/tasks/pause-all")
+async def api_pause_all_tasks(type: str = Query("")) -> dict[str, Any]:
+    result = await bulk_task_action("pause", type)
+    return {"status": "ok", "message": f"已暂停 {result['changed']} 条任务", **result}
+
+
+@router.post("/api/tasks/resume-all")
+async def api_resume_all_tasks(type: str = Query("")) -> dict[str, Any]:
+    result = await bulk_task_action("resume", type)
+    return {"status": "ok", "message": f"已继续 {result['changed']} 条任务", **result}
+
+
+@router.post("/api/tasks/retry-failed")
+async def api_retry_failed_tasks(type: str = Query("")) -> dict[str, Any]:
+    result = await bulk_task_action("retry", type)
+    return {"status": "ok", "message": f"已重试 {result['changed']} 条任务", **result}
 
 
 @router.delete("/api/tasks/{task_id}")
