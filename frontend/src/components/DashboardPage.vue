@@ -1,7 +1,44 @@
 <script>
 import { appContextComponent } from '../composables/appContext'
 
-export default appContextComponent()
+export default appContextComponent({
+  computed: {
+    totalTasks() {
+      return (this.dashboard.tasks || []).length;
+    },
+    completedTasks() {
+      return (this.dashboard.tasks || []).filter(t => t.status === 'completed').length;
+    },
+    activeTasks() {
+      return (this.dashboard.tasks || []).filter(t => ['pending', 'running', 'waiting', 'submitting', 'downloading', 'remote_downloading', 'local_copying'].includes(t.status)).length;
+    },
+    failedTasks() {
+      return (this.dashboard.tasks || []).filter(t => t.status === 'failed' || t.status === 'cancelled').length;
+    },
+    completedPercent() {
+      return this.totalTasks ? Math.round((this.completedTasks / this.totalTasks) * 100) : 0;
+    },
+    activePercent() {
+      return this.totalTasks ? Math.round((this.activeTasks / this.totalTasks) * 100) : 0;
+    },
+    failedPercent() {
+      return this.totalTasks ? Math.round((this.failedTasks / this.totalTasks) * 100) : 0;
+    },
+    levelProgress() {
+      const watchTotal = this.watchableTotal || 1;
+      const localTotal = this.localAssetTotal || 0;
+      return Math.min(100, Math.round((localTotal / watchTotal) * 100));
+    },
+    levelTitle() {
+      const local = this.localAssetTotal || 0;
+      if (local > 100) return '媒体库覆盖优秀';
+      if (local > 50) return '媒体库稳定增长';
+      if (local > 20) return '本地缓存充足';
+      if (local > 5) return '本地缓存起步';
+      return '等待更多资源';
+    }
+  }
+})
 </script>
 
 <template>
@@ -11,29 +48,29 @@ export default appContextComponent()
     <div class="mochi-metrics-row">
       <div class="mochi-metric-pro-card pink">
         <div class="pro-info">
-          <span class="pro-label">本周放映时长</span>
-          <strong class="pro-value">14.5 <span class="pro-unit">小时</span></strong>
-          <p class="pro-sub">▲ 较上周增长 12.4% 🍓</p>
+          <span class="pro-label">已收录新番</span>
+          <strong class="pro-value">{{ seasonalCatalogTotal }} <span class="pro-unit">部</span></strong>
+          <p class="pro-sub">当前追番条目</p>
         </div>
-        <div class="pro-icon">⏱️</div>
+        <div class="pro-icon">新</div>
       </div>
 
       <div class="mochi-metric-pro-card blue">
         <div class="pro-info">
-          <span class="pro-label">契约同步率</span>
-          <strong class="pro-value">94.2 <span class="pro-unit">%</span></strong>
-          <p class="pro-sub">TMDB 数据库对接良好 🔮</p>
+          <span class="pro-label">就绪可观看剧集</span>
+          <strong class="pro-value">{{ watchableTotal }} <span class="pro-unit">集</span></strong>
+          <p class="pro-sub">本地已确认可播放</p>
         </div>
-        <div class="pro-icon">🔮</div>
+        <div class="pro-icon">播</div>
       </div>
 
       <div class="mochi-metric-pro-card purple">
         <div class="pro-info">
-          <span class="pro-label">本季追番全达成</span>
-          <strong class="pro-value">{{ seasonalCatalogTotal }} / {{ seasonalCatalogTotal }} <span class="pro-unit">部</span></strong>
-          <p class="pro-sub">零鸽番，全卡片已点亮 🏆</p>
+          <span class="pro-label">本地资源记录</span>
+          <strong class="pro-value">{{ localAssetTotal }} <span class="pro-unit">个</span></strong>
+          <p class="pro-sub">已整理到媒体目录</p>
         </div>
-        <div class="pro-icon">🏆</div>
+        <div class="pro-icon">库</div>
       </div>
     </div>
 
@@ -42,8 +79,8 @@ export default appContextComponent()
       <!-- Donut preference chart -->
       <div class="mochi-chart-card">
         <div class="card-head-simple">
-          <h4>📊 次元题材观影偏好占比</h4>
-          <span class="tag-pill text-pink">2026年最新偏好</span>
+          <h4>任务状态分布</h4>
+          <span class="tag-pill text-pink">实时运行态</span>
         </div>
         
         <div class="donut-chart-wrapper">
@@ -51,32 +88,34 @@ export default appContextComponent()
           <div class="donut-svg-box">
             <svg class="donut-svg" viewBox="0 0 36 36">
               <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#FFF5F6" stroke-width="3" />
-              <!-- Magic/Fantasy 40% (Pink) -->
-              <path class="circle-segment pink" stroke-dasharray="40, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831" fill="none" stroke="var(--ani-pink)" stroke-width="3.5" stroke-linecap="round" />
-              <!-- Music/Heal 35% (Blue) -->
-              <path class="circle-segment blue" stroke-dasharray="35, 100" stroke-dashoffset="-40" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831" fill="none" stroke="var(--ani-blue)" stroke-width="3.5" stroke-linecap="round" />
-              <!-- Action/Shounen 25% (Purple) -->
-              <path class="circle-segment purple" stroke-dasharray="25, 100" stroke-dashoffset="-75" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831" fill="none" stroke="var(--ani-purple)" stroke-width="3.5" stroke-linecap="round" />
+              <!-- Completed slice -->
+              <path class="circle-segment pink" :stroke-dasharray="`${completedPercent}, 100`" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831" fill="none" stroke="var(--ani-pink)" stroke-width="3.5" stroke-linecap="round" />
+              <!-- Active slice -->
+              <path class="circle-segment blue" :stroke-dasharray="`${activePercent}, 100`" :stroke-dashoffset="`-${completedPercent}`" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831" fill="none" stroke="var(--ani-blue)" stroke-width="3.5" stroke-linecap="round" />
+              <!-- Failed slice -->
+              <path class="circle-segment purple" :stroke-dasharray="`${failedPercent}, 100`" :stroke-dashoffset="`-${completedPercent + activePercent}`" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831" fill="none" stroke="var(--ani-purple)" stroke-width="3.5" stroke-linecap="round" />
             </svg>
             <div class="donut-center-text">
-              <span class="center-label">最爱题材</span>
-              <p class="center-value">魔法/奇幻</p>
+              <span class="center-label">队列状态</span>
+              <p class="center-value" v-if="completedPercent > 50">运行正常</p>
+              <p class="center-value" v-else-if="failedPercent > 30">需要处理</p>
+              <p class="center-value" v-else>等待任务</p>
             </div>
           </div>
 
           <!-- Legend list -->
           <div class="donut-legend">
             <div class="legend-row">
-              <span class="legend-item"><span class="legend-dot pink"></span> ✨ 魔法奇幻 (40%)</span>
-              <span class="legend-count">{{ Math.ceil(seasonalCatalogTotal * 0.4) }} 部</span>
+              <span class="legend-item"><span class="legend-dot pink"></span> 已完成 ({{ completedPercent }}%)</span>
+              <span class="legend-count">{{ completedTasks }} 项</span>
             </div>
             <div class="legend-row">
-              <span class="legend-item"><span class="legend-dot blue"></span> 🎵 音乐治愈 (35%)</span>
-              <span class="legend-count">{{ Math.ceil(seasonalCatalogTotal * 0.35) }} 部</span>
+              <span class="legend-item"><span class="legend-dot blue"></span> 活动中 ({{ activePercent }}%)</span>
+              <span class="legend-count">{{ activeTasks }} 项</span>
             </div>
             <div class="legend-row">
-              <span class="legend-item"><span class="legend-dot purple"></span> 🔥 热血少年 (25%)</span>
-              <span class="legend-count">{{ Math.ceil(seasonalCatalogTotal * 0.25) }} 部</span>
+              <span class="legend-item"><span class="legend-dot purple"></span> 异常项 ({{ failedPercent }}%)</span>
+              <span class="legend-count">{{ failedTasks }} 项</span>
             </div>
           </div>
         </div>
@@ -85,23 +124,23 @@ export default appContextComponent()
       <!-- Level Up Card -->
       <div class="mochi-level-card">
         <div class="card-head-simple">
-          <h4>🌸 宅能量觉醒等级</h4>
-          <p class="card-subtitle-small">累积追番进度和评分以充能</p>
+          <h4>本地资源覆盖</h4>
+          <p class="card-subtitle-small">本地已缓存比例 (物理/就绪)</p>
         </div>
         
         <div class="level-showcase">
-          <span class="level-emoji">🎒</span>
-          <h3 class="level-title">LV.4 二次元见习神官</h3>
-          <p class="level-desc">距离下一等级还需 420 经验值</p>
+          <span class="level-emoji">AT</span>
+          <h3 class="level-title">{{ levelTitle }}</h3>
+          <p class="level-desc">本地资源与可观看条目的匹配情况</p>
         </div>
 
         <div class="level-progress-section">
           <div class="progress-labels">
-            <span>觉醒度</span>
-            <span>65%</span>
+            <span>覆盖率</span>
+            <span>{{ levelProgress }}%</span>
           </div>
           <div class="level-progress-bar">
-            <div class="progress-fill" style="width: 65%"></div>
+            <div class="progress-fill" :style="`width: ${levelProgress}%`"></div>
           </div>
         </div>
       </div>
@@ -114,7 +153,7 @@ export default appContextComponent()
       <div class="mochi-tasks-panel">
         <div class="panel-header-row">
           <div class="header-titles">
-            <h3>📂 异次元调度任务列表</h3>
+            <h3>任务列表</h3>
             <p>管理自动同步、元数据抓取和缓存流水线</p>
           </div>
           <div class="header-taglines">
@@ -154,7 +193,7 @@ export default appContextComponent()
               </div>
               <span class="type-badge">{{ row.type_name }}</span>
             </div>
-            
+
             <div class="task-block-progress">
               <div class="progress-bar-wrapper">
                 <el-progress
@@ -203,63 +242,43 @@ export default appContextComponent()
         <div class="mini-radar-widget">
           <div class="radar-header">
             <div class="radar-titles">
-              <h4>📡 次元雷达扫描</h4>
+            <h4>RSS 扫描</h4>
               <span class="radar-status-dot" :class="dashboard.scanner_status?.status || 'idle'">
                 <span class="pulse-ring" v-if="dashboard.scanner_status?.status === 'running'"></span>
               </span>
             </div>
-            <el-button type="primary" size="small" class="radar-mini-btn" @click="runAction('/scanner/run')">
-              ⚡ 立即共鸣
+            <el-button type="primary" size="small" class="radar-mini-btn" @click="runAction('/scan')">
+              立即扫描
             </el-button>
           </div>
           <p class="radar-mini-desc">
-            状态: <b class="highlight">{{ dashboard.scanner_status?.status === 'running' ? '雷达扫描中...' : '空闲待机' }}</b>
+            状态: <b class="highlight">{{ dashboard.scanner_status?.status === 'running' ? '扫描中...' : '空闲' }}</b>
             · 时间: <span class="dim-label">{{ dashboard.scanner_status?.updated_at || '尚未扫描' }}</span>
           </p>
         </div>
 
-        <!-- Live Log Timeline Stream (Dotted Timeline Logs) -->
+        <!-- Live Log Timeline Stream (Real dynamic dotted Timeline Logs) -->
         <div class="live-timeline-box">
           <div class="timeline-title-row">
-            <h4>📅 次元追番实况日志</h4>
-            <span class="live-badge">实时更新</span>
+            <h4>最近任务</h4>
+            <span class="live-badge">实时</span>
           </div>
 
           <div class="timeline-stream">
             <div class="stream-line"></div>
             
-            <div class="stream-item pink">
+            <div v-for="t in (dashboard.tasks || []).slice(0, 3)" :key="t.id" class="stream-item" :class="t.status === 'failed' ? 'pink' : (t.status === 'completed' ? 'blue' : 'purple')">
               <span class="stream-dot"></span>
               <div class="stream-content">
                 <div class="content-meta">
-                  <strong>《葬送的芙莉莲》播放进度达到 21/28 话</strong>
-                  <span class="time">刚刚</span>
+                  <strong>{{ t.title }}</strong>
+                  <span class="time">{{ t.updated_at || '-' }}</span>
                 </div>
-                <p class="comment">"完美击中泪点，芙莉莲的心路历程刻画绝了！"</p>
+                <p class="comment">类型: {{ t.type_name }} · 进度: {{ Number(t.progress || 0) }}% · 状态: {{ t.status_text || t.status }}</p>
               </div>
             </div>
 
-            <div class="stream-item blue">
-              <span class="stream-dot"></span>
-              <div class="stream-content">
-                <div class="content-meta">
-                  <strong>同步向导：从 Bilibili 成功导入了《我推的孩子》</strong>
-                  <span class="time">1小时前</span>
-                </div>
-                <p class="comment">契约导入源: bilibili 个人UID [22881223]</p>
-              </div>
-            </div>
-
-            <div class="stream-item purple">
-              <span class="stream-dot"></span>
-              <div class="stream-content">
-                <div class="content-meta">
-                  <strong>对神作《孤独摇滚！》留下了 ⭐⭐⭐⭐⭐ 五星好评</strong>
-                  <span class="time">昨天</span>
-                </div>
-                <p class="comment">"Bocchi the Rock! 真正的神级社恐写照，太好笑了！"</p>
-              </div>
-            </div>
+            <el-empty v-if="!(dashboard.tasks || []).length" description="暂无实况日志" :image-size="40" />
           </div>
         </div>
 

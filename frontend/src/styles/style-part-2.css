@@ -998,59 +998,6 @@
   flex: 1 1 auto;
 }
 
-.filter-board {
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 2px solid var(--ani-line);
-  border-radius: 18px;
-  box-shadow: 0 8px 24px rgba(255, 142, 187, 0.04);
-  display: grid;
-  gap: 8px;
-  padding: 12px;
-}
-
-.filter-row {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  min-height: 30px;
-}
-
-.filter-row > span {
-  color: var(--ani-ink);
-  flex: 0 0 52px;
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.filter-row button {
-  background: #fff;
-  border: 2px solid var(--ani-line);
-  border-radius: 999px;
-  color: #645a85;
-  cursor: pointer;
-  font-size: 13px;
-  line-height: 1;
-  padding: 7px 14px;
-  transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.25);
-  font-weight: 700;
-}
-
-.filter-row button:hover {
-  transform: translateY(-2px);
-  border-color: var(--ani-pink);
-  color: var(--ani-pink-hover);
-}
-
-.filter-row button.active {
-  background: linear-gradient(135deg, var(--ani-blue), var(--ani-pink));
-  border-color: transparent;
-  color: #fff;
-  box-shadow: 0 4px 12px rgba(255, 142, 187, 0.2);
-}
-
 .anime-grid {
   display: grid;
   gap: 14px;

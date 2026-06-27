@@ -212,3 +212,432 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Personal-center Mochi layout refinements */
+.main {
+  margin-left: 296px;
+  margin-right: auto;
+  max-width: 1340px;
+  width: min(1340px, calc(100vw - 336px));
+}
+
+.sidebar {
+  gap: 14px;
+  overflow-y: auto;
+}
+
+.brand {
+  margin-bottom: 2px;
+}
+
+.sidebar-profile-card {
+  background: linear-gradient(180deg, #fff 0%, #fff7fb 100%);
+  border: 1px solid var(--ani-line);
+  border-radius: 22px;
+  box-shadow: 0 10px 24px rgba(255, 141, 161, 0.08);
+  display: grid;
+  gap: 9px;
+  margin-bottom: 4px;
+  overflow: hidden;
+  padding: 14px;
+  position: relative;
+  text-align: center;
+}
+
+.sidebar-profile-card::after {
+  background: rgba(255, 141, 161, 0.12);
+  border-radius: 999px;
+  bottom: -34px;
+  content: "";
+  height: 78px;
+  position: absolute;
+  right: -28px;
+  width: 78px;
+}
+
+.profile-avatar {
+  align-items: center;
+  border: 1px solid var(--ani-line);
+  border-radius: 18px;
+  box-shadow: 0 8px 18px rgba(255, 141, 161, 0.12);
+  display: inline-flex;
+  height: 58px;
+  justify-content: center;
+  justify-self: center;
+  position: relative;
+  width: 58px;
+  z-index: 1;
+}
+
+.profile-avatar img {
+  height: 50px;
+  object-fit: contain;
+  width: 50px;
+}
+
+.profile-avatar span {
+  background: #6ee7b7;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  bottom: 4px;
+  height: 11px;
+  position: absolute;
+  right: 4px;
+  width: 11px;
+}
+
+.sidebar-profile-card > strong {
+  color: var(--ani-dark);
+  font-size: 15px;
+  font-weight: 900;
+  z-index: 1;
+}
+
+.sidebar-profile-card > p {
+  color: var(--ani-dark-light);
+  font-size: 11px;
+  font-weight: 700;
+  margin: -3px 0 0;
+  z-index: 1;
+}
+
+.profile-stats {
+  border-top: 1px dashed var(--ani-line);
+  display: grid;
+  gap: 4px;
+  grid-template-columns: repeat(3, 1fr);
+  padding-top: 10px;
+  z-index: 1;
+}
+
+.profile-stats b {
+  color: var(--ani-pink-deep);
+  display: block;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.profile-stats span {
+  color: var(--ani-dark-light);
+  display: block;
+  font-size: 10px;
+  font-weight: 800;
+  margin-top: 4px;
+}
+
+.profile-scan-button {
+  background: linear-gradient(135deg, var(--ani-pink), var(--ani-purple));
+  border: 0;
+  border-radius: 14px;
+  color: #fff;
+  cursor: pointer;
+  font-weight: 900;
+  padding: 10px 12px;
+  transition: transform .22s ease, box-shadow .22s ease, opacity .22s ease;
+  z-index: 1;
+}
+
+.profile-scan-button:hover:not(:disabled) {
+  box-shadow: 0 10px 20px rgba(255, 141, 161, 0.18);
+  transform: translateY(-2px);
+}
+
+.profile-scan-button:disabled {
+  cursor: wait;
+  opacity: .65;
+}
+
+.catalog-card-grid {
+  grid-template-columns: repeat(auto-fill, minmax(206px, 1fr)) !important;
+  gap: 16px !important;
+}
+
+.anime-card.catalog-card {
+  min-height: 342px !important;
+  padding: 12px !important;
+}
+
+.anime-card.catalog-card .cover {
+  height: auto !important;
+  min-height: 236px;
+}
+
+.anime-body h3 {
+  color: var(--ani-dark) !important;
+  font-size: 14px !important;
+  line-height: 1.35 !important;
+  max-height: 38px !important;
+}
+
+.anime-body p {
+  color: var(--ani-dark-light) !important;
+  font-size: 11px !important;
+}
+
+.tagline {
+  align-items: center;
+  gap: 5px !important;
+}
+
+.tagline .el-tag {
+  border-radius: 999px;
+  font-weight: 800;
+}
+
+.anime-grid .el-empty,
+.discovery-grid .el-empty {
+  align-items: center;
+  background: #fff;
+  border: 1px dashed var(--ani-line);
+  border-radius: 22px;
+  display: flex;
+  grid-column: 1 / -1;
+  justify-content: center;
+  min-height: 320px;
+}
+
+.week-calendar-grid {
+  padding-top: 4px;
+}
+
+.week-day-column.today::before {
+  display: none;
+}
+
+.week-day-column header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.week-day-column header em {
+  background: linear-gradient(135deg, var(--ani-pink), var(--ani-purple));
+  border-radius: 999px;
+  color: #fff;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+  padding: 4px 9px;
+}
+
+.mochi-settings-page .el-card {
+  border-radius: 24px;
+}
+
+.settings-card-head {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.settings-card-head strong {
+  color: var(--ani-dark);
+  display: block;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.settings-card-head span {
+  color: var(--ani-dark-light);
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  margin-top: 3px;
+}
+
+.settings-workshop-tabs {
+  min-height: 620px;
+}
+
+.settings-workshop-tabs > .el-tabs__header {
+  min-width: 150px;
+}
+
+.settings-workshop-tabs .el-tabs__item {
+  border-radius: 12px;
+  font-weight: 800;
+  justify-content: flex-start;
+  margin-bottom: 4px;
+  padding: 0 16px !important;
+}
+
+.settings-workshop-tabs .el-tabs__item.is-active {
+  background: var(--ani-pink-light);
+}
+
+.settings-panel-grid,
+.summary-list {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-summary-card,
+.summary-row {
+  background: #fff;
+  border: 1px solid var(--ani-line);
+  border-radius: 18px;
+  box-shadow: 0 8px 18px rgba(255, 141, 161, 0.05);
+  padding: 14px;
+}
+
+.settings-summary-head h3,
+.group-header h3 {
+  color: var(--ani-dark);
+  font-size: 15px;
+  font-weight: 900;
+  margin: 0;
+}
+
+.settings-summary-head p,
+.group-header p {
+  color: var(--ani-dark-light);
+  font-size: 12px;
+  font-weight: 700;
+  margin: 4px 0 0;
+}
+
+.settings-switch-line {
+  align-items: flex-start;
+  display: flex;
+  gap: 12px;
+}
+
+.settings-switch-line span {
+  display: grid;
+  gap: 3px;
+}
+
+.settings-switch-line strong {
+  color: var(--ani-dark);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.settings-switch-line em {
+  color: var(--ani-dark-light);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.dialog-switch {
+  margin-top: 8px;
+}
+
+.nfo-inline-options {
+  border-top: 1px dashed var(--ani-line);
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+.summary-row {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto;
+  transition: border-color .22s ease, box-shadow .22s ease, transform .22s ease;
+}
+
+.summary-row:hover {
+  border-color: var(--ani-pink);
+  box-shadow: 0 10px 24px rgba(255, 141, 161, 0.09);
+  transform: translateY(-1px);
+}
+
+.simple-summary-row {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.summary-row.disabled {
+  opacity: .65;
+}
+
+.summary-main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.summary-main strong {
+  color: var(--ani-dark);
+  font-size: 14px;
+  font-weight: 900;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.summary-main span,
+.summary-main small {
+  color: var(--ani-dark-light);
+  font-size: 12px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.summary-rank {
+  align-items: center;
+  background: var(--ani-pink-light);
+  border-radius: 999px;
+  color: var(--ani-pink-deep);
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 900;
+  height: 26px;
+  justify-content: center;
+  width: 26px;
+}
+
+.summary-actions,
+.settings-toolbar-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.settings-section-toolbar {
+  margin-bottom: 14px;
+}
+
+.compact-maintenance {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.compact-maintenance .maintenance-group-card {
+  min-height: auto;
+}
+
+.config-dialog .el-dialog {
+  border-radius: 24px;
+}
+
+.config-dialog .el-dialog__body {
+  padding-top: 12px;
+}
+
+@media (max-width: 1100px) {
+  .main {
+    margin-left: 0;
+    margin-right: 0;
+    width: auto;
+  }
+
+  .compact-maintenance {
+    grid-template-columns: 1fr;
+  }
+
+  .summary-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .summary-rank,
+  .summary-row > .el-tag,
+  .summary-actions {
+    grid-column: 2;
+  }
+}

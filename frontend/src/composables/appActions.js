@@ -1158,30 +1158,63 @@ export function createAppActions(app, deps) {
     ElMessage.success('已重置动画自动选集规则，保存设置后生效')
   }
 
-  function addDownloader() {
+  function defaultDownloader(overrides = {}) {
+    return {
+      id: `downloader-${Date.now()}`,
+      name: 'PikPak',
+      type: 'pikpak_rclone',
+      remote_dir: '/Temp',
+      rclone_remote: 'pikpak',
+      rclone_config_path: '/data/rclone/rclone.conf',
+      rclone_command: 'rclone',
+      rpc_url: '',
+      token: '',
+      auth_mode: 'token',
+      username: '',
+      password: '',
+      access_token: '',
+      refresh_token: '',
+      proxy: '',
+      enabled: true,
+      max_attempts: 3,
+      ...overrides,
+    }
+  }
+
+  function openDownloaderDialog(index = -1) {
     normalizeSettingsShape()
-    app.settings.downloaders = [
-      ...app.settings.downloaders,
-      {
-        id: `downloader-${Date.now()}`,
-        name: 'PikPak',
-        type: 'pikpak_rclone',
-        remote_dir: '/Temp',
-        rclone_remote: 'pikpak',
-        rclone_config_path: '/data/rclone/rclone.conf',
-        rclone_command: 'rclone',
-        rpc_url: '',
-        token: '',
-        auth_mode: 'token',
-        username: '',
-        password: '',
-        access_token: '',
-        refresh_token: '',
-        proxy: '',
-        enabled: true,
-        max_attempts: 3,
-      },
-    ]
+    const targetIndex = Number(index)
+    app.downloaderEditingIndex = Number.isInteger(targetIndex) ? targetIndex : -1
+    const current = app.downloaderEditingIndex >= 0 ? app.settings.downloaders[app.downloaderEditingIndex] : null
+    Object.assign(app.downloaderForm, defaultDownloader(current || {}))
+    app.downloaderDialogOpen = true
+  }
+
+  function saveDownloaderDialog() {
+    normalizeSettingsShape()
+    const payload = defaultDownloader({
+      ...app.downloaderForm,
+      id: app.downloaderForm.id || `downloader-${Date.now()}`,
+      max_attempts: Math.max(1, Number(app.downloaderForm.max_attempts || 3)),
+      enabled: Boolean(app.downloaderForm.enabled),
+    })
+    if (!String(payload.name || '').trim()) {
+      ElMessage.warning('请填写下载器名称')
+      return
+    }
+    if (app.downloaderEditingIndex >= 0) {
+      app.settings.downloaders = app.settings.downloaders.map((item, index) => index === app.downloaderEditingIndex ? payload : item)
+      ElMessage.success('下载器已更新，保存设置后生效')
+    } else {
+      app.settings.downloaders = [...app.settings.downloaders, payload]
+      ElMessage.success('下载器已添加，保存设置后生效')
+    }
+    app.downloaderDialogOpen = false
+    app.downloaderEditingIndex = -1
+  }
+
+  function addDownloader() {
+    openDownloaderDialog(-1)
   }
 
   function removeDownloader(index) {
@@ -1242,9 +1275,9 @@ export function createAppActions(app, deps) {
     deleteCurrentEntry, deleteDownloadTask, deleteEpisodeResource, deleteRssSubscription, downloadCurrentEntryResources, downloadEpisodeResource,
     editRssSubscription, entryEditPayload, exportLogs, fetchEntryMetadata, loadRssSubscriptions, normalizeSettingsShape, openEntry,
     openEntryEditDialog, openEpisodeResourceEditor, openMediaWizard, openMetadataSearch, openProcessorSettings, openQueueEntry, openRssDialog, openServerFileBrowser,
-    openScheduledSettings, migrateEpisodeModel, organizeAllLocalFiles, organizeCurrentEntryLocalFiles, pauseGenericTask, refreshAllMetadata, refreshAllLocalStatus, refreshCurrentEntryLocalStatus, refreshEntryMetadata, repairLocalPaths, resumeGenericTask, retryDownloadTask, refreshEpisodeResource, removeDownloader, removeMediaWizardResourceItem,
+    openScheduledSettings, openDownloaderDialog, migrateEpisodeModel, organizeAllLocalFiles, organizeCurrentEntryLocalFiles, pauseGenericTask, refreshAllMetadata, refreshAllLocalStatus, refreshCurrentEntryLocalStatus, refreshEntryMetadata, repairLocalPaths, resumeGenericTask, retryDownloadTask, refreshEpisodeResource, removeDownloader, removeMediaWizardResourceItem,
     removeMediaWizardSubtitleItem, resetRssForm, resetSelectionRules, runAction, runMetadataSearch, saveAllSettings, saveBatchSubtitles,
-    saveEntryEditForm, saveEpisodeResource, saveProcessorSettings, saveRssSubscription, saveScheduledJob, searchWizardMetadata, selectServerFile, setCurrentEntryFollowing,
+    saveDownloaderDialog, saveEntryEditForm, saveEpisodeResource, saveProcessorSettings, saveRssSubscription, saveScheduledJob, searchWizardMetadata, selectServerFile, setCurrentEntryFollowing,
     confirmMetadataMatch, selectedMetadataCandidate, selectMetadataCandidate, skipMetadataProvider, toggleEntryResourceRow,
     startMetadataProgress, stopMetadataProgress, syncScheduledJobForm, triggerSchedule, uploadMediaWizardFiles,
   }

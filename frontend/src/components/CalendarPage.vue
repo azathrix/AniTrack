@@ -23,8 +23,11 @@ export default appContextComponent()
         <div class="week-calendar-grid">
           <section v-for="day in weekDays" :key="day.key" class="week-day-column" :class="{ today: day.isToday }">
             <header>
-              <strong>{{ day.label }}</strong>
-              <span>{{ day.dateLabel }}</span>
+              <div>
+                <strong>{{ day.label }}</strong>
+                <span>{{ day.dateLabel }}</span>
+              </div>
+              <em v-if="day.isToday">今天</em>
             </header>
             <article
               v-for="item in day.items"

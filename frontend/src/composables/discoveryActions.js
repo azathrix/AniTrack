@@ -74,6 +74,28 @@ export function createDiscoveryActions(app, deps) {
     })
   }
 
+  function openSearchSourceDialog(itemOrId = null, kind = 'mikan') {
+    const id = typeof itemOrId === 'object' ? Number(itemOrId?.id || 0) : Number(itemOrId || 0)
+    const item = typeof itemOrId === 'object'
+      ? itemOrId
+      : (app.searchSources || []).find(row => Number(row.id || 0) === id)
+    if (item) {
+      editSearchSource(item)
+    } else {
+      resetSearchSourceForm()
+      app.searchSourceForm.kind = kind
+      if (kind === 'prowlarr') app.searchSourceForm.name = 'Prowlarr'
+      if (kind === 'jackett') app.searchSourceForm.name = 'Jackett'
+      if (kind === 'torznab') app.searchSourceForm.name = 'Torznab'
+      if (kind === 'rss') app.searchSourceForm.name = 'RSS'
+    }
+    app.searchSourceDialogOpen = true
+  }
+
+  function openTorznabDialog() {
+    openSearchSourceDialog(null, 'torznab')
+  }
+
   async function saveSearchSource() {
     const payload = { ...app.searchSourceForm }
     if (!payload.name.trim()) {
@@ -88,6 +110,7 @@ export function createDiscoveryActions(app, deps) {
         await postAction('/search-sources', payload)
         ElMessage.success('搜索源已添加')
       }
+      app.searchSourceDialogOpen = false
       resetSearchSourceForm()
       await loadSearchSources()
     } catch (error) {
@@ -100,6 +123,27 @@ export function createDiscoveryActions(app, deps) {
       await deleteAction(`/search-sources/${id}`)
       ElMessage.success('搜索源已删除')
       if (Number(app.searchSourceEditingId || 0) === Number(id || 0)) resetSearchSourceForm()
+      await loadSearchSources()
+    } catch (error) {
+      ElMessage.error(apiErrorMessage(error))
+    }
+  }
+
+  async function toggleSearchSource(item) {
+    if (!item?.id) return
+    try {
+      await putAction(`/search-sources/${item.id}`, {
+        name: item.name || '',
+        kind: item.kind || 'mikan',
+        base_url: item.base_url || '',
+        api_key: item.api_key || '',
+        categories: item.categories || '',
+        proxy: '',
+        timeout_seconds: Number(item.timeout_seconds || 20),
+        rate_limit_seconds: Number(item.rate_limit_seconds || 0),
+        priority: Number(item.priority || 0),
+        enabled: !Number(item.enabled || 0),
+      })
       await loadSearchSources()
     } catch (error) {
       ElMessage.error(apiErrorMessage(error))
@@ -220,11 +264,14 @@ export function createDiscoveryActions(app, deps) {
     deleteSearchSource,
     editSearchSource,
     loadSearchSources,
+    openSearchSourceDialog,
+    openTorznabDialog,
     openDiscoveryCollectDraft,
     resetSearchSourceForm,
     runDiscoverySearch,
     saveSearchSource,
     searchBackfillForCurrentEntry,
     testSearchSource,
+    toggleSearchSource,
   }
 }

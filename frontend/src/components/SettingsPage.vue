@@ -7,370 +7,312 @@ export default appContextComponent({ draggable, PriorityList })
 </script>
 
 <template>
-      <section v-if="view === 'settings'">
-        <el-card>
-          <template #header>全局设置</template>
-          <el-form :model="settings" label-position="top" class="settings-form">
-            <el-tabs>
-              <el-tab-pane label="基础">
-                <el-alert
-                  type="info"
-                  show-icon
-                  :closable="false"
-                  title="RSS 订阅入口在新番页；这里保留代理、补全和命名规则等全局行为。"
-                  class="settings-alert"
-                />
-                <div class="settings-card-container">
-                  <div class="settings-card-item">
-                    <div class="card-item-header">
-                      <h3>🌐 RSS 网络传送代理</h3>
-                      <p>为雷达扫描与订阅推送定制网络代理主机，高效穿透异次元阻碍</p>
-                    </div>
-                    <el-form-item label="RSS 代理主机配置">
-                      <el-input v-model="settings.rss_proxy" placeholder="例: http://NAS_IP:20171 (留空则直连)" class="custom-rounded-input" />
+  <section v-if="view === 'settings'" class="settings-page mochi-settings-page">
+    <el-card class="settings-workshop-card">
+      <template #header>
+        <div class="settings-card-head">
+          <div>
+            <strong>设置中心</strong>
+            <span>全局行为、下载器、搜索源和维护操作</span>
+          </div>
+          <el-button type="primary" :loading="savingSettings" @click="saveAllSettings">保存设置</el-button>
+        </div>
+      </template>
+
+      <el-form :model="settings" label-position="top" class="settings-form">
+        <el-tabs tab-position="left" class="settings-workshop-tabs">
+          <el-tab-pane label="基础">
+            <div class="settings-panel-grid">
+              <div class="settings-summary-card">
+                <div class="settings-summary-head">
+                  <h3>全局代理</h3>
+                  <p>所有外部请求默认复用这里的代理；留空则直连。</p>
+                </div>
+                <el-form-item label="代理地址">
+                  <el-input v-model="settings.rss_proxy" placeholder="例: http://NAS_IP:20171" />
+                </el-form-item>
+              </div>
+
+              <div class="settings-summary-card">
+                <div class="settings-summary-head">
+                  <h3>TMDB Token</h3>
+                  <p>用于电影、电视剧和部分动画的元数据搜索。</p>
+                </div>
+                <el-form-item label="API Read Access Token">
+                  <el-input v-model="settings.tmdb_token" show-password placeholder="请输入 TMDB token" />
+                </el-form-item>
+              </div>
+
+              <div class="settings-summary-card">
+                <label class="settings-switch-line">
+                  <el-switch v-model="settings.backfill_current_season" />
+                  <span><strong>补全本季</strong><em>RSS 扫描新番后尝试补齐当前季缺失集数。</em></span>
+                </label>
+              </div>
+
+              <div class="settings-summary-card">
+                <label class="settings-switch-line">
+                  <el-switch v-model="settings.auto_generate_nfo" />
+                  <span><strong>生成 NFO 元数据</strong><em>整理或刷新元数据后校验 Jellyfin 可读的 NFO。</em></span>
+                </label>
+                <transition name="fade-slide">
+                  <div v-if="settings.auto_generate_nfo" class="nfo-inline-options">
+                    <el-form-item label="写入模式">
+                      <el-select v-model="settings.nfo_write_mode">
+                        <el-option label="空缺补齐" value="fill_missing" />
+                        <el-option label="覆盖更新" value="overwrite" />
+                      </el-select>
                     </el-form-item>
                   </div>
+                </transition>
+              </div>
+            </div>
+          </el-tab-pane>
 
-                  <div class="settings-card-item">
-                    <div class="card-item-header">
-                      <h3>🔑 TMDB 异次元密匙 (Token)</h3>
-                      <p>连结影视巨量网络数据库，用于番剧、电影及电视剧的名称智能刮削与高清封面同步</p>
-                    </div>
-                    <el-form-item label="TMDB 开放平台安全 Token">
-                      <el-input v-model="settings.tmdb_token" placeholder="请输入您的 TMDB 访问令牌 (API Read Access Token)..." show-password class="custom-rounded-input" />
-                    </el-form-item>
-                  </div>
-
-                  <div class="settings-card-item">
-                    <div class="card-item-header">
-                      <h3>🍓 新季番剧自动化补全</h3>
-                      <p>当雷达侦测到有新发布时，智能往回追溯扫描，补全当前季度由于网络、发布延迟缺失的集数</p>
-                    </div>
-                    <div class="switch-row-item">
-                      <span class="switch-desc-label">自动激活并补全本季缺失剧集</span>
-                      <el-switch v-model="settings.backfill_current_season" />
-                    </div>
-                  </div>
+          <el-tab-pane label="自动选择">
+            <el-tabs tab-position="left" class="nested-settings-tabs">
+              <el-tab-pane label="动画">
+                <div class="settings-section-toolbar">
+                  <div><strong>动画自动选集</strong><span>用于新番和番剧的资源优先级</span></div>
+                  <el-button plain @click="resetSelectionRules('anime')">重置动画规则</el-button>
+                </div>
+                <div class="priority-layout">
+                  <PriorityList title="字幕组优先级" v-model="settings.subtitle_priority" placeholder="添加字幕组" />
+                  <PriorityList title="分辨率优先级" v-model="settings.resolution_priority" placeholder="添加分辨率" />
+                  <PriorityList title="主字幕语言优先级" v-model="settings.language_priority" placeholder="添加主字幕语言" />
+                  <PriorityList title="副字幕语言优先级" v-model="settings.secondary_language_priority" placeholder="添加副字幕语言" />
                 </div>
               </el-tab-pane>
-              <el-tab-pane label="自动选择">
-                <el-tabs tab-position="left" class="nested-settings-tabs">
-                  <el-tab-pane label="动画">
-                    <div class="settings-section-toolbar">
-                      <div>
-                        <strong>动画自动选集</strong>
-                        <span>用于新番和番剧的资源优先级</span>
-                      </div>
-                      <el-button plain @click="resetSelectionRules('anime')">重置动画规则</el-button>
-                    </div>
-                    <div class="priority-layout">
-                      <PriorityList title="字幕组优先级" v-model="settings.subtitle_priority" placeholder="添加字幕组" />
-                      <PriorityList title="分辨率优先级" v-model="settings.resolution_priority" placeholder="添加分辨率" />
-                      <PriorityList title="主字幕语言优先级" v-model="settings.language_priority" placeholder="添加主字幕语言" />
-                      <PriorityList title="副字幕语言优先级" v-model="settings.secondary_language_priority" placeholder="添加副字幕语言" />
-                    </div>
-                  </el-tab-pane>
-                  <el-tab-pane label="电影">
-                    <div class="settings-section-toolbar">
-                      <div>
-                        <strong>电影自动选集</strong>
-                        <span>只影响电影页面 and 电影导入资源</span>
-                      </div>
-                      <el-button plain @click="resetSelectionRules('movie')">重置电影规则</el-button>
-                    </div>
-                    <div class="priority-layout">
-                      <PriorityList title="画质优先级" v-model="settings.movie_quality_priority" placeholder="添加画质，如 2160p" />
-                      <PriorityList title="来源优先级" v-model="settings.movie_source_priority" placeholder="添加来源，如 BluRay" />
-                      <PriorityList title="字幕优先级" v-model="settings.movie_subtitle_priority" placeholder="添加字幕，如 简体" />
-                    </div>
-                  </el-tab-pane>
-                  <el-tab-pane label="电视剧">
-                    <div class="settings-section-toolbar">
-                      <div>
-                        <strong>电视剧自动选集</strong>
-                        <span>只影响电视剧页面 and 电视剧导入资源</span>
-                      </div>
-                      <el-button plain @click="resetSelectionRules('tv')">重置电视剧规则</el-button>
-                    </div>
-                    <div class="priority-layout">
-                      <PriorityList title="画质优先级" v-model="settings.tv_quality_priority" placeholder="添加画质，如 1080p" />
-                      <PriorityList title="来源优先级" v-model="settings.tv_source_priority" placeholder="添加来源，如 WEB-DL" />
-                      <PriorityList title="字幕优先级" v-model="settings.tv_subtitle_priority" placeholder="添加字幕，如 双语" />
-                    </div>
-                  </-priority-layout>
-                  </el-tab-pane>
-                </el-tabs>
-              </el-tab-pane>
-              <el-tab-pane label="下载器">
-                <div class="downloader-settings">
-                  <draggable v-model="settings.downloaders" item-key="id" handle=".drag-handle" class="downloader-list">
-                    <template #item="{ element, index }">
-                      <div class="downloader-row">
-                        <span class="drag-handle">⋮⋮</span>
-                        <span class="rank">{{ index + 1 }}</span>
-                        <div class="downloader-fields">
-                          <el-select v-model="element.type" class="downloader-type">
-                            <el-option label="PikPak rclone" value="pikpak_rclone" />
-                            <el-option label="PikPak API" value="pikpak_api" />
-                            <el-option label="aria2" value="aria2" />
-                            <el-option label="qBittorrent" value="qb" />
-                          </el-select>
-                          <el-input v-model="element.name" placeholder="名称" />
-                          <el-input v-model="element.remote_dir" placeholder="远端目录 / 临时目录" />
-                          <template v-if="element.type === 'pikpak_rclone'">
-                            <el-input v-model="element.rclone_remote" placeholder="rclone remote，例如 pikpak" />
-                            <el-input v-model="element.rclone_config_path" placeholder="rclone.conf 路径" />
-                            <el-input v-model="element.rclone_command" placeholder="rclone 命令" />
-                            <el-input v-model="element.username" placeholder="PikPak 用户名，可用于初始化 rclone" />
-                            <el-input v-model="element.password" placeholder="PikPak 密码" show-password />
-                          </template>
-                          <template v-if="element.type === 'pikpak_api'">
-                            <el-select v-model="element.auth_mode" placeholder="认证方式">
-                              <el-option label="Token" value="token" />
-                              <el-option label="账号密码" value="password" />
-                            </el-select>
-                            <template v-if="element.auth_mode === 'password'">
-                              <el-input v-model="element.username" placeholder="PikPak 用户名" />
-                              <el-input v-model="element.password" placeholder="PikPak 密码" show-password />
-                            </template>
-                            <template v-else>
-                              <el-input v-model="element.access_token" placeholder="access token" show-password />
-                              <el-input v-model="element.refresh_token" placeholder="refresh token" show-password />
-                            </template>
-                            <el-input v-model="element.proxy" placeholder="代理，可选" />
-                          </template>
-                          <template v-if="['aria2', 'qb'].includes(element.type)">
-                            <el-input v-model="element.rpc_url" placeholder="RPC / Web UI 地址" />
-                          </template>
-                          <el-input
-                            v-if="element.type === 'aria2'"
-                            v-model="element.token"
-                            placeholder="aria2 token"
-                            show-password
-                          />
-                          <template v-if="element.type === 'qb'">
-                            <el-input v-model="element.username" placeholder="qB 用户名" />
-                            <el-input v-model="element.password" placeholder="qB 密码" show-password />
-                          </template>
-                        </div>
-                        <el-switch v-model="element.enabled" />
-                        <el-button type="danger" link @click="removeDownloader(index)">删除</el-button>
-                      </div>
-                    </template>
-                  </draggable>
-                  <el-button plain @click="addDownloader">添加下载器</el-button>
+              <el-tab-pane label="电影">
+                <div class="settings-section-toolbar">
+                  <div><strong>电影自动选集</strong><span>只影响电影收录和资源选择</span></div>
+                  <el-button plain @click="resetSelectionRules('movie')">重置电影规则</el-button>
+                </div>
+                <div class="priority-layout">
+                  <PriorityList title="画质优先级" v-model="settings.movie_quality_priority" placeholder="添加画质，如 2160p" />
+                  <PriorityList title="来源优先级" v-model="settings.movie_source_priority" placeholder="添加来源，如 BluRay" />
+                  <PriorityList title="字幕优先级" v-model="settings.movie_subtitle_priority" placeholder="添加字幕，如 简体" />
                 </div>
               </el-tab-pane>
-              <el-tab-pane label="搜索源">
-                <el-alert
-                  type="info"
-                  show-icon
-                  :closable="false"
-                  title="发现页和本季补全会按优先级使用启用的搜索源。第一版优先支持 Mikan/RSS 和 Torznab/Prowlarr/Jackett。"
-                  class="settings-alert"
-                />
-                <div class="search-source-layout">
-                  <div class="search-source-list" v-loading="searchSourcesLoading">
-                    <div v-for="item in searchSources" :key="item.id" class="search-source-row" :class="{ disabled: !Number(item.enabled || 0) }">
-                      <div>
-                        <strong>{{ item.name }}</strong>
-                        <span>{{ item.kind }} · 优先级 {{ item.priority || 0 }}</span>
-                        <small v-if="item.last_error">{{ item.last_error }}</small>
-                      </div>
-                      <div class="rss-row-actions">
-                        <el-switch :model-value="Number(item.enabled || 0)" :active-value="1" :inactive-value="0" @change="toggleSearchSource(item)" />
-                        <el-button type="primary" link @click="openSearchSourceDialog(item.id)">编辑</el-button>
-                        <el-popconfirm title="确定删除该搜索源？" @confirm="deleteSearchSource(item.id)">
-                          <template #reference><el-button type="danger" link>删除</el-button></template>
-                        </el-popconfirm>
-                      </div>
-                    </div>
-                    <el-empty v-if="!searchSources.length" description="暂无搜索源" />
-                  </div>
-                  <div class="search-source-form">
-                    <el-button type="primary" @click="openSearchSourceDialog(null)">添加 Mikan RSS 搜索源</el-button>
-                    <el-button type="primary" @click="openTorznabDialog">添加 Torznab/Prowlarr 搜索源</el-button>
-                  </div>
+              <el-tab-pane label="电视剧">
+                <div class="settings-section-toolbar">
+                  <div><strong>电视剧自动选集</strong><span>只影响电视剧收录和资源选择</span></div>
+                  <el-button plain @click="resetSelectionRules('tv')">重置电视剧规则</el-button>
                 </div>
-              </el-tab-pane>
-              <el-tab-pane label="定时任务">
-                <el-alert
-                  type="info"
-                  show-icon
-                  :closable="false"
-                  title="定时器控制系统自动同步、补全和下载等后台行为间隔。"
-                  class="settings-alert"
-                />
-                <div class="schedule-settings-list">
-                  <div v-for="item in dashboard.schedules || []" :key="item.id" class="schedule-settings-row">
-                    <div>
-                      <strong>{{ item.name || item.action_name || item.action }}</strong>
-                      <span>{{ item.action_name || item.action }} · {{ Number(item.interval_minutes || 0) }} 分钟</span>
-                    </div>
-                    <el-tag :type="Number(item.enabled || 0) ? 'success' : 'info'">{{ Number(item.enabled || 0) ? '启用' : '关闭' }}</el-tag>
-                    <el-tag v-if="item.last_status" :type="item.last_status === 'failed' ? 'danger' : 'info'">{{ item.last_status }}</el-tag>
-                    <span class="schedule-run-at">{{ item.last_run_at || '未执行' }}</span>
-                    <el-button plain @click="triggerSchedule(item)">立即执行</el-button>
-                    <el-button type="primary" plain @click="openScheduledSettings(item)">设置</el-button>
-                  </div>
-                  <el-empty v-if="!(dashboard.schedules || []).length" description="暂无定时器" />
-                </div>
-              </el-tab-pane>
-              <el-tab-pane label="维护">
-                <!-- Status dashboard row (高颜值横向状态块) -->
-                <div class="maintenance-stats-bar">
-                  <div class="m-stat-box pink">
-                    <span class="m-label">⏳ 待处理任务</span>
-                    <strong class="m-value">{{ dashboard.console_overview?.pending_task_count || 0 }}</strong>
-                  </div>
-                  <div class="m-stat-box red">
-                    <span class="m-label">⚠️ 失败任务</span>
-                    <strong class="m-value">{{ dashboard.console_overview?.failed_task_count || 0 }}</strong>
-                  </div>
-                  <div class="m-stat-box purple">
-                    <span class="m-label">🔄 等待重试</span>
-                    <strong class="m-value">{{ dashboard.console_overview?.waiting_retry_count || 0 }}</strong>
-                  </div>
-                  <div class="m-stat-box blue">
-                    <span class="m-label">⚡ 运行中队列</span>
-                    <strong class="m-value">{{ dashboard.console_overview?.running_queue_count || 0 }}</strong>
-                  </div>
-                </div>
-
-                <!-- Structured Action Groups (三大功能维护净化舱) -->
-                <div class="maintenance-grid-layout">
-                  <!-- Group 1: Cache Control -->
-                  <div class="maintenance-group-card">
-                    <div class="group-header">
-                      <h3>🧹 缓存净化舱</h3>
-                      <p>管理系统临时索引、元数据与静态网页缓存</p>
-                    </div>
-                    <div class="group-body">
-                      <div class="action-item-row">
-                        <div class="action-desc">
-                          <strong>清除 RSS 缓存</strong>
-                          <span>清空保存在本地的 RSS 订阅临时哈希与发布项缓存</span>
-                        </div>
-                        <el-button type="primary" plain @click="runAction('/cache/rss/clear')">立即清除</el-button>
-                      </div>
-                      <div class="action-item-row">
-                        <div class="action-desc">
-                          <strong>清除过期缓存</strong>
-                          <span>自动检索并清理已经失效或长时间未更新的系统缓存</span>
-                        </div>
-                        <el-button type="primary" plain @click="runAction('/cache/expired/clear')">立即清理</el-button>
-                      </div>
-                      <div class="action-item-row warning-border">
-                        <div class="action-desc">
-                          <strong>清空全部处理缓存</strong>
-                          <span>强力清除包括作品元数据、海报、索引在内的所有临时缓存</span>
-                        </div>
-                        <el-popconfirm title="会清空全部处理缓存，包括元数据和匹配缓存。确定？" @confirm="runAction('/cache/clear')">
-                          <template #reference>
-                            <el-button type="warning">彻底清空</el-button>
-                          </template>
-                        </el-popconfirm>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- Group 2: Media Database Maintenance -->
-                  <div class="maintenance-group-card">
-                    <div class="group-header">
-                      <h3>📦 契约与资源维护</h3>
-                      <p>校验本地文件一致性，更新媒体库元数据索引</p>
-                    </div>
-                    <div class="group-body">
-                      <div class="action-item-row">
-                        <div class="action-desc">
-                          <strong>刷新全部本地状态</strong>
-                          <span>遍历检测本地已下载文件的物理存在状态，同步数据库标记</span>
-                        </div>
-                        <el-button type="primary" @click="refreshAllLocalStatus">执行刷新</el-button>
-                      </div>
-                      <div class="action-item-row">
-                        <div class="action-desc">
-                          <strong>刷新全部元数据</strong>
-                          <span>从 Bangumi/TMDB 重新全量抓取并复核本地已收录的作品信息</span>
-                        </div>
-                        <el-popconfirm title="会按现有 Bangumi/TMDB ID 刷新所有条目元数据，并按设置校验 NFO。确定执行？" @confirm="refreshAllMetadata">
-                          <template #reference>
-                            <el-button type="primary">重抓元数</el-button>
-                          </template>
-                        </el-popconfirm>
-                      </div>
-                      <div class="action-item-row">
-                        <div class="action-desc">
-                          <strong>整理全部本地资源</strong>
-                          <span>根据当前设置的命名规则，重新分类整理已识别的本地作品</span>
-                        </div>
-                        <el-popconfirm title="会把已绑定且存在的本地文件整理到当前命名规则路径，目标同名文件会被覆盖。确定执行？" @confirm="organizeAllLocalFiles">
-                          <template #reference>
-                            <el-button type="primary">整理归档</el-button>
-                          </template>
-                        </el-popconfirm>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- Group 3: Migrations & Dangerous Resets -->
-                  <div class="maintenance-group-card full-row-card">
-                    <div class="group-header">
-                      <h3>🛠️ 数据迁移与系统格式化</h3>
-                      <p>执行底层数据表结构升级或彻底格式化系统记录（敏感操作）</p>
-                    </div>
-                    <div class="group-body flex-grid-body">
-                      <div class="action-item-row">
-                        <div class="action-desc">
-                          <strong>迁移集数模型</strong>
-                          <span>将原有作品下的集数条目迁移为单集单纪录的高级调度模型</span>
-                        </div>
-                        <el-popconfirm title="迁移前会自动备份数据库。确定把旧资源模型迁移为每集一条资源，并按纯作品名目录计算路径？" @confirm="migrateEpisodeModel">
-                          <template #reference>
-                            <el-button type="primary">运行迁移</el-button>
-                          </template>
-                        </el-popconfirm>
-                      </div>
-                      <div class="action-item-row">
-                        <div class="action-desc">
-                          <strong>修复为纯作品名路径</strong>
-                          <span>把老版本的识别文件迁移至全新规划的作品独立层级文件夹中</span>
-                        </div>
-                        <el-popconfirm title="会把已识别到的旧本地文件移动到纯作品名目录，并同步修复数据库状态。确定执行？" @confirm="repairLocalPaths">
-                          <template #reference>
-                            <el-button type="primary">运行修复</el-button>
-                          </template>
-                        </el-popconfirm>
-                      </div>
-                      <div class="action-item-row warning-border">
-                        <div class="action-desc">
-                          <strong>清理无效集数</strong>
-                          <span>自动扫描并清理破损、信息丢失或者无法成功关联的集数记录</span>
-                        </div>
-                        <el-popconfirm title="会清理无法识别集数的发布、资源、字幕和下载记录。确定执行？" @confirm="runAction('/maintenance/cleanup-invalid-episodes')">
-                          <template #reference>
-                            <el-button type="warning">清理无效</el-button>
-                          </template>
-                        </el-popconfirm>
-                      </div>
-                      <div class="action-item-row danger-border">
-                        <div class="action-desc">
-                          <strong>💥 擦除全部契约数据</strong>
-                          <span>格式化并清空所有番剧、候选、任务、本地资源记录及历史日志</span>
-                        </div>
-                        <el-popconfirm title="会清空番剧、候选、任务、下载记录、本地资源记录和日志。确定？" @confirm="runAction('/system/clear-data')">
-                          <template #reference>
-                            <el-button type="danger">格式化系统</el-button>
-                          </template>
-                        </el-popconfirm>
-                      </div>
-                    </div>
-                  </div>
+                <div class="priority-layout">
+                  <PriorityList title="画质优先级" v-model="settings.tv_quality_priority" placeholder="添加画质，如 1080p" />
+                  <PriorityList title="来源优先级" v-model="settings.tv_source_priority" placeholder="添加来源，如 WEB-DL" />
+                  <PriorityList title="字幕优先级" v-model="settings.tv_subtitle_priority" placeholder="添加字幕，如 双语" />
                 </div>
               </el-tab-pane>
             </el-tabs>
-            <div class="form-actions"><el-button type="primary" size="large" :loading="savingSettings" @click="saveAllSettings">保存设置</el-button></div>
-          </el-form>
-        </el-card>
-      </section>
+          </el-tab-pane>
+
+          <el-tab-pane label="下载器">
+            <div class="settings-section-toolbar">
+              <div><strong>下载器优先级</strong><span>按顺序尝试可用下载器；详细字段在编辑窗口里配置。</span></div>
+              <div class="settings-toolbar-actions">
+                <el-button plain @click="openDownloaderDialog(-1)">添加下载器</el-button>
+                <el-button type="primary" :loading="savingSettings" @click="saveAllSettings">保存设置</el-button>
+              </div>
+            </div>
+            <draggable v-model="settings.downloaders" item-key="id" handle=".drag-handle" class="summary-list">
+              <template #item="{ element, index }">
+                <div class="summary-row" :class="{ disabled: !element.enabled }">
+                  <span class="drag-handle">⋮⋮</span>
+                  <span class="summary-rank">{{ index + 1 }}</span>
+                  <div class="summary-main">
+                    <strong>{{ element.name || downloaderTypeText(element.type) }}</strong>
+                    <span>{{ downloaderTypeText(element.type) }} · {{ downloaderSummary(element) }}</span>
+                  </div>
+                  <el-tag :type="element.enabled ? 'success' : 'info'" size="small">{{ element.enabled ? '启用' : '停用' }}</el-tag>
+                  <div class="summary-actions">
+                    <el-button size="small" plain @click="openDownloaderDialog(index)">编辑</el-button>
+                    <el-button size="small" type="danger" plain @click="removeDownloader(index)">删除</el-button>
+                  </div>
+                </div>
+              </template>
+            </draggable>
+            <el-empty v-if="!(settings.downloaders || []).length" description="暂无下载器，添加一个后保存设置即可使用。" />
+          </el-tab-pane>
+
+          <el-tab-pane label="搜索源">
+            <div class="settings-section-toolbar">
+              <div><strong>搜索源</strong><span>发现页和本季补全会使用启用的来源。</span></div>
+              <el-button type="primary" plain @click="openSearchSourceDialog(null)">添加源</el-button>
+            </div>
+            <div class="summary-list" v-loading="searchSourcesLoading">
+              <div v-for="item in searchSources" :key="item.id" class="summary-row simple-summary-row" :class="{ disabled: !Number(item.enabled || 0) }">
+                <div class="summary-main">
+                  <strong>{{ item.name }}</strong>
+                  <span>{{ searchSourceKindText(item.kind) }} · {{ item.base_url || '未配置地址' }}</span>
+                  <small v-if="item.last_error">{{ item.last_error }}</small>
+                </div>
+                <el-tag :type="Number(item.enabled || 0) ? 'success' : 'info'" size="small">{{ Number(item.enabled || 0) ? '启用' : '停用' }}</el-tag>
+                <div class="summary-actions">
+                  <el-switch :model-value="Number(item.enabled || 0)" :active-value="1" :inactive-value="0" @change="toggleSearchSource(item)" />
+                  <el-button size="small" plain @click="testSearchSource(item)">测试</el-button>
+                  <el-button size="small" plain @click="openSearchSourceDialog(item)">编辑</el-button>
+                  <el-popconfirm title="确定删除该搜索源？" @confirm="deleteSearchSource(item.id)">
+                    <template #reference><el-button size="small" type="danger" plain>删除</el-button></template>
+                  </el-popconfirm>
+                </div>
+              </div>
+              <el-empty v-if="!searchSources.length" description="暂无搜索源，添加后可在发现页搜索资源。" />
+            </div>
+          </el-tab-pane>
+
+          <el-tab-pane label="定时器">
+            <div class="summary-list">
+              <div v-for="item in dashboard.schedules || []" :key="item.id" class="summary-row simple-summary-row">
+                <div class="summary-main">
+                  <strong>{{ item.name || item.action_name || item.action }}</strong>
+                  <span>{{ item.action_name || item.action }} · {{ Number(item.interval_minutes || 0) }} 分钟 · {{ item.last_run_at || '未执行' }}</span>
+                </div>
+                <el-tag :type="Number(item.enabled || 0) ? 'success' : 'info'" size="small">{{ Number(item.enabled || 0) ? '启用' : '关闭' }}</el-tag>
+                <div class="summary-actions">
+                  <el-button size="small" plain @click="triggerSchedule(item)">立即执行</el-button>
+                  <el-button size="small" type="primary" plain @click="openScheduledSettings(item)">设置</el-button>
+                </div>
+              </div>
+              <el-empty v-if="!(dashboard.schedules || []).length" description="暂无定时器" />
+            </div>
+          </el-tab-pane>
+
+          <el-tab-pane label="维护">
+            <div class="maintenance-grid-layout compact-maintenance">
+              <div class="maintenance-group-card">
+                <div class="group-header"><h3>缓存</h3><p>清理 RSS 与处理缓存。</p></div>
+                <div class="group-body">
+                  <div class="action-item-row"><div class="action-desc"><strong>清除 RSS 缓存</strong><span>重新处理订阅条目。</span></div><el-button plain @click="runAction('/cache/rss/clear')">清除</el-button></div>
+                  <div class="action-item-row"><div class="action-desc"><strong>清除过期缓存</strong><span>移除已过期缓存记录。</span></div><el-button plain @click="runAction('/cache/expired/clear')">清理</el-button></div>
+                  <div class="action-item-row warning-border"><div class="action-desc"><strong>清空全部处理缓存</strong><span>包含元数据和匹配缓存。</span></div><el-popconfirm title="会清空全部处理缓存，包括元数据和匹配缓存。确定？" @confirm="runAction('/cache/clear')"><template #reference><el-button type="warning" plain>清空</el-button></template></el-popconfirm></div>
+                </div>
+              </div>
+
+              <div class="maintenance-group-card">
+                <div class="group-header"><h3>元数据与本地状态</h3><p>刷新媒体信息和本地文件可观看状态。</p></div>
+                <div class="group-body">
+                  <div class="action-item-row"><div class="action-desc"><strong>刷新全部本地状态</strong><span>检测本地文件是否真实存在。</span></div><el-button plain @click="refreshAllLocalStatus">刷新</el-button></div>
+                  <div class="action-item-row"><div class="action-desc"><strong>刷新全部元数据</strong><span>按现有 ID 重抓 Bangumi/TMDB。</span></div><el-popconfirm title="会按现有 Bangumi/TMDB ID 刷新所有条目元数据，并按设置校验 NFO。确定执行？" @confirm="refreshAllMetadata"><template #reference><el-button plain>刷新</el-button></template></el-popconfirm></div>
+                  <div class="action-item-row"><div class="action-desc"><strong>整理全部本地资源</strong><span>把已绑定文件整理到命名规则路径。</span></div><el-popconfirm title="会把已绑定且存在的本地文件整理到当前命名规则路径，目标同名文件会被覆盖。确定执行？" @confirm="organizeAllLocalFiles"><template #reference><el-button plain>整理</el-button></template></el-popconfirm></div>
+                </div>
+              </div>
+
+              <div class="maintenance-group-card">
+                <div class="group-header"><h3>数据修复</h3><p>处理旧数据或无效集数。</p></div>
+                <div class="group-body">
+                  <div class="action-item-row"><div class="action-desc"><strong>迁移集数模型</strong><span>迁移为每集一条资源。</span></div><el-popconfirm title="迁移前会自动备份数据库。确定把旧资源模型迁移为每集一条资源，并按纯作品名目录计算路径？" @confirm="migrateEpisodeModel"><template #reference><el-button plain>迁移</el-button></template></el-popconfirm></div>
+                  <div class="action-item-row"><div class="action-desc"><strong>修复为纯作品名路径</strong><span>移动识别到的旧文件并同步数据库。</span></div><el-popconfirm title="会把已识别到的旧本地文件移动到纯作品名目录，并同步修复数据库状态。确定执行？" @confirm="repairLocalPaths"><template #reference><el-button plain>修复</el-button></template></el-popconfirm></div>
+                  <div class="action-item-row warning-border"><div class="action-desc"><strong>清理无效集数</strong><span>清理无法识别集数的记录。</span></div><el-popconfirm title="会清理无法识别集数的发布、资源、字幕和下载记录。确定执行？" @confirm="runAction('/maintenance/cleanup-invalid-episodes')"><template #reference><el-button type="warning" plain>清理</el-button></template></el-popconfirm></div>
+                </div>
+              </div>
+
+              <div class="maintenance-group-card danger-card">
+                <div class="group-header"><h3>危险操作</h3><p>不会删除本地媒体文件，但会清空系统记录。</p></div>
+                <div class="group-body">
+                  <div class="action-item-row danger-border"><div class="action-desc"><strong>清除所有数据</strong><span>清空番剧、候选、任务、本地资源记录和日志。</span></div><el-popconfirm title="会清空番剧、候选、任务、下载记录、本地资源记录和日志。确定？" @confirm="runAction('/system/clear-data')"><template #reference><el-button type="danger" plain>清除</el-button></template></el-popconfirm></div>
+                </div>
+              </div>
+            </div>
+          </el-tab-pane>
+        </el-tabs>
+      </el-form>
+    </el-card>
+  </section>
+
+  <el-dialog v-model="searchSourceDialogOpen" :title="searchSourceEditingId ? '编辑搜索源' : '添加搜索源'" width="620px" top="6vh" class="config-dialog">
+    <el-form :model="searchSourceForm" label-position="top">
+      <div class="form-row">
+        <el-form-item label="名称"><el-input v-model="searchSourceForm.name" placeholder="例如 Mikan / Prowlarr" /></el-form-item>
+        <el-form-item label="类型">
+          <el-select v-model="searchSourceForm.kind">
+            <el-option label="Mikan" value="mikan" />
+            <el-option label="RSS" value="rss" />
+            <el-option label="Torznab" value="torznab" />
+            <el-option label="Prowlarr" value="prowlarr" />
+            <el-option label="Jackett" value="jackett" />
+          </el-select>
+        </el-form-item>
+      </div>
+      <el-form-item label="地址"><el-input v-model="searchSourceForm.base_url" placeholder="https://..." /></el-form-item>
+      <el-form-item label="API Key / Token"><el-input v-model="searchSourceForm.api_key" show-password placeholder="可选" /></el-form-item>
+      <el-form-item label="分类"><el-input v-model="searchSourceForm.categories" placeholder="可选，例如 5070,5080" /></el-form-item>
+      <div class="form-row">
+        <el-form-item label="超时秒数"><el-input v-model="searchSourceForm.timeout_seconds" type="number" min="1" /></el-form-item>
+        <el-form-item label="限速秒数"><el-input v-model="searchSourceForm.rate_limit_seconds" type="number" min="0" /></el-form-item>
+      </div>
+      <label class="settings-switch-line dialog-switch">
+        <el-switch v-model="searchSourceForm.enabled" />
+        <span><strong>启用搜索源</strong><em>关闭后发现页和补全不会使用它。</em></span>
+      </label>
+    </el-form>
+    <template #footer>
+      <el-button @click="searchSourceDialogOpen = false">取消</el-button>
+      <el-button type="primary" @click="saveSearchSource">保存</el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog v-model="downloaderDialogOpen" :title="downloaderEditingIndex >= 0 ? '编辑下载器' : '添加下载器'" width="720px" top="5vh" class="config-dialog">
+    <el-form :model="downloaderForm" label-position="top">
+      <div class="form-row">
+        <el-form-item label="名称"><el-input v-model="downloaderForm.name" placeholder="例如 PikPak" /></el-form-item>
+        <el-form-item label="类型">
+          <el-select v-model="downloaderForm.type">
+            <el-option label="PikPak rclone" value="pikpak_rclone" />
+            <el-option label="PikPak API" value="pikpak_api" />
+            <el-option label="aria2" value="aria2" />
+            <el-option label="qBittorrent" value="qb" />
+          </el-select>
+        </el-form-item>
+      </div>
+      <div class="form-row">
+        <el-form-item label="远端目录 / 临时目录"><el-input v-model="downloaderForm.remote_dir" placeholder="/Temp" /></el-form-item>
+        <el-form-item label="失败重试次数"><el-input v-model="downloaderForm.max_attempts" type="number" min="1" /></el-form-item>
+      </div>
+      <template v-if="downloaderForm.type === 'pikpak_rclone'">
+        <div class="form-row">
+          <el-form-item label="rclone remote"><el-input v-model="downloaderForm.rclone_remote" placeholder="pikpak" /></el-form-item>
+          <el-form-item label="rclone 命令"><el-input v-model="downloaderForm.rclone_command" placeholder="rclone" /></el-form-item>
+        </div>
+        <el-form-item label="rclone.conf 路径"><el-input v-model="downloaderForm.rclone_config_path" placeholder="/data/rclone/rclone.conf" /></el-form-item>
+        <div class="form-row">
+          <el-form-item label="PikPak 用户名"><el-input v-model="downloaderForm.username" /></el-form-item>
+          <el-form-item label="PikPak 密码"><el-input v-model="downloaderForm.password" show-password /></el-form-item>
+        </div>
+      </template>
+      <template v-if="downloaderForm.type === 'pikpak_api'">
+        <el-form-item label="认证方式">
+          <el-select v-model="downloaderForm.auth_mode">
+            <el-option label="Token" value="token" />
+            <el-option label="账号密码" value="password" />
+          </el-select>
+        </el-form-item>
+        <div v-if="downloaderForm.auth_mode === 'password'" class="form-row">
+          <el-form-item label="用户名"><el-input v-model="downloaderForm.username" /></el-form-item>
+          <el-form-item label="密码"><el-input v-model="downloaderForm.password" show-password /></el-form-item>
+        </div>
+        <div v-else class="form-row">
+          <el-form-item label="Access Token"><el-input v-model="downloaderForm.access_token" show-password /></el-form-item>
+          <el-form-item label="Refresh Token"><el-input v-model="downloaderForm.refresh_token" show-password /></el-form-item>
+        </div>
+      </template>
+      <template v-if="['aria2', 'qb'].includes(downloaderForm.type)">
+        <el-form-item label="RPC / Web UI 地址"><el-input v-model="downloaderForm.rpc_url" placeholder="http://..." /></el-form-item>
+      </template>
+      <el-form-item v-if="downloaderForm.type === 'aria2'" label="aria2 Token"><el-input v-model="downloaderForm.token" show-password /></el-form-item>
+      <div v-if="downloaderForm.type === 'qb'" class="form-row">
+        <el-form-item label="qB 用户名"><el-input v-model="downloaderForm.username" /></el-form-item>
+        <el-form-item label="qB 密码"><el-input v-model="downloaderForm.password" show-password /></el-form-item>
+      </div>
+      <label class="settings-switch-line dialog-switch">
+        <el-switch v-model="downloaderForm.enabled" />
+        <span><strong>启用下载器</strong><em>关闭后下载任务不会选择它。</em></span>
+      </label>
+    </el-form>
+    <template #footer>
+      <el-button @click="downloaderDialogOpen = false">取消</el-button>
+      <el-button type="primary" @click="saveDownloaderDialog">保存</el-button>
+    </template>
+  </el-dialog>
 </template>

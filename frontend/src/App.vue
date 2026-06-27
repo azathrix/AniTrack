@@ -7,6 +7,22 @@
           <strong class="brand-wordmark">AniTrack</strong>
         </div>
       </div>
+      <div class="sidebar-profile-card">
+        <div class="profile-avatar">
+          <img src="/anitrack-icon.png" alt="AniTrack icon" />
+          <span></span>
+        </div>
+        <strong>个人媒体中心</strong>
+        <p>追番、下载与本地整理</p>
+        <div class="profile-stats">
+          <div><b>{{ seasonalCatalogTotal }}</b><span>新番</span></div>
+          <div><b>{{ watchableTotal }}</b><span>可看</span></div>
+          <div><b>{{ localAssetTotal }}</b><span>本地</span></div>
+        </div>
+        <button class="profile-scan-button" :disabled="scanRunning" @click="runAction('/scan')">
+          {{ scanRunning ? '扫描中...' : '扫描 RSS' }}
+        </button>
+      </div>
       <nav>
         <div class="nav-caption">媒体</div>
         <button :class="{ active: view === 'seasonal' }" @click="view = 'seasonal'"><el-icon><Collection /></el-icon> 新番</button>
@@ -23,14 +39,6 @@
     </aside>
 
     <main class="main">
-      <header class="hero">
-        <div>
-          <p class="eyebrow">RSS · Downloader · Media Library</p>
-          <h1>{{ pageTitle }}</h1>
-          <p class="hero-sub">扫描订阅、自动选集并整理到本地媒体库。<span class="build-version">v{{ appVersion }} · {{ appBuild }}</span></p>
-        </div>
-      </header>
-
       <DashboardPage />
       <LogsPage />
       <SeasonalPage />
@@ -213,6 +221,7 @@ const discoveryState = reactive({
 })
 const searchSources = ref([])
 const searchSourcesLoading = ref(false)
+const searchSourceDialogOpen = ref(false)
 const searchSourceEditingId = ref(0)
 const searchSourceForm = reactive({
   name: '',
@@ -225,6 +234,27 @@ const searchSourceForm = reactive({
   rate_limit_seconds: 0,
   priority: 0,
   enabled: true,
+})
+const downloaderDialogOpen = ref(false)
+const downloaderEditingIndex = ref(-1)
+const downloaderForm = reactive({
+  id: '',
+  name: '',
+  type: 'pikpak_rclone',
+  remote_dir: '',
+  rclone_remote: '',
+  rclone_config_path: '',
+  rclone_command: '',
+  rpc_url: '',
+  token: '',
+  auth_mode: 'token',
+  username: '',
+  password: '',
+  access_token: '',
+  refresh_token: '',
+  proxy: '',
+  enabled: true,
+  max_attempts: 3,
 })
 const calendarItems = ref([])
 const logsData = reactive({
@@ -691,6 +721,34 @@ function metadataScores(item) {
   return scores
 }
 
+function searchSourceKindText(kind) {
+  const map = {
+    mikan: 'Mikan',
+    rss: 'RSS',
+    torznab: 'Torznab',
+    prowlarr: 'Prowlarr',
+    jackett: 'Jackett',
+  }
+  return map[kind] || kind || '-'
+}
+
+function downloaderTypeText(type) {
+  const map = {
+    pikpak_rclone: 'PikPak rclone',
+    pikpak_api: 'PikPak API',
+    aria2: 'aria2',
+    qb: 'qBittorrent',
+  }
+  return map[type] || type || '-'
+}
+
+function downloaderSummary(item = {}) {
+  if (item.type === 'pikpak_rclone') return `${item.remote_dir || '/Temp'} · ${item.rclone_remote || 'pikpak'}`
+  if (item.type === 'pikpak_api') return `${item.remote_dir || '/Temp'} · ${item.auth_mode === 'password' ? '账号密码' : 'Token'}`
+  if (item.type === 'aria2' || item.type === 'qb') return item.rpc_url || '未配置 RPC'
+  return item.remote_dir || '未配置'
+}
+
 function scheduledBadgeType(jobKey) {
   const job = (dashboard.scheduled_jobs || []).find(item => item.job_key === jobKey)
   if (!job) return 'info'
@@ -1032,8 +1090,10 @@ exposeAppContext({
   rssLoading,
   rssSubscriptions,
   savingSettings,
+  searchSourceDialogOpen,
   searchSourceEditingId,
   searchSourceForm,
+  searchSourceKindText,
   searchSources,
   searchSourcesLoading,
   scanRunning,
@@ -1057,6 +1117,11 @@ exposeAppContext({
   selectedSectionMeta,
   selectedTaskType,
   settings,
+  downloaderDialogOpen,
+  downloaderEditingIndex,
+  downloaderForm,
+  downloaderSummary,
+  downloaderTypeText,
   shiftCalendarWeek,
   sourceModeText,
   splitTextLines,
@@ -1085,9 +1150,9 @@ const {
   deleteCurrentEntry, deleteDownloadTask, deleteEpisodeResource, deleteRssSubscription, downloadCurrentEntryResources, downloadEpisodeResource,
   editRssSubscription, entryEditPayload, exportLogs, fetchEntryMetadata, loadRssSubscriptions, normalizeSettingsShape, openEntry,
   openEntryEditDialog, openEpisodeResourceEditor, openMediaWizard, openMetadataSearch, openProcessorSettings, openQueueEntry, openRssDialog, openServerFileBrowser,
-  openScheduledSettings, migrateEpisodeModel, organizeAllLocalFiles, organizeCurrentEntryLocalFiles, refreshAllMetadata, refreshAllLocalStatus, refreshCurrentEntryLocalStatus, refreshEntryMetadata, repairLocalPaths, retryDownloadTask, refreshEpisodeResource, removeDownloader, removeMediaWizardResourceItem,
+  openScheduledSettings, migrateEpisodeModel, openDownloaderDialog, organizeAllLocalFiles, organizeCurrentEntryLocalFiles, refreshAllMetadata, refreshAllLocalStatus, refreshCurrentEntryLocalStatus, refreshEntryMetadata, repairLocalPaths, retryDownloadTask, refreshEpisodeResource, removeDownloader, removeMediaWizardResourceItem,
   removeMediaWizardSubtitleItem, resetRssForm, resetSelectionRules, runAction, runMetadataSearch, saveAllSettings, saveBatchSubtitles,
-  saveEntryEditForm, saveEpisodeResource, saveProcessorSettings, saveRssSubscription, saveScheduledJob, searchWizardMetadata, selectServerFile, setCurrentEntryFollowing,
+  saveDownloaderDialog, saveEntryEditForm, saveEpisodeResource, saveProcessorSettings, saveRssSubscription, saveScheduledJob, searchWizardMetadata, selectServerFile, setCurrentEntryFollowing,
   confirmMetadataMatch, selectedMetadataCandidate, selectMetadataCandidate, skipMetadataProvider, toggleEntryResourceRow,
   startMetadataProgress, stopMetadataProgress, syncScheduledJobForm, triggerSchedule, uploadMediaWizardFiles,
 } = createAppActions(appContext, {
@@ -1108,12 +1173,15 @@ const {
   deleteSearchSource,
   editSearchSource,
   loadSearchSources,
+  openSearchSourceDialog,
+  openTorznabDialog,
   openDiscoveryCollectDraft,
   resetSearchSourceForm,
   runDiscoverySearch,
   saveSearchSource,
   searchBackfillForCurrentEntry,
   testSearchSource,
+  toggleSearchSource,
 } = createDiscoveryActions(appContext, {
   deleteAction,
   getAction,
@@ -1133,11 +1201,11 @@ exposeAppContext({
   deleteCurrentEntry, deleteDownloadTask, deleteEpisodeResource, deleteRssSubscription, deleteSearchSource, downloadCurrentEntryResources, downloadEpisodeResource,
   editRssSubscription, editSearchSource, entryEditPayload, exportLogs, fetchEntryMetadata, loadRssSubscriptions, loadSearchSources, normalizeSettingsShape, openDiscoveryCollectDraft, openEntry,
   openEntryEditDialog, openEpisodeResourceEditor, openMediaWizard, openMetadataSearch, openProcessorSettings, openQueueEntry, openRssDialog, openServerFileBrowser,
-  openScheduledSettings, migrateEpisodeModel, organizeAllLocalFiles, organizeCurrentEntryLocalFiles, refreshAllMetadata, refreshAllLocalStatus, refreshCurrentEntryLocalStatus, refreshEntryMetadata, repairLocalPaths, retryDownloadTask, refreshEpisodeResource, removeDownloader, removeMediaWizardResourceItem,
+  openScheduledSettings, openSearchSourceDialog, openTorznabDialog, migrateEpisodeModel, openDownloaderDialog, organizeAllLocalFiles, organizeCurrentEntryLocalFiles, refreshAllMetadata, refreshAllLocalStatus, refreshCurrentEntryLocalStatus, refreshEntryMetadata, repairLocalPaths, retryDownloadTask, refreshEpisodeResource, removeDownloader, removeMediaWizardResourceItem,
   removeMediaWizardSubtitleItem, resetRssForm, resetSearchSourceForm, resetSelectionRules, runAction, runDiscoverySearch, runMetadataSearch, saveAllSettings, saveBatchSubtitles,
-  saveEntryEditForm, saveEpisodeResource, saveProcessorSettings, saveRssSubscription, saveScheduledJob, searchWizardMetadata, selectServerFile, setCurrentEntryFollowing,
+  saveDownloaderDialog, saveEntryEditForm, saveEpisodeResource, saveProcessorSettings, saveRssSubscription, saveScheduledJob, searchWizardMetadata, selectServerFile, setCurrentEntryFollowing,
   saveSearchSource, searchBackfillForCurrentEntry, confirmMetadataMatch, selectedMetadataCandidate, selectMetadataCandidate, skipMetadataProvider, testSearchSource, toggleEntryResourceRow,
-  startMetadataProgress, stopMetadataProgress, syncScheduledJobForm, triggerSchedule, uploadMediaWizardFiles,
+  startMetadataProgress, stopMetadataProgress, syncScheduledJobForm, toggleSearchSource, triggerSchedule, uploadMediaWizardFiles,
 })
 
 watch(selectedScheduledJob, job => {
@@ -1194,5 +1262,3 @@ onUnmounted(() => {
   stopMetadataProgress()
 })
 </script>
-
-
