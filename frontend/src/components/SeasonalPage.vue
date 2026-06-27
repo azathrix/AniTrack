@@ -10,7 +10,6 @@ export default appContextComponent()
           <el-input v-model="keyword" clearable placeholder="搜索新番条目、Bangumi ID、标题" />
           <div class="toolbar-spacer"></div>
           <el-button plain @click="advancedFilterOpen = !advancedFilterOpen">{{ advancedFilterOpen ? '收起筛选' : '高级筛选' }}</el-button>
-          <el-button type="primary" :icon="Search" :disabled="scanRunning" @click="runAction('/scan')">扫描全部</el-button>
           <el-button type="primary" @click="openRssDialog">添加 RSS 订阅</el-button>
         </div>
         <transition name="fade-slide">
@@ -106,4 +105,3 @@ export default appContextComponent()
       </section>
 
 </template>
-

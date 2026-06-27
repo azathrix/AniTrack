@@ -31,20 +31,9 @@ export function createMetadataActions(app, deps) {
     const entry = item || app.selectedEntry || {}
     const entryId = Number(entry.id || entry.entry_id || 0)
     if (!entryId) return
-    const apiMediaType = mediaType
-      || app.selectedEntryMediaType
-      || (app.entryMediaType ? app.entryMediaType(entry) : '')
-      || app.currentMediaType
-      || 'anime'
     try {
-      await postAction(`/media/${apiMediaType}/${entryId}/metadata/fetch`, {
-        bangumi_id: entry.bangumi_id || '',
-        tmdb_id: entry.tmdb_id || '',
-      })
-      ElMessage.success('元数据已刷新')
-      if (app.selectedEntry?.id && Number(app.selectedEntry.id) === entryId) {
-        await app.openEntry(entryId, domain || app.selectedEntryDomain, apiMediaType)
-      }
+      const result = await postAction(`/entries/${entryId}/metadata/refresh`)
+      ElMessage.success(result?.message || '元数据刷新任务已提交')
       await app.reload()
     } catch (error) {
       ElMessage.error(apiErrorMessage(error))

@@ -11,14 +11,13 @@
       <p>登录后继续管理你的番剧下载与本地媒体库。</p>
       <el-form :model="authForm" label-position="top" @submit.prevent>
         <el-form-item label="账号">
-          <el-input v-model="authForm.username" autocomplete="username" @keyup.enter="submitLogin" />
+          <el-input v-model="authForm.username" autocomplete="username" placeholder="请输入账号" @keyup.enter="submitLogin" />
         </el-form-item>
         <el-form-item label="密码">
-          <el-input v-model="authForm.password" type="password" show-password autocomplete="current-password" @keyup.enter="submitLogin" />
+          <el-input v-model="authForm.password" type="password" show-password autocomplete="current-password" placeholder="请输入密码" @keyup.enter="submitLogin" />
         </el-form-item>
         <el-button type="primary" :loading="authForm.saving" @click="submitLogin">登录</el-button>
       </el-form>
-      <small>默认账号密码：admin / admin，建议首次登录后在设置里修改。</small>
     </section>
   </div>
 
@@ -43,6 +42,10 @@
           <div><b>{{ watchableTotal }}</b><span>可看</span></div>
           <div><b>{{ localAssetTotal }}</b><span>本地</span></div>
         </div>
+        <button class="sidebar-scan-button" type="button" :disabled="scanRunning" @click="runAction('/scan')">
+          <el-icon><Search /></el-icon>
+          {{ scanRunning ? '扫描中...' : '快速扫描 RSS' }}
+        </button>
       </div>
       <nav>
         <div class="nav-caption">媒体</div>
@@ -57,13 +60,6 @@
         <button :class="{ active: view === 'logs' }" @click="view = 'logs'"><el-icon><Document /></el-icon> 日志</button>
         <button :class="{ active: view === 'settings' }" @click="view = 'settings'"><el-icon><Setting /></el-icon> 设置</button>
       </nav>
-      <div class="sidebar-account-card">
-        <span>👤 {{ authState.username || 'admin' }}</span>
-        <div>
-          <button type="button" @click="accountDialogOpen = true">账号</button>
-          <button type="button" @click="submitLogout">退出</button>
-        </div>
-      </div>
     </aside>
 
     <main class="main">
@@ -170,10 +166,12 @@ const appVersion = APP_VERSION
 const appBuild = APP_BUILD
 const authLoading = ref(true)
 const authState = reactive({ authenticated: false, username: '' })
-const authForm = reactive({ username: 'admin', password: 'admin', saving: false })
+const authForm = reactive({ username: '', password: '', saving: false })
 const accountDialogOpen = ref(false)
 const accountForm = reactive({ username: 'admin', password: '' })
 const recentOperations = ref([])
+const recentOperationPage = ref(1)
+const recentOperationPageSize = 6
 const selectedConsoleSection = ref('')
 const selectedTaskType = ref('')
 const scheduleEditingId = ref(0)
@@ -418,6 +416,8 @@ const fileBrowser = reactive({
   loading: false,
 })
 const appContextBindings = {}
+let taskToastReady = false
+const taskToastState = new Map()
 
 function exposeAppContext(bindings) {
   Object.assign(appContextBindings, bindings)
@@ -556,6 +556,13 @@ const filteredConsoleTasks = computed(() => {
   const selected = String(selectedTaskType.value || '')
   const rows = dashboard.tasks || []
   return selected ? rows.filter(item => String(item.type || '') === selected) : rows
+})
+const recentOperationRows = computed(() => {
+  const start = (Number(recentOperationPage.value || 1) - 1) * recentOperationPageSize
+  return (recentOperations.value || []).slice(start, start + recentOperationPageSize)
+})
+const recentOperationPageCount = computed(() => {
+  return Math.max(1, Math.ceil((recentOperations.value || []).length / recentOperationPageSize))
 })
 const scanRunning = computed(() => String(dashboard.scanner_status?.status || '') === 'running')
 const scannerStatusText = computed(() => {
@@ -874,6 +881,7 @@ function shiftCalendarWeek(delta) {
 }
 
 function applyDashboard(nextDashboard) {
+  notifyTaskTransitions(nextDashboard || {})
   Object.assign(dashboard, nextDashboard || {})
   if (!scheduledConsoleSections.value.some(item => item.key === selectedConsoleSection.value)) {
     selectedConsoleSection.value = ''
@@ -881,6 +889,35 @@ function applyDashboard(nextDashboard) {
   if (selectedTaskType.value && !taskTypeRows.value.some(item => item.type === selectedTaskType.value)) {
     selectedTaskType.value = ''
   }
+}
+
+function notifyTaskTransitions(nextDashboard) {
+  const rows = [
+    ...(nextDashboard.tasks || []).map(item => ({
+      key: `task:${item.id}`,
+      status: String(item.status || ''),
+      title: item.title || item.name || item.type_name || '任务',
+    })),
+    ...(nextDashboard.operations || []).map(item => ({
+      key: `operation:${item.id}`,
+      status: String(item.status || ''),
+      title: item.name || '后台操作',
+    })),
+  ]
+  for (const item of rows) {
+    if (!item.key) continue
+    const previous = taskToastState.get(item.key)
+    taskToastState.set(item.key, item.status)
+    if (!taskToastReady || previous === undefined || previous === item.status) continue
+    if (item.status === 'completed') {
+      ElMessage.success(`🍓 ${item.title} 已完成`)
+    } else if (item.status === 'failed') {
+      ElMessage.error(`⚠️ ${item.title} 失败`)
+    } else if (item.status === 'cancelled') {
+      ElMessage.warning(`🧹 ${item.title} 已取消`)
+    }
+  }
+  taskToastReady = true
 }
 
 function catalogQuery(page = 1, pageSize = catalogState.page_size || 24) {
@@ -1007,8 +1044,11 @@ async function reload() {
 async function loadRecentOperationEvents() {
   if (!authState.authenticated) return
   try {
-    const data = await getRecentOperations(20)
+    const data = await getRecentOperations(80)
     recentOperations.value = data.items || []
+    if (recentOperationPage.value > recentOperationPageCount.value) {
+      recentOperationPage.value = recentOperationPageCount.value
+    }
   } catch {
     recentOperations.value = []
   }
@@ -1253,6 +1293,9 @@ exposeAppContext({
   processorSettingsForm,
   regionLabel,
   recentOperations,
+  recentOperationPage,
+  recentOperationPageCount,
+  recentOperationRows,
   reload,
   reloadDiagnostics,
   resourceReferenceKind,

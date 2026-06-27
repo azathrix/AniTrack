@@ -169,7 +169,7 @@ export default appContextComponent({
         <div class="task-filter-strip">
           <button :class="{ active: !selectedTaskType }" @click="selectedTaskType = ''" class="filter-pill">
             <span>全部</span>
-            <span class="badge">{{ (dashboard.tasks || []).length }}</span>
+            <span v-if="(dashboard.tasks || []).length" class="badge">{{ (dashboard.tasks || []).length }}</span>
           </button>
           <button
             v-for="item in taskTypeRows"
@@ -179,7 +179,7 @@ export default appContextComponent({
             class="filter-pill"
           >
             <span>{{ item.name }}</span>
-            <span class="badge" :class="{ warning: item.running, danger: item.failed }">
+            <span v-if="item.total || item.running || item.pending || item.failed" class="badge" :class="{ warning: item.running, danger: item.failed }">
               {{ item.running ? '运行' : (item.pending ? '待审' : (item.failed ? '失败' : item.total)) }}
             </span>
           </button>
@@ -239,7 +239,7 @@ export default appContextComponent({
           <div class="timeline-stream">
             <div class="stream-line"></div>
             
-            <div v-for="item in recentOperations" :key="item.id" class="stream-item" :class="item.level === 'error' ? 'pink' : (item.level === 'warn' ? 'purple' : 'blue')">
+            <div v-for="item in recentOperationRows" :key="item.id" class="stream-item" :class="item.level === 'error' ? 'pink' : (item.level === 'warn' ? 'purple' : 'blue')">
               <span class="stream-dot"></span>
               <div class="stream-content">
                 <div class="content-meta">
@@ -251,6 +251,11 @@ export default appContextComponent({
             </div>
 
             <el-empty v-if="!recentOperations.length" description="暂无最近操作" :image-size="40" />
+          </div>
+          <div v-if="recentOperations.length > recentOperationRows.length" class="recent-operation-pager">
+            <el-button size="small" plain :disabled="recentOperationPage <= 1" @click="recentOperationPage -= 1">上一页</el-button>
+            <span>{{ recentOperationPage }} / {{ recentOperationPageCount }}</span>
+            <el-button size="small" plain :disabled="recentOperationPage >= recentOperationPageCount" @click="recentOperationPage += 1">下一页</el-button>
           </div>
         </div>
 

@@ -1118,6 +1118,240 @@
   width: 50px;
 }
 
+/* Centered personal-home layout */
+.app-shell {
+  --mochi-shell-width: 1540px;
+  --mochi-sidebar-width: 252px;
+  --mochi-sidebar-left: max(24px, calc((100vw - var(--mochi-shell-width)) / 2));
+}
+
+.sidebar {
+  left: var(--mochi-sidebar-left) !important;
+  width: var(--mochi-sidebar-width) !important;
+}
+
+.main {
+  margin-left: calc(var(--mochi-sidebar-left) + var(--mochi-sidebar-width) + 28px) !important;
+  margin-right: auto !important;
+  max-width: 1080px !important;
+  padding-top: 34px !important;
+  width: min(1080px, calc(100vw - var(--mochi-sidebar-left) - var(--mochi-sidebar-width) - 56px)) !important;
+}
+
+.brand {
+  gap: 14px;
+  padding: 20px 22px;
+}
+
+.brand-logo {
+  height: 64px;
+  width: 64px;
+}
+
+.brand-wordmark {
+  font-size: 25px;
+}
+
+.sidebar-scan-button {
+  align-items: center;
+  background: linear-gradient(135deg, var(--ani-pink), var(--ani-pink-deep));
+  border: 0;
+  border-radius: 16px;
+  color: #fff;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 950;
+  gap: 7px;
+  justify-content: center;
+  min-height: 38px;
+  position: relative;
+  transition: transform .22s ease, box-shadow .22s ease, opacity .22s ease;
+  width: 100%;
+  z-index: 1;
+}
+
+.sidebar-scan-button:hover:not(:disabled) {
+  box-shadow: 0 12px 24px rgba(255, 141, 161, .22);
+  transform: translateY(-2px);
+}
+
+.sidebar-scan-button:disabled {
+  cursor: not-allowed;
+  opacity: .65;
+}
+
+.login-card small {
+  display: none;
+}
+
+.library,
+.media-page,
+.calendar-page,
+.discovery-page,
+.mochi-dashboard-container,
+.logs-page,
+.settings-page {
+  padding-top: 6px;
+}
+
+.media-toolbar {
+  margin-bottom: 4px;
+}
+
+.media-toolbar .el-input {
+  flex: 1 1 440px;
+  max-width: 560px;
+}
+
+.filter-board {
+  background: rgba(255, 255, 255, .92);
+  border: 1px solid var(--ani-line);
+  border-radius: 24px;
+  box-shadow: 0 18px 42px rgba(255, 141, 161, .09);
+  display: grid;
+  gap: 11px;
+  margin: 2px 0 12px;
+  padding: 16px 18px;
+}
+
+.filter-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.filter-row > span {
+  color: var(--ani-dark);
+  flex: 0 0 52px;
+  font-size: 13px;
+  font-weight: 950;
+  line-height: 30px;
+}
+
+.filter-row > button {
+  margin: 0;
+}
+
+.fade-slide-enter-active,
+.fade-slide-leave-active {
+  max-height: 560px;
+}
+
+.mochi-bottom-grid {
+  grid-template-columns: 1fr !important;
+}
+
+.mochi-tasks-panel,
+.mochi-radar-logs-panel {
+  min-width: 0;
+}
+
+.task-cards-list-box {
+  max-height: 430px;
+  min-height: 430px;
+}
+
+.task-cards-list-box > .el-empty,
+.task-cards-list-box .el-empty {
+  min-height: 390px !important;
+}
+
+.timeline-stream {
+  max-height: 300px;
+  min-height: 220px;
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
+.recent-operation-pager {
+  align-items: center;
+  border-top: 1px dashed var(--ani-line);
+  color: var(--ani-dark-light);
+  display: flex;
+  font-size: 12px;
+  font-weight: 900;
+  gap: 10px;
+  justify-content: flex-end;
+  padding-top: 10px;
+}
+
+.calendar-page {
+  gap: 16px;
+}
+
+.calendar-toolbar {
+  margin-top: 4px;
+}
+
+.calendar-selected-panel {
+  align-content: start;
+  min-height: 360px;
+}
+
+.calendar-update-grid {
+  align-items: stretch;
+  grid-template-columns: repeat(auto-fill, minmax(318px, 1fr));
+}
+
+.calendar-update-card {
+  align-items: stretch;
+  grid-template-columns: 84px minmax(0, 1fr);
+  min-height: 138px;
+  padding: 14px;
+}
+
+.calendar-update-cover {
+  align-self: start;
+  height: 126px;
+  width: 84px;
+}
+
+.calendar-update-meta {
+  align-content: start;
+  gap: 7px;
+  padding-top: 2px;
+}
+
+.calendar-update-meta strong {
+  font-size: 15px;
+  -webkit-line-clamp: 2;
+}
+
+.calendar-update-meta > span {
+  -webkit-box-orient: vertical;
+  display: -webkit-box;
+  line-height: 1.35;
+  max-height: 33px;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+}
+
+.el-message {
+  background: #fff !important;
+  border-radius: 20px !important;
+  min-width: 260px !important;
+}
+
+.el-message::before {
+  background: linear-gradient(180deg, var(--ani-pink), var(--ani-purple));
+  border-radius: 999px;
+  content: "";
+  height: 32px;
+  left: 10px;
+  opacity: .16;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 32px;
+}
+
+.el-message .el-message__content {
+  color: var(--ani-dark) !important;
+  font-weight: 900 !important;
+}
+
 @media (max-width: 1100px) {
   .main {
     margin-left: 0;

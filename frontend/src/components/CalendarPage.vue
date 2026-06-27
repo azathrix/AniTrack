@@ -34,13 +34,6 @@ export default appContextComponent()
           </button>
         </div>
         <div class="calendar-selected-panel">
-          <div class="calendar-selected-head">
-            <div>
-              <strong>{{ selectedCalendarDayData.label }} · {{ selectedCalendarDayData.dateLabel }}</strong>
-              <span>{{ selectedCalendarItems.length ? `当天更新 ${selectedCalendarItems.length} 部` : '当天暂无更新' }}</span>
-            </div>
-            <el-tag v-if="selectedCalendarDayData.isToday" type="primary">今天</el-tag>
-          </div>
           <div v-if="selectedCalendarItems.length" class="calendar-update-grid">
             <article
               v-for="item in selectedCalendarItems"

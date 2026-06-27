@@ -289,7 +289,7 @@ async def delete_task(task_id: str) -> bool:
 
 async def clear_completed_tasks() -> dict[str, int]:
     runtime_count = await runtime_store.clear_completed_tasks()
-    operation_count = runtime_store.clear_completed_operations_sync()
+    operation_count = runtime_store.clear_finished_operations_sync()
     with connect() as conn:
         cursor = conn.execute("DELETE FROM download_jobs WHERE status IN ('completed', 'cancelled')")
         download_count = cursor.rowcount if cursor.rowcount is not None else 0
