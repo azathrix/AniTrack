@@ -542,7 +542,7 @@ export function createAppActions(app, deps) {
           local_path: item.local_path || '',
           source_type: item.source_type || 'manual',
           episode_number: Number(item.episode || item.episode_number || 0),
-          title: item.text || '',
+          title: item.title || item.text || '',
           language: app.episodeImportForm.language || '',
           subtitle_format: app.episodeImportForm.subtitle_format || '',
         })),

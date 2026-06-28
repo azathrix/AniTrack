@@ -383,6 +383,8 @@ const episodeImportForm = reactive({
   language: '',
 })
 const episodeImportLocalItems = ref([])
+const episodeImportResourceEdits = ref({})
+const episodeImportSubtitleEdits = ref({})
 const mediaWizardDraft = reactive({
   source_mode: 'link',
   title: '',
@@ -689,12 +691,59 @@ const batchSubtitleCanAdvance = computed(() => {
   return true
 })
 const batchSubtitleCanSave = computed(() => batchSubtitlePreviewRows.value.length > 0 && batchSubtitleInvalidRows.value.length === 0)
+
+function compactTextKey(text) {
+  const source = String(text || '')
+  let hash = 0
+  for (let index = 0; index < source.length; index += 1) {
+    hash = ((hash << 5) - hash + source.charCodeAt(index)) | 0
+  }
+  return Math.abs(hash).toString(36)
+}
+
+function editedEpisode(editsRef, key, fallback) {
+  const value = Number(editsRef.value[key]?.episode || 0)
+  return value > 0 ? value : fallback
+}
+
+function editedTitle(editsRef, key, fallback) {
+  const value = String(editsRef.value[key]?.title || '').trim()
+  return value || fallback
+}
+
+function updateEpisodeImportEdit(editsRef, key, patch) {
+  editsRef.value = {
+    ...editsRef.value,
+    [key]: {
+      ...(editsRef.value[key] || {}),
+      ...patch,
+    },
+  }
+}
+
+function setEpisodeImportResourceEpisode(key, value) {
+  updateEpisodeImportEdit(episodeImportResourceEdits, key, { episode: Number(value || 0) })
+}
+
+function setEpisodeImportResourceTitle(key, value) {
+  updateEpisodeImportEdit(episodeImportResourceEdits, key, { title: value })
+}
+
+function setEpisodeImportSubtitleEpisode(key, value) {
+  updateEpisodeImportEdit(episodeImportSubtitleEdits, key, { episode: Number(value || 0) })
+}
+
 const episodeImportLinkRows = computed(() => splitTextLines(episodeImportForm.resources_text).map((text, index) => {
   const valid = isValidResourceReference(text)
+  const key = `resource-link:${index}:${compactTextKey(text)}`
+  const inferredEpisode = inferEpisodeFromText(text, index + 1)
+  const inferredTitle = titleFromResourceSeed(text) || `第 ${inferredEpisode} 集资源`
   return {
-    key: `resource:${index}:${text}`,
+    key,
     text,
-    episode: inferEpisodeFromText(text, index + 1),
+    episode: editedEpisode(episodeImportResourceEdits, key, inferredEpisode),
+    title: editedTitle(episodeImportResourceEdits, key, inferredTitle),
+    inferred_episode: inferredEpisode,
     valid,
     kind: resourceReferenceKind(text),
     reason: valid ? '' : '不是下载链接',
@@ -705,10 +754,15 @@ const episodeImportLinkRows = computed(() => splitTextLines(episodeImportForm.re
 }))
 const episodeImportLocalRows = computed(() => episodeImportLocalItems.value.map((item, index) => {
   const text = item.path || item.name || ''
+  const key = item.id || `local-resource:${index}:${compactTextKey(text)}`
+  const inferredEpisode = Number(item.episode_number || 0) || inferEpisodeFromText(text, index + 1)
+  const inferredTitle = titleFromResourceSeed(text) || item.name || `第 ${inferredEpisode} 集资源`
   return {
-    key: item.id || `local-resource:${index}:${text}`,
+    key,
     text,
-    episode: Number(item.episode_number || 0) || inferEpisodeFromText(text, index + 1),
+    episode: editedEpisode(episodeImportResourceEdits, key, inferredEpisode),
+    title: editedTitle(episodeImportResourceEdits, key, inferredTitle),
+    inferred_episode: inferredEpisode,
     valid: Boolean(text),
     kind: '本地文件',
     reason: text ? '' : '未选择文件',
@@ -720,10 +774,13 @@ const episodeImportLocalRows = computed(() => episodeImportLocalItems.value.map(
 const episodeImportResourceRows = computed(() => [...episodeImportLinkRows.value, ...episodeImportLocalRows.value])
 const episodeImportSubtitleRows = computed(() => splitTextLines(episodeImportForm.subtitles_text).map((text, index) => {
   const valid = isValidSubtitleReference(text)
+  const key = `episode-subtitle:${index}:${compactTextKey(text)}`
+  const inferredEpisode = inferEpisodeFromText(text, index + 1)
   return {
-    key: `episode-subtitle:${index}:${text}`,
+    key,
     text,
-    episode: inferEpisodeFromText(text, index + 1),
+    episode: editedEpisode(episodeImportSubtitleEdits, key, inferredEpisode),
+    inferred_episode: inferredEpisode,
     valid,
     reason: valid ? '' : '格式无效',
   }
@@ -891,6 +948,8 @@ function openEpisodeImportDialog() {
   episodeImportForm.subtitle_format = 'external'
   episodeImportForm.language = ''
   episodeImportLocalItems.value = []
+  episodeImportResourceEdits.value = {}
+  episodeImportSubtitleEdits.value = {}
   episodeImportStep.value = 0
   episodeImportDialogOpen.value = true
 }
@@ -1256,6 +1315,9 @@ exposeAppContext({
   episodeImportResourceRows,
   episodeImportStep,
   episodeImportSubtitleRows,
+  setEpisodeImportResourceEpisode,
+  setEpisodeImportResourceTitle,
+  setEpisodeImportSubtitleEpisode,
   episodeResourceDialogOpen,
   episodeResourceForm,
   errorMessage,

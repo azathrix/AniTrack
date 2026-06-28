@@ -53,9 +53,43 @@ export function splitTextLines(value) {
   return String(value || '').split(/\r?\n/).map(item => item.trim()).filter(Boolean)
 }
 
+function magnetDisplayName(value) {
+  const text = String(value || '').trim()
+  if (!/^magnet:\?/i.test(text)) return ''
+  const query = text.slice(text.indexOf('?') + 1)
+  try {
+    return new URLSearchParams(query).get('dn') || ''
+  } catch {
+    const match = text.match(/[?&]dn=([^&]+)/i)
+    return match ? decodeURIComponent(match[1].replace(/\+/g, ' ')) : ''
+  }
+}
+
+function episodeInferenceText(value) {
+  const text = String(value || '').trim()
+  if (!text) return ''
+  const displayName = magnetDisplayName(text)
+  if (displayName) return displayName
+  if (/^magnet:\?/i.test(text)) return ''
+  try {
+    const url = new URL(text)
+    const filename = decodeURIComponent(url.pathname.split('/').filter(Boolean).pop() || '')
+    return filename || decodeURIComponent(url.pathname || '')
+  } catch {
+    return text
+  }
+}
+
 export function inferEpisodeFromText(value, fallback = 1) {
-  const text = String(value || '')
-  const patterns = [/S\d{1,2}E(\d{1,4})/i, /(?:第|EP|E|episode)[\s._-]*(\d{1,4})/i, /[\s._\-[【(](\d{1,4})[\])】)\s._-]/]
+  const text = episodeInferenceText(value)
+  if (!text) return Math.max(1, fallback)
+  const patterns = [
+    /\bS\d{1,2}E(\d{1,4})\b/i,
+    /第\s*(\d{1,4})\s*(?:集|话|話)?/i,
+    /\b(?:EP|episode)[\s._-]*(\d{1,4})\b/i,
+    /(?:^|[^A-Za-z0-9])E[\s._-]*(\d{1,4})(?:$|[^A-Za-z0-9])/i,
+    /[\s._\-[【(](\d{1,4})[\])】)\s._-]/,
+  ]
   for (const pattern of patterns) {
     const match = text.match(pattern)
     if (match) {
@@ -86,6 +120,8 @@ export function resourceReferenceKind(value) {
 export function titleFromResourceSeed(value) {
   let text = String(value || '').trim()
   if (!text) return ''
+  const displayName = magnetDisplayName(text)
+  if (displayName) text = displayName
   try {
     const url = new URL(text)
     const name = decodeURIComponent(url.pathname.split('/').filter(Boolean).pop() || '')

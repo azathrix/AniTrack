@@ -251,9 +251,21 @@ export default appContextComponent()
           </el-tabs>
           <div class="guide-preview">
             <strong>资源识别</strong>
-            <div v-for="item in episodeImportResourceRows" :key="item.key" :class="['guide-preview-row', { invalid: !item.valid }]">
-              <span>第 {{ item.episode }} 集</span>
-              <code>{{ item.text }}</code>
+            <p class="guide-preview-hint">磁链没有文件名时会按行号预填集数；如果识别不准，可以在这里直接修改。</p>
+            <div v-for="item in episodeImportResourceRows" :key="item.key" :class="['guide-preview-row', 'editable', { invalid: !item.valid }]">
+              <el-input-number
+                :model-value="item.episode"
+                :min="1"
+                :max="9999"
+                controls-position="right"
+                @update:model-value="setEpisodeImportResourceEpisode(item.key, $event)"
+              />
+              <el-input
+                :model-value="item.title"
+                placeholder="来源标题 / 文件名"
+                @update:model-value="setEpisodeImportResourceTitle(item.key, $event)"
+              />
+              <code :title="item.text">{{ item.text }}</code>
               <el-tag size="small" :type="item.valid ? 'success' : 'danger'">{{ item.valid ? item.kind : item.reason }}</el-tag>
             </div>
           </div>
@@ -278,8 +290,15 @@ export default appContextComponent()
           </el-form>
           <div class="guide-preview" v-if="episodeImportSubtitleRows.length">
             <strong>字幕识别</strong>
-            <div v-for="item in episodeImportSubtitleRows" :key="item.key" :class="['guide-preview-row', { invalid: !item.valid }]">
-              <span>第 {{ item.episode }} 集</span>
+            <p class="guide-preview-hint">字幕会按文件名或链接识别集数；不准时可以手动改到对应集。</p>
+            <div v-for="item in episodeImportSubtitleRows" :key="item.key" :class="['guide-preview-row', 'subtitle-editable', { invalid: !item.valid }]">
+              <el-input-number
+                :model-value="item.episode"
+                :min="1"
+                :max="9999"
+                controls-position="right"
+                @update:model-value="setEpisodeImportSubtitleEpisode(item.key, $event)"
+              />
               <code>{{ item.text }}</code>
               <el-tag size="small" :type="item.valid ? 'success' : 'danger'">{{ item.valid ? '可导入' : item.reason }}</el-tag>
             </div>
