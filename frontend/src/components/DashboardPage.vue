@@ -89,11 +89,11 @@ export default appContextComponent({
             <svg class="donut-svg" viewBox="0 0 36 36">
               <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#FFF5F6" stroke-width="3" />
               <!-- Completed slice -->
-              <path class="circle-segment pink" :stroke-dasharray="`${completedPercent}, 100`" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831" fill="none" stroke="var(--ani-pink)" stroke-width="3.5" stroke-linecap="round" />
+              <path class="circle-segment pink" :stroke-dasharray="`${completedPercent}, 100`" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="var(--ani-pink)" stroke-width="3.5" stroke-linecap="round" />
               <!-- Active slice -->
-              <path class="circle-segment blue" :stroke-dasharray="`${activePercent}, 100`" :stroke-dashoffset="`-${completedPercent}`" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831" fill="none" stroke="var(--ani-blue)" stroke-width="3.5" stroke-linecap="round" />
+              <path class="circle-segment blue" :stroke-dasharray="`${activePercent}, 100`" :stroke-dashoffset="`-${completedPercent}`" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="var(--ani-blue)" stroke-width="3.5" stroke-linecap="round" />
               <!-- Failed slice -->
-              <path class="circle-segment purple" :stroke-dasharray="`${failedPercent}, 100`" :stroke-dashoffset="`-${completedPercent + activePercent}`" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831" fill="none" stroke="var(--ani-purple)" stroke-width="3.5" stroke-linecap="round" />
+              <path class="circle-segment purple" :stroke-dasharray="`${failedPercent}, 100`" :stroke-dashoffset="`-${completedPercent + activePercent}`" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="var(--ani-purple)" stroke-width="3.5" stroke-linecap="round" />
             </svg>
             <div class="donut-center-text">
               <span class="center-label">队列状态</span>
