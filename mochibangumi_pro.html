@@ -1,0 +1,2018 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MochiBangumi Pro - 二次元影视追番管理主控台</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts for Cute Rounded Typography -->
+  <link href="https://fonts.googleapis.com/css2?family=Kosugi+Maru&family=Nunito:wght@400;600;700;900&family=ZCOOL+KuaiLe&display=swap" rel="stylesheet">
+  <!-- FontAwesome for Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Nunito', 'Kosugi Maru', 'system-ui', 'sans-serif'],
+            cute: ['ZCOOL KuaiLe', 'Nunito', 'sans-serif'],
+          },
+          colors: {
+            theme: {
+              pink: '#FF8DA1',
+              pinkLight: '#FFF5F6',
+              pinkDeep: '#FF5E7E',
+              yellow: '#FCD77F',
+              yellowLight: '#FFFDF6',
+              blue: '#82D9ED',
+              blueLight: '#F3FCFD',
+              purple: '#C79FE5',
+              purpleLight: '#FAF5FE',
+              mint: '#8EE4D5',
+              mintLight: '#F2FCFA',
+              dark: '#5C525D',
+              darkLight: '#8C808D',
+              border: '#F3E5E8'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  
+  <style>
+    /* 极致轻量化可爱滚动条 */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #FFF5F6;
+      border-radius: 20px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #FF8DA1;
+      border-radius: 20px;
+      border: 2px solid #FFF5F6;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #FF5E7E;
+    }
+
+    /* 抛弃粗黑重线条，改用超轻盈马卡龙柔和光影 */
+    .cute-glow-shadow {
+      box-shadow: 0 10px 30px -5px rgba(255, 141, 161, 0.12), 0 4px 12px -2px rgba(255, 141, 161, 0.05);
+      border: 1px solid #FFE6EB;
+    }
+    
+    .cute-glow-shadow-sm {
+      box-shadow: 0 4px 10px -2px rgba(255, 141, 161, 0.06);
+      border: 1px solid #FFEBEF;
+    }
+
+    .cute-glow-shadow-purple {
+      box-shadow: 0 10px 30px -5px rgba(199, 159, 229, 0.15);
+      border: 1px solid #FAF0FE;
+    }
+
+    /* 极致丝滑过渡 */
+    .soft-transition {
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* Q弹果冻微动效 */
+    @keyframes mini-jelly {
+      0%, 100% { transform: scale(1, 1); }
+      30% { transform: scale(0.96, 1.04); }
+      50% { transform: scale(1.04, 0.96); }
+      80% { transform: scale(0.98, 1.02); }
+    }
+    .hover-jelly:hover {
+      animation: mini-jelly 0.5s ease-in-out;
+    }
+
+    /* 极光漂浮气泡 */
+    @keyframes bubble-float {
+      0%, 100% { transform: translateY(0px) rotate(0deg); }
+      50% { transform: translateY(-8px) rotate(3deg); }
+    }
+    .bubble-float-item {
+      animation: bubble-float 5s infinite ease-in-out;
+    }
+
+    /* 极速魔法阵旋转 */
+    @keyframes magic-spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .magic-spin-loader {
+      animation: magic-spin 10s linear infinite;
+    }
+  </style>
+</head>
+<body class="bg-[#FDF9F9] text-theme-dark font-sans min-h-screen pb-16 soft-transition" id="app-body">
+
+  <!-- ================= 登录关隘界面 (Login Page) ================= -->
+  <div id="login-screen" class="fixed inset-0 bg-[#FFF7F8] z-50 flex items-center justify-center p-4 transition-all duration-700">
+    <!-- 背景萌系漂浮泡沫 -->
+    <div class="absolute top-10 left-12 w-16 h-16 bg-[#FFF0F2] rounded-full opacity-60 bubble-float-item text-4xl flex items-center justify-center">🍬</div>
+    <div class="absolute bottom-16 right-12 w-24 h-24 bg-[#FFF0F2] rounded-full opacity-60 bubble-float-item text-5xl flex items-center justify-center" style="animation-delay: -2s;">🌸</div>
+    <div class="absolute top-2/3 left-10 w-20 h-20 bg-[#F3FCFD] rounded-full opacity-60 bubble-float-item text-4xl flex items-center justify-center" style="animation-delay: -3.5s;">🧸</div>
+
+    <!-- 登录卡片 -->
+    <div class="bg-white rounded-3xl p-8 max-w-md w-full cute-glow-shadow relative overflow-hidden">
+      <!-- 萌系装饰猫耳 -->
+      <div class="absolute -top-4 left-10 w-10 h-10 bg-white transform -rotate-12 rounded-xl border-t border-l border-[#FFE6EB]"></div>
+      <div class="absolute -top-4 right-10 w-10 h-10 bg-white transform rotate-12 rounded-xl border-t border-r border-[#FFE6EB]"></div>
+      
+      <div class="text-center mb-6">
+        <div class="w-14 h-14 bg-theme-pink rounded-full mx-auto flex items-center justify-center text-white text-2xl cute-glow-shadow-sm mb-3">
+          🔑
+        </div>
+        <h2 class="text-2xl font-cute tracking-wider text-theme-pinkDeep">萌之契约书 🍓</h2>
+        <p class="text-xs text-theme-darkLight font-bold mt-1">请输入你的魔法代号，开启追番管理时空！</p>
+      </div>
+
+      <div class="space-y-4 text-xs font-bold text-theme-dark">
+        <!-- 账号 -->
+        <div class="space-y-1">
+          <label class="text-theme-darkLight block pl-1">魔法使真名 (Username)</label>
+          <div class="relative">
+            <input type="text" id="login-username" value="桃子酱" class="w-full px-4 py-2.5 rounded-xl border border-theme-border bg-theme-pinkLight/30 focus:outline-none focus:ring-2 focus:ring-theme-pink/30" placeholder="管理员：桃子酱">
+            <span class="absolute right-3 top-2.5 text-base">👧</span>
+          </div>
+        </div>
+
+        <!-- 密码 -->
+        <div class="space-y-1">
+          <label class="text-theme-darkLight block pl-1">暗黑契约密钥 (Password)</label>
+          <div class="relative">
+            <input type="password" id="login-password" value="mochi2026" class="w-full px-4 py-2.5 rounded-xl border border-theme-border bg-theme-pinkLight/30 focus:outline-none focus:ring-2 focus:ring-theme-pink/30" placeholder="默认密码: mochi2026">
+            <span class="absolute right-3 top-2.5 text-base">🛡️</span>
+          </div>
+        </div>
+
+        <div class="flex justify-between items-center text-[10px] text-theme-darkLight px-1">
+          <label class="flex items-center space-x-1 cursor-pointer">
+            <input type="checkbox" checked class="accent-theme-pink rounded">
+            <span>记住契约印记</span>
+          </label>
+          <a href="#" onclick="showToast('🌸 密码被封印了？那就点击下方一键降临吧！')" class="hover:text-theme-pinkDeep">忘记魔法密钥？</a>
+        </div>
+
+        <!-- 登录按钮 -->
+        <button onclick="handleLogin()" class="w-full py-3 bg-gradient-to-r from-theme-pink to-theme-pinkDeep text-white rounded-xl text-xs font-bold cute-glow-shadow-sm hover-jelly transition-all flex items-center justify-center space-x-2">
+          <span>🌟</span>
+          <span>缔结契约，开启法阵</span>
+        </button>
+
+        <!-- 一键登录与快捷体验 -->
+        <div class="relative flex py-2 items-center">
+          <div class="flex-grow border-t border-dashed border-pink-100"></div>
+          <span class="flex-shrink mx-4 text-[10px] text-theme-darkLight font-bold">快捷免签通道</span>
+          <div class="flex-grow border-t border-dashed border-pink-100"></div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <button onclick="bypassLogin('桃子酱', 'administrator')" class="py-2.5 rounded-xl bg-theme-blueLight border border-theme-blue/30 text-theme-blue font-bold text-[10px] hover:bg-theme-blue/10 soft-transition">
+            👑 首席管理员
+          </button>
+          <button onclick="bypassLogin('游历小精灵', 'user')" class="py-2.5 rounded-xl bg-theme-yellowLight border border-theme-yellow/30 text-amber-700 font-bold text-[10px] hover:bg-theme-yellow/10 soft-transition">
+            🐾 游客降临
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 头部萌系背景装饰 -->
+  <div class="absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-[#FFF0F2] via-[#FFF8F9] to-transparent -z-10 opacity-80"></div>
+
+  <!-- 顶部导航栏 -->
+  <header class="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+    <div class="flex items-center space-x-3">
+      <!-- 萌萌Logo -->
+      <div class="w-10 h-10 bg-theme-pink rounded-2xl flex items-center justify-center cute-glow-shadow-sm bubble-float-item relative text-white text-xl">
+        🌸
+        <div class="absolute -top-1 -left-1 w-3.5 h-3.5 bg-theme-pink transform -rotate-12 rounded-sm" style="clip-path: polygon(50% 0%, 0% 100%, 100% 100%);"></div>
+        <div class="absolute -top-1 -right-1 w-3.5 h-3.5 bg-theme-pink transform rotate-12 rounded-sm" style="clip-path: polygon(50% 0%, 0% 100%, 100% 100%);"></div>
+      </div>
+      <div>
+        <h1 class="text-xl font-cute tracking-wide text-theme-dark flex items-center">
+          MochiBangumi <span class="text-[9px] bg-theme-pinkLight text-theme-pinkDeep px-2 py-0.5 rounded-full border border-theme-pink/30 ml-2 font-sans font-bold">PRO V4.0</span>
+        </h1>
+        <p class="text-[10px] text-theme-darkLight font-bold">轻量马卡龙风格 · 阿宅的终极追番工坊 🍓</p>
+      </div>
+    </div>
+
+    <!-- 控制区域 -->
+    <div class="flex items-center space-x-4">
+      <!-- 用户状态气泡 -->
+      <div class="hidden sm:flex items-center space-x-2 bg-white/80 backdrop-blur-md px-3 py-1 rounded-xl border border-[#FFE6EB] cute-glow-shadow-sm">
+        <span class="text-sm">👑</span>
+        <span id="header-user-name" class="text-[10px] font-bold text-theme-dark">桃子酱</span>
+        <span id="header-user-badge" class="text-[8px] bg-theme-pink text-white px-1.5 py-0.5 rounded-md">ADMIN</span>
+        <button onclick="handleLogout()" class="text-xs hover:text-theme-pinkDeep transition-colors" title="登出魔法阵">🚪</button>
+      </div>
+
+      <!-- 皮肤快捷键 -->
+      <div class="bg-white/80 backdrop-blur-md p-1 rounded-xl border border-[#FFE6EB] flex items-center space-x-1 cute-glow-shadow-sm">
+        <button onclick="changeTheme('pink')" id="theme-btn-pink" class="px-3 py-1 rounded-lg text-xs font-bold soft-transition bg-theme-pink text-white">
+          🌸 甜桃粉
+        </button>
+        <button onclick="changeTheme('mint')" id="theme-btn-mint" class="px-3 py-1 rounded-lg text-xs font-bold soft-transition text-theme-darkLight hover:text-theme-dark">
+          🌿 薄荷绿
+        </button>
+      </div>
+
+      <!-- 静音开关 -->
+      <label class="relative inline-flex items-center cursor-pointer">
+        <input type="checkbox" id="music-toggle" class="sr-only peer" checked onchange="toggleCuteMusic()">
+        <div class="w-11 h-6 bg-slate-100 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-theme-pink flex items-center justify-between px-1 text-[10px] select-none">
+          <span>🔇</span>
+          <span>🔊</span>
+        </div>
+      </label>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 lg:px-6 grid grid-cols-1 lg:grid-cols-4 gap-6 mt-2">
+    
+    <!-- 左侧菜单：二次元立绘 & 导航 -->
+    <aside class="lg:col-span-1 space-y-6">
+      
+      <!-- 萌系个人名片 -->
+      <div class="bg-white rounded-2xl p-5 cute-glow-shadow relative overflow-hidden">
+        <div class="absolute -right-6 -bottom-6 w-20 h-20 bg-theme-pinkLight rounded-full opacity-60 -z-10"></div>
+        <div class="flex flex-col items-center text-center">
+          <div class="relative mb-2">
+            <div class="w-16 h-16 rounded-full bg-theme-blue overflow-hidden hover-jelly cursor-pointer relative flex items-center justify-center border border-theme-border">
+              <span id="aside-avatar" class="text-4xl">👧</span>
+            </div>
+            <span class="absolute bottom-0 right-0 w-3 h-3 bg-green-400 rounded-full border-2 border-white"></span>
+          </div>
+          <h2 id="aside-username" class="text-base font-bold flex items-center gap-1">桃子酱 <span class="text-xs text-theme-pink">♀</span></h2>
+          <span id="aside-role" class="text-[10px] bg-theme-pinkLight text-theme-pinkDeep px-2.5 py-0.5 rounded-full font-bold mt-1">首席特级追番官</span>
+          
+          <div class="grid grid-cols-3 gap-2 w-full mt-4 pt-3 border-t border-dashed border-pink-100">
+            <div>
+              <div class="font-cute text-base text-theme-pinkDeep" id="stats-watching-count">3</div>
+              <div class="text-[9px] text-theme-darkLight font-bold">在看新番</div>
+            </div>
+            <div>
+              <div class="font-cute text-base text-theme-purple">98%</div>
+              <div class="text-[9px] text-theme-darkLight font-bold">宅能饱和</div>
+            </div>
+            <div>
+              <div class="font-cute text-base text-theme-blue" id="stats-total-count">3</div>
+              <div class="text-[9px] text-theme-darkLight font-bold">总追番数</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 侧边主要导航 -->
+      <nav class="bg-white rounded-2xl p-3 cute-glow-shadow space-y-1">
+        <p class="text-[10px] font-bold text-theme-darkLight px-3 uppercase tracking-wider mb-2">控制中心</p>
+        
+        <button onclick="switchTab('dashboard')" id="nav-dashboard" class="w-full flex items-center space-x-3 p-2.5 rounded-xl bg-theme-pink text-white font-bold soft-transition text-left text-xs">
+          <span>📊</span>
+          <span>次元数据大盘</span>
+        </button>
+        <button onclick="switchTab('wall')" id="nav-wall" class="w-full flex items-center space-x-3 p-2.5 rounded-xl text-theme-dark hover:bg-theme-pinkLight font-bold soft-transition text-left text-xs">
+          <span>📺</span>
+          <span>影视放映卡墙</span>
+        </button>
+        <button onclick="switchTab('calendar')" id="nav-calendar" class="w-full flex items-center space-x-3 p-2.5 rounded-xl text-theme-dark hover:bg-theme-pinkLight font-bold soft-transition text-left text-xs">
+          <span>📅</span>
+          <span>放映排期周历</span>
+        </button>
+        <button onclick="switchTab('import')" id="nav-import" class="w-full flex items-center space-x-3 p-2.5 rounded-xl text-theme-dark hover:bg-theme-pinkLight font-bold soft-transition text-left text-xs">
+          <span>📥</span>
+          <span>同步传送向导</span>
+        </button>
+        <!-- 👑 新增：管理员秘境 -->
+        <button onclick="switchTab('admin')" id="nav-admin" class="w-full flex items-center justify-between p-2.5 rounded-xl text-theme-dark hover:bg-theme-pinkLight font-bold soft-transition text-left text-xs">
+          <div class="flex items-center space-x-3">
+            <span>👑</span>
+            <span>管理员秘境</span>
+          </div>
+          <span class="text-[8px] bg-red-400 text-white px-1.5 py-0.5 rounded-full font-mono font-bold">PRO</span>
+        </button>
+        <button onclick="switchTab('settings')" id="nav-settings" class="w-full flex items-center space-x-3 p-2.5 rounded-xl text-theme-dark hover:bg-theme-pinkLight font-bold soft-transition text-left text-xs">
+          <span>⚙️</span>
+          <span>齿轮设备工坊</span>
+        </button>
+      </nav>
+
+      <!-- 快捷：录入番剧 -->
+      <button onclick="openEditModal(null)" class="w-full py-3 bg-gradient-to-r from-theme-pink to-theme-pinkDeep hover:opacity-90 text-white font-bold rounded-xl cute-glow-shadow-sm hover-jelly flex items-center justify-center space-x-2 text-xs">
+        <span>✨</span>
+        <span>缔结新番契约</span>
+      </button>
+
+      <!-- 每日追番任务清单 (每日Quest) -->
+      <div class="bg-white rounded-2xl p-4 cute-glow-shadow space-y-2">
+        <div class="flex justify-between items-center border-b border-pink-50 pb-1.5">
+          <h4 class="text-[10px] font-bold text-theme-pinkDeep">📝 每日阿宅Quest</h4>
+          <span class="text-[8px] bg-theme-yellow px-1.5 py-0.5 rounded text-theme-dark font-bold">经验+100</span>
+        </div>
+        <ul class="space-y-1.5 text-[10px] font-bold text-theme-dark">
+          <li class="flex items-center space-x-2">
+            <input type="checkbox" checked class="rounded border-gray-300 accent-theme-pink w-3.5 h-3.5">
+            <span class="line-through text-gray-300">每日登录打卡</span>
+          </li>
+          <li class="flex items-center space-x-2">
+            <input type="checkbox" id="quest-watch" onchange="completeQuest('watch')" class="rounded border-gray-300 accent-theme-pink w-3.5 h-3.5">
+            <span>为任意番剧加一集进度</span>
+          </li>
+          <li class="flex items-center space-x-2">
+            <input type="checkbox" id="quest-poke" onchange="completeQuest('poke')" class="rounded border-gray-300 accent-theme-pink w-3.5 h-3.5">
+            <span>戳一戳看板娘狐狸</span>
+          </li>
+        </ul>
+      </div>
+
+      <!-- 看板娘狐狸 -->
+      <div class="bg-theme-yellowLight rounded-2xl p-4 border border-[#FBE6C2] cute-glow-shadow-sm relative overflow-hidden">
+        <div class="flex items-start space-x-3">
+          <div class="text-3xl bubble-float-item">🦊</div>
+          <div class="flex-1">
+            <h4 class="text-[10px] font-bold text-amber-800">看板娘：小玉</h4>
+            <p class="text-[9px] text-amber-700 mt-0.5 leading-relaxed" id="korean-tips">"指挥官，今天更新了《葬送的芙莉莲》最新一话，不打算来一勺爆米花吗？"</p>
+          </div>
+        </div>
+        <button onclick="pokeFox()" class="absolute -right-1 -bottom-1 w-8 h-8 bg-theme-yellow rounded-tl-xl flex items-center justify-center hover:bg-amber-300 transition-colors text-xs">
+          👉
+        </button>
+      </div>
+
+    </aside>
+
+    <!-- 右侧主内容区域 -->
+    <section class="lg:col-span-3 space-y-6">
+
+      <!-- ================= 标签页 1: 数据大盘 (Dashboard) ================= -->
+      <div id="tab-content-dashboard" class="space-y-6">
+        
+        <!-- 数据卡片网格 -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          
+          <div class="bg-white rounded-2xl p-4 cute-glow-shadow flex items-center justify-between">
+            <div class="space-y-1">
+              <span class="text-[10px] text-theme-darkLight font-bold">本周总放映时长</span>
+              <h3 class="text-xl font-cute text-theme-pinkDeep">14.5 <span class="text-xs font-sans text-theme-dark">小时</span></h3>
+              <p class="text-[9px] text-green-500 font-bold">▲ 较上周增长 12.4%</p>
+            </div>
+            <div class="text-3xl bg-theme-pinkLight p-2.5 rounded-xl">⏱️</div>
+          </div>
+
+          <div class="bg-white rounded-2xl p-4 cute-glow-shadow flex items-center justify-between">
+            <div class="space-y-1">
+              <span class="text-[10px] text-theme-darkLight font-bold">契约同步率</span>
+              <h3 class="text-xl font-cute text-theme-blue">94.2 <span class="text-xs font-sans text-theme-dark">%</span></h3>
+              <p class="text-[9px] text-theme-blue font-bold">TMDB 数据库对接良好</p>
+            </div>
+            <div class="text-3xl bg-theme-blueLight p-2.5 rounded-xl">🔮</div>
+          </div>
+
+          <div class="bg-white rounded-2xl p-4 cute-glow-shadow flex items-center justify-between">
+            <div class="space-y-1">
+              <span class="text-[10px] text-theme-darkLight font-bold">本季追番全达成</span>
+              <h3 class="text-xl font-cute text-theme-purple">3 / 3 <span class="text-xs font-sans text-theme-dark">部</span></h3>
+              <p class="text-[9px] text-[#A78BFA] font-bold">零鸽番，全卡片已点亮</p>
+            </div>
+            <div class="text-3xl bg-theme-purpleLight p-2.5 rounded-xl">🏆</div>
+          </div>
+
+        </div>
+
+        <!-- 视觉展示：动态数据可视化图表 (SVG) 与 动漫能量柱 -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          
+          <!-- 饼图/分类占比 (SVG Mock Chart) -->
+          <div class="bg-white rounded-2xl p-5 cute-glow-shadow md:col-span-2 space-y-4">
+            <div class="flex justify-between items-center border-b border-gray-50 pb-2">
+              <h4 class="text-xs font-bold text-theme-dark">📊 次元题材观影偏好占比</h4>
+              <span class="text-[8px] bg-theme-pinkLight text-theme-pinkDeep px-2 py-0.5 rounded-full font-bold">2026年最新偏好</span>
+            </div>
+            
+            <div class="flex flex-col sm:flex-row items-center justify-around gap-4 pt-2">
+              <!-- SVG 环形图 -->
+              <div class="relative w-28 h-28 flex items-center justify-center">
+                <svg class="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                  <!-- 背景圈 -->
+                  <path class="text-gray-100" stroke-width="3" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                  <!-- 奇幻占比 40% (粉) -->
+                  <path class="text-theme-pink" stroke-dasharray="40, 100" stroke-width="3.2" stroke-linecap="round" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831" />
+                  <!-- 音乐治愈 35% (蓝) -->
+                  <path class="text-theme-blue" stroke-dasharray="35, 100" stroke-dashoffset="-40" stroke-width="3.2" stroke-linecap="round" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831" />
+                  <!-- 热血少年 25% (紫) -->
+                  <path class="text-theme-purple" stroke-dasharray="25, 100" stroke-dashoffset="-75" stroke-width="3.2" stroke-linecap="round" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831" />
+                </svg>
+                <div class="absolute text-center">
+                  <span class="text-[10px] text-theme-darkLight font-bold">首席偏好</span>
+                  <p class="text-xs font-cute text-theme-pinkDeep">魔法/奇幻</p>
+                </div>
+              </div>
+
+              <!-- 图例分类列表 -->
+              <div class="space-y-2 text-[10px] font-bold text-theme-dark w-full sm:w-auto">
+                <div class="flex items-center justify-between gap-6">
+                  <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-theme-pink"></span> ✨ 魔法奇幻 (40%)</span>
+                  <span class="text-theme-darkLight">12部</span>
+                </div>
+                <div class="flex items-center justify-between gap-6">
+                  <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-theme-blue"></span> 🎵 音乐治愈 (35%)</span>
+                  <span class="text-theme-darkLight">9部</span>
+                </div>
+                <div class="flex items-center justify-between gap-6">
+                  <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-theme-purple"></span> 🔥 热血少年 (25%)</span>
+                  <span class="text-theme-darkLight">5部</span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- 追番激励：能量升级栏 -->
+          <div class="bg-white rounded-2xl p-5 cute-glow-shadow space-y-3 flex flex-col justify-between">
+            <div>
+              <h4 class="text-xs font-bold text-theme-dark">🌸 宅能量觉醒等级</h4>
+              <p class="text-[9px] text-theme-darkLight mt-1">追看番剧、积累心得即可升级觉醒度！</p>
+            </div>
+            
+            <div class="py-2 text-center">
+              <span class="text-3xl animate-bounce inline-block">🎒</span>
+              <h3 class="text-xs font-cute text-theme-pinkDeep mt-2">LV.4 二次元见习神官</h3>
+              <p class="text-[9px] text-gray-400 font-bold mt-1">距离下一等级还需 420 经验值</p>
+            </div>
+
+            <div class="space-y-1">
+              <div class="flex justify-between text-[9px] font-bold text-theme-pinkDeep">
+                <span>觉醒度</span>
+                <span>65%</span>
+              </div>
+              <div class="w-full bg-theme-pinkLight h-2 rounded-full overflow-hidden border border-theme-pink/10">
+                <div class="bg-gradient-to-r from-theme-pink to-theme-pinkDeep h-full rounded-full" style="width: 65%"></div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- 最近观影日志流 (Timeline) -->
+        <div class="bg-white rounded-2xl p-5 cute-glow-shadow space-y-4">
+          <div class="flex justify-between items-center border-b border-gray-50 pb-2">
+            <h4 class="text-xs font-bold text-theme-dark">📅 次元追番观影实况日志</h4>
+            <span class="text-[8px] bg-theme-blueLight text-theme-blue px-2 py-0.5 rounded-full font-bold">实时更新</span>
+          </div>
+          
+          <div class="space-y-3 relative before:absolute before:left-3 before:top-2 before:bottom-2 before:w-[1px] before:bg-pink-100">
+            
+            <div class="flex items-start space-x-3 text-[10px] font-bold relative pl-6">
+              <div class="absolute left-1.5 top-1 w-3 h-3 rounded-full bg-theme-pink border-2 border-white"></div>
+              <div class="flex-1">
+                <div class="flex justify-between">
+                  <span class="text-theme-dark">《葬送的芙莉莲》播放进度达到 <b>21/28 话</b></span>
+                  <span class="text-theme-darkLight font-normal">刚刚</span>
+                </div>
+                <p class="text-[9px] text-gray-400 mt-0.5">"完美击中泪点，芙莉莲的心路历程刻画绝了！"</p>
+              </div>
+            </div>
+
+            <div class="flex items-start space-x-3 text-[10px] font-bold relative pl-6">
+              <div class="absolute left-1.5 top-1 w-3 h-3 rounded-full bg-theme-blue border-2 border-white"></div>
+              <div class="flex-1">
+                <div class="flex justify-between">
+                  <span class="text-theme-dark">同步向导：从 Bilibili 成功导入了 <b>《我推的孩子》</b> 到影视墙</span>
+                  <span class="text-theme-darkLight font-normal">1小时前</span>
+                </div>
+                <p class="text-[9px] text-gray-400 mt-0.5">契约导入源: bilibili 个人UID [22881223]</p>
+              </div>
+            </div>
+
+            <div class="flex items-start space-x-3 text-[10px] font-bold relative pl-6">
+              <div class="absolute left-1.5 top-1 w-3 h-3 rounded-full bg-theme-purple border-2 border-white"></div>
+              <div class="flex-1">
+                <div class="flex justify-between">
+                  <span class="text-theme-dark">对神作《孤独摇滚！》留下了 ⭐⭐⭐⭐⭐ 五星好评</span>
+                  <span class="text-theme-darkLight font-normal">昨天</span>
+                </div>
+                <p class="text-[9px] text-gray-400 mt-0.5">"Bocchi the Rock! 真正的神级社恐写照，太好笑了！"</p>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ================= 标签页 2: 放映卡墙 (Anime Wall Grid) ================= -->
+      <div id="tab-content-wall" class="hidden space-y-6">
+        
+        <!-- 工具栏与分类筛选 -->
+        <div class="bg-white rounded-2xl p-4 cute-glow-shadow flex flex-col md:flex-row justify-between items-center gap-4">
+          <div class="flex flex-wrap gap-2">
+            <button onclick="filterAnime('all')" class="px-4 py-1.5 rounded-lg text-xs font-bold bg-theme-pink text-white cute-glow-shadow-sm hover-jelly" id="btn-filter-all">全部作品</button>
+            <button onclick="filterAnime('watching')" class="px-4 py-1.5 rounded-lg text-xs font-bold text-theme-darkLight hover:text-theme-dark hover:bg-theme-pinkLight transition-colors" id="btn-filter-watching">正在看 (Watching)</button>
+            <button onclick="filterAnime('plan')" class="px-4 py-1.5 rounded-lg text-xs font-bold text-theme-darkLight hover:text-theme-dark hover:bg-theme-pinkLight transition-colors" id="btn-filter-plan">想看 (Plan)</button>
+            <button onclick="filterAnime('completed')" class="px-4 py-1.5 rounded-lg text-xs font-bold text-theme-darkLight hover:text-theme-dark hover:bg-theme-pinkLight transition-colors" id="btn-filter-completed">已看毕 (Done)</button>
+          </div>
+          
+          <div class="flex items-center space-x-2 w-full md:w-auto">
+            <input type="text" id="anime-search-input" oninput="searchAnime(this.value)" placeholder="搜索我的二次元宝藏..." class="px-4 py-2 text-xs rounded-xl bg-white border border-theme-border text-theme-dark font-bold focus:outline-none focus:ring-2 focus:ring-theme-pink/40 w-full md:w-48 placeholder:text-gray-300">
+            <span class="text-lg">🔍</span>
+          </div>
+        </div>
+
+        <!-- 影视画廊网格 (Anime Wall Grid) -->
+        <div id="anime-wall-grid" class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <!-- 动态卡片内容将在此生成 -->
+        </div>
+
+      </div>
+
+      <!-- ================= 标签页 3: 新番周历 (Weekly Calendar) ================= -->
+      <div id="tab-content-calendar" class="hidden space-y-6">
+        <div class="bg-white rounded-2xl p-5 cute-glow-shadow space-y-2">
+          <h2 class="text-base font-cute text-theme-dark flex items-center gap-2">
+            <span>📅</span> 次元新番周历排期 (Weekly Anime Schedule)
+          </h2>
+          <p class="text-[10px] text-theme-darkLight">每周最新最热新番开播雷达，点击即可快速加入你的影视墙库中！</p>
+        </div>
+
+        <!-- 星期切换栏 -->
+        <div class="grid grid-cols-7 gap-2">
+          <button onclick="switchCalendarDay('mon')" id="cal-btn-mon" class="py-2 rounded-xl bg-theme-pink text-white font-cute text-xs text-center cute-glow-shadow-sm soft-transition">周一</button>
+          <button onclick="switchCalendarDay('tue')" id="cal-btn-tue" class="py-2 rounded-xl bg-white text-theme-dark font-cute text-xs text-center border border-theme-border hover:bg-theme-pinkLight soft-transition">周二</button>
+          <button onclick="switchCalendarDay('wed')" id="cal-btn-wed" class="py-2 rounded-xl bg-white text-theme-dark font-cute text-xs text-center border border-theme-border hover:bg-theme-pinkLight soft-transition">周三</button>
+          <button onclick="switchCalendarDay('thu')" id="cal-btn-thu" class="py-2 rounded-xl bg-white text-theme-dark font-cute text-xs text-center border border-theme-border hover:bg-theme-pinkLight soft-transition">周四</button>
+          <button onclick="switchCalendarDay('fri')" id="cal-btn-fri" class="py-2 rounded-xl bg-white text-theme-dark font-cute text-xs text-center border border-theme-border hover:bg-theme-pinkLight soft-transition">周五</button>
+          <button onclick="switchCalendarDay('sat')" id="cal-btn-sat" class="py-2 rounded-xl bg-white text-theme-dark font-cute text-xs text-center border border-theme-border hover:bg-theme-pinkLight soft-transition">周六</button>
+          <button onclick="switchCalendarDay('sun')" id="cal-btn-sun" class="py-2 rounded-xl bg-white text-theme-dark font-cute text-xs text-center border border-theme-border hover:bg-theme-pinkLight soft-transition">周日</button>
+        </div>
+
+        <!-- 放映详情卡片区域 -->
+        <div class="bg-white rounded-2xl p-6 cute-glow-shadow space-y-4">
+          <h3 class="text-xs font-bold text-theme-dark flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-theme-pink inline-block animate-ping"></span>
+            <span>当日重点推荐新番</span>
+          </h3>
+          
+          <div id="calendar-showcase" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- 动态排期数据 -->
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= 标签页 4: 传送门导入 (Import Wizard) ================= -->
+      <div id="tab-content-import" class="hidden bg-white rounded-2xl p-6 cute-glow-shadow space-y-6">
+        <div class="border-b border-dashed border-pink-100 pb-4">
+          <h2 class="text-base font-cute text-theme-dark flex items-center gap-2">
+            <span>📥</span> 传送门数据同步 (Anime Importer Portal)
+          </h2>
+          <p class="text-[10px] text-theme-darkLight mt-0.5">一键抓取并同步您的次元库，打破次元壁快速更新状态。</p>
+        </div>
+
+        <!-- 步骤条 -->
+        <div class="flex items-center justify-between relative max-w-lg mx-auto py-4">
+          <div class="absolute left-0 top-1/2 -translate-y-1/2 w-full h-[2px] bg-slate-100 -z-10"></div>
+          <div class="absolute left-0 top-1/2 -translate-y-1/2 h-[2px] bg-theme-pink -z-10 transition-all duration-500" id="wizard-step-progress" style="width: 0%;"></div>
+          
+          <div class="flex flex-col items-center">
+            <div id="wizard-step-1-indicator" class="w-7 h-7 rounded-full bg-theme-pink text-white flex items-center justify-center text-xs font-bold shadow-sm">1</div>
+            <span class="text-[9px] font-bold mt-1 bg-[#FDF9F9] px-1">契约源</span>
+          </div>
+          <div class="flex flex-col items-center">
+            <div id="wizard-step-2-indicator" class="w-7 h-7 rounded-full bg-white border border-theme-border text-theme-darkLight flex items-center justify-center text-xs font-bold shadow-sm">2</div>
+            <span class="text-[9px] font-bold mt-1 bg-[#FDF9F9] px-1 text-theme-darkLight">共鸣抓取</span>
+          </div>
+          <div class="flex flex-col items-center">
+            <div id="wizard-step-3-indicator" class="w-7 h-7 rounded-full bg-white border border-theme-border text-theme-darkLight flex items-center justify-center text-xs font-bold shadow-sm">3</div>
+            <span class="text-[9px] font-bold mt-1 bg-[#FDF9F9] px-1 text-theme-darkLight">导入成功</span>
+          </div>
+        </div>
+
+        <!-- 步骤 1 界面 -->
+        <div id="wizard-panel-1" class="space-y-4">
+          <p class="text-[10px] font-bold text-theme-darkLight">第一步：选择您要导入的数据来源</p>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            
+            <div onclick="selectImportSource('bilibili')" id="source-bilibili" class="p-4 rounded-xl border border-theme-pink bg-theme-pinkLight cursor-pointer text-center hover-jelly transition-all">
+              <span class="text-3xl block mb-2">📺</span>
+              <p class="text-xs font-bold text-theme-pinkDeep">Bilibili 个人追番</p>
+              <span class="text-[9px] text-theme-darkLight mt-1 block">支持公开追番列表导入</span>
+            </div>
+
+            <div onclick="selectImportSource('bangumi')" id="source-bangumi" class="p-4 rounded-xl border border-theme-border bg-white cursor-pointer text-center hover-jelly transition-all">
+              <span class="text-3xl block mb-2">🌸</span>
+              <p class="text-xs font-bold text-theme-dark">Bangumi.tv 番组计划</p>
+              <span class="text-[9px] text-theme-darkLight mt-1 block">同步 ACG 评分与在看</span>
+            </div>
+
+            <div onclick="selectImportSource('local')" id="source-local" class="p-4 rounded-xl border border-theme-border bg-white cursor-pointer text-center hover-jelly transition-all">
+              <span class="text-3xl block mb-2">📁</span>
+              <p class="text-xs font-bold text-theme-dark">本地 NAS / 盘扫描</p>
+              <span class="text-[9px] text-theme-darkLight mt-1 block">读取文件名并智能刮削</span>
+            </div>
+
+          </div>
+          <div class="flex justify-end pt-4">
+            <button onclick="goToWizardStep(2)" class="px-5 py-2 bg-theme-pink text-white font-bold rounded-xl cute-glow-shadow-sm hover-jelly text-xs">前往下一阶段 ✨</button>
+          </div>
+        </div>
+
+        <!-- 步骤 2 界面 -->
+        <div id="wizard-panel-2" class="hidden space-y-4">
+          <p class="text-[10px] font-bold text-theme-darkLight" id="wizard-input-label">第二步：提供对应的追番账号/路径</p>
+          
+          <div class="space-y-3">
+            <div class="relative pt-1">
+              <input type="text" id="wizard-source-input" placeholder="例：请输入您的 bilibili UID（如 22881223）" class="w-full px-4 py-2.5 rounded-xl border border-theme-border bg-white text-theme-dark font-bold focus:outline-none focus:ring-2 focus:ring-theme-pink/30 text-xs">
+            </div>
+            
+            <div class="p-3 bg-theme-blueLight rounded-xl border border-theme-blue/30 text-[10px] font-bold text-theme-blue flex items-center gap-2">
+              <i class="fa-solid fa-circle-info"></i>
+              <span>提示：向导将通过 Mochi 刮削微引擎，跨过次元障碍直接对您的数据源进行匹配并导入。</span>
+            </div>
+          </div>
+          
+          <!-- 魔法阵扫描加载器 -->
+          <div id="magic-scan-loader" class="hidden flex flex-col items-center py-6">
+            <div class="relative w-20 h-20 flex items-center justify-center">
+              <div class="absolute inset-0 rounded-full border-2 border-dashed border-theme-pink magic-spin-loader"></div>
+              <span class="text-3xl animate-pulse">✨</span>
+            </div>
+            <p class="text-[10px] font-bold text-theme-pinkDeep mt-3 animate-pulse">正在连结并极速同步次元数据...</p>
+          </div>
+
+          <div class="flex justify-between pt-4">
+            <button onclick="goToWizardStep(1)" class="px-5 py-2 bg-slate-50 border border-theme-border text-theme-darkLight font-bold rounded-xl hover:bg-slate-100 text-xs soft-transition">返回上一步</button>
+            <button id="btn-start-scan" onclick="triggerMagicScan()" class="px-5 py-2 bg-theme-yellow hover:bg-amber-400 text-theme-dark font-bold rounded-xl cute-glow-shadow-sm hover-jelly text-xs">开启高频刮削 ⚡</button>
+          </div>
+        </div>
+
+        <!-- 步骤 3 界面 -->
+        <div id="wizard-panel-3" class="hidden text-center py-6 space-y-4">
+          <span class="text-5xl block animate-bounce">🎉</span>
+          <h3 class="text-sm font-cute text-theme-dark">召唤法阵同步成功！</h3>
+          <p class="text-[10px] text-theme-darkLight max-w-sm mx-auto">
+            系统已成功连结，并将新发现的精品剧集完美抓取并同步到了您的影视画廊中！
+          </p>
+          <div class="pt-4">
+            <button onclick="completeWizard()" class="px-6 py-2.5 bg-theme-pink text-white font-bold rounded-xl cute-glow-shadow-sm hover-jelly text-xs">立刻看一眼我的影视墙 📺</button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ================= 👑 标签页 5: 管理员秘境 (Admin Sanctum) ================= -->
+      <div id="tab-content-admin" class="hidden space-y-6">
+        
+        <!-- 管理员警告与特权横幅 -->
+        <div class="bg-gradient-to-r from-[#FFF5F6] to-[#FAF5FE] rounded-2xl p-4 border border-[#FFE6EB] cute-glow-shadow flex items-center justify-between">
+          <div class="flex items-center space-x-3">
+            <span class="text-3xl animate-pulse">👑</span>
+            <div>
+              <h3 class="text-xs font-cute text-theme-pinkDeep">管理员神圣空间 (Admin Sanctum Mode)</h3>
+              <p class="text-[9px] text-theme-darkLight">当前身份：<b id="admin-ident">首席特级追番官（桃子酱）</b>，拥有全局放映契约最高解封权。</p>
+            </div>
+          </div>
+          <span class="text-[9px] bg-theme-purple text-white px-2 py-0.5 rounded-full font-mono font-bold">MASTER-KEY ON</span>
+        </div>
+
+        <!-- 管理员核心模块网格 -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+          <!-- 模块 1: 版务巡逻站 (Moderation Audit Queue) -->
+          <div class="bg-white rounded-2xl p-4 cute-glow-shadow space-y-3 md:col-span-2 flex flex-col justify-between">
+            <div>
+              <div class="flex justify-between items-center border-b border-gray-50 pb-2">
+                <h4 class="text-xs font-bold text-theme-dark">💬 用户番评巡视站</h4>
+                <span class="text-[8px] bg-theme-blueLight text-theme-blue border border-theme-blue/30 px-2 py-0.5 rounded-full font-bold">待审核 (2)</span>
+              </div>
+              
+              <!-- 审核队列表格 -->
+              <div class="space-y-3 mt-3">
+                <div id="audit-item-1" class="p-3 bg-slate-50 rounded-xl border border-theme-border text-[9px] font-bold text-theme-dark flex flex-col justify-between soft-transition">
+                  <div class="flex justify-between items-center mb-1">
+                    <span class="text-theme-pinkDeep">@中二病患者A 评价《葬送的芙莉莲》</span>
+                    <span class="text-[8px] text-yellow-500">⭐⭐⭐⭐⭐</span>
+                  </div>
+                  <p class="text-gray-400 font-normal leading-relaxed">"这个画质跟配乐简直是神仙下凡，特别是芙莉莲捏脸的那个场景我能看一百遍！极力推荐大家看！"</p>
+                  <div class="flex justify-end space-x-2 mt-2">
+                    <button onclick="auditAction(1, 'approve')" class="px-2 py-1 bg-green-400 text-white rounded-md hover:bg-green-500 transition-colors">批准契约 ✓</button>
+                    <button onclick="auditAction(1, 'banish')" class="px-2 py-1 bg-red-400 text-white rounded-md hover:bg-red-500 transition-colors">放逐次元 ✗</button>
+                  </div>
+                </div>
+
+                <div id="audit-item-2" class="p-3 bg-slate-50 rounded-xl border border-theme-border text-[9px] font-bold text-theme-dark flex flex-col justify-between soft-transition">
+                  <div class="flex justify-between items-center mb-1">
+                    <span class="text-theme-pinkDeep">@键盘侠X 评价《孤独摇滚！》</span>
+                    <span class="text-[8px] text-gray-400">⭐</span>
+                  </div>
+                  <p class="text-gray-400 font-normal leading-relaxed">"完全没有逻辑，不就是一堆社恐在那里无病呻吟吗？真不知道有什么好看的，辣眼睛。"</p>
+                  <div class="flex justify-end space-x-2 mt-2">
+                    <button onclick="auditAction(2, 'approve')" class="px-2 py-1 bg-green-400 text-white rounded-md hover:bg-green-500 transition-colors">批准契约 ✓</button>
+                    <button onclick="auditAction(2, 'banish')" class="px-2 py-1 bg-red-400 text-white rounded-md hover:bg-red-500 transition-colors">放逐次元 ✗</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 数据备份操作组 -->
+            <div class="pt-3 border-t border-dashed border-gray-100 flex justify-between items-center text-[10px]">
+              <span class="text-theme-darkLight">数据库本地映射备份：</span>
+              <div class="flex space-x-2">
+                <button onclick="exportDatabase()" class="px-2.5 py-1 bg-white border border-theme-border text-theme-dark hover:text-theme-pinkDeep hover:border-theme-pink rounded-lg transition-colors">
+                  📤 备份导出
+                </button>
+                <button onclick="clearDatabaseAndReset()" class="px-2.5 py-1 bg-red-50 text-red-500 border border-red-100 hover:bg-red-100 rounded-lg transition-colors">
+                  🔥 清空重置
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 模块 2: 看板神官管理所 (Moderator Team Panel) -->
+          <div class="bg-white rounded-2xl p-4 cute-glow-shadow space-y-3 flex flex-col justify-between">
+            <div>
+              <div class="flex justify-between items-center border-b border-gray-50 pb-2">
+                <h4 class="text-xs font-bold text-theme-dark">👾 虚拟神官权限配置</h4>
+                <button onclick="addModerator()" class="text-[9px] bg-theme-pinkLight text-theme-pinkDeep px-2 py-0.5 rounded-full hover:bg-theme-pink transition-colors">＋ 招募</button>
+              </div>
+
+              <!-- 神官列表 -->
+              <div id="moderators-list" class="space-y-2 mt-3 text-[10px] font-bold text-theme-dark">
+                <div class="flex justify-between items-center p-2 bg-slate-50/50 rounded-xl border border-theme-border">
+                  <div class="flex items-center space-x-2">
+                    <span>👧</span>
+                    <div>
+                      <p>桃子酱</p>
+                      <span class="text-[8px] text-theme-pinkDeep">主管理员</span>
+                    </div>
+                  </div>
+                  <span class="text-[9px] text-green-500">在线 🟢</span>
+                </div>
+
+                <div class="flex justify-between items-center p-2 bg-slate-50/50 rounded-xl border border-theme-border">
+                  <div class="flex items-center space-x-2">
+                    <span>🦊</span>
+                    <div>
+                      <p>玉儿</p>
+                      <span class="text-[8px] text-theme-purple">智能AI客服</span>
+                    </div>
+                  </div>
+                  <span class="text-[9px] text-green-500">在线 🟢</span>
+                </div>
+
+                <div class="flex justify-between items-center p-2 bg-slate-50/50 rounded-xl border border-theme-border">
+                  <div class="flex items-center space-x-2">
+                    <span>🤖</span>
+                    <div>
+                      <p>MochiBot</p>
+                      <span class="text-[8px] text-[#A78BFA]">自动挂载爬虫</span>
+                    </div>
+                  </div>
+                  <span class="text-[9px] text-gray-400">休眠 💤</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 神官等级快速指派 -->
+            <div class="pt-2 border-t border-dashed border-gray-100 space-y-1">
+              <p class="text-[9px] text-theme-darkLight">快速将所有虚拟神官赋予最高守护契约？</p>
+              <button onclick="upgradeAllModerators()" class="w-full py-1.5 bg-theme-pink text-white text-[9px] font-bold rounded-lg hover:opacity-90 soft-transition">
+                🔮 一键赐予「真名觉醒」神力
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- 模块 3: 系统负载监测 & 虚幻控制台 (Interactive Terminal Console) -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          
+          <!-- 运行诊断仪 -->
+          <div class="bg-white rounded-2xl p-5 cute-glow-shadow space-y-3">
+            <h4 class="text-xs font-bold text-theme-dark border-b border-gray-50 pb-2 flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-theme-pink inline-block animate-ping"></span>
+              <span>⚡ 服务器物理负载诊断仪</span>
+            </h4>
+
+            <div class="space-y-3 text-[10px] font-bold text-theme-dark">
+              <!-- CPU -->
+              <div>
+                <div class="flex justify-between mb-1 text-[9px]">
+                  <span>次元演算核 (CPU Usage)</span>
+                  <span id="diagnostics-cpu">24%</span>
+                </div>
+                <div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                  <div id="diagnostics-cpu-bar" class="bg-theme-pink h-full rounded-full soft-transition" style="width: 24%"></div>
+                </div>
+              </div>
+
+              <!-- 内存 -->
+              <div>
+                <div class="flex justify-between mb-1 text-[9px]">
+                  <span>灵识存储池 (Memory Usage)</span>
+                  <span id="diagnostics-mem">62%</span>
+                </div>
+                <div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                  <div id="diagnostics-mem-bar" class="bg-theme-blue h-full rounded-full soft-transition" style="width: 62%"></div>
+                </div>
+              </div>
+
+              <!-- 次元通信延迟 -->
+              <div>
+                <div class="flex justify-between mb-1 text-[9px]">
+                  <span>异次元传输延迟 (TMDB Ping)</span>
+                  <span id="diagnostics-ping">45ms</span>
+                </div>
+                <div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                  <div id="diagnostics-ping-bar" class="bg-theme-purple h-full rounded-full soft-transition" style="width: 45%"></div>
+                </div>
+              </div>
+            </div>
+
+            <p class="text-[9px] text-theme-darkLight leading-relaxed pt-2">
+              注意：服务器使用的是本地沙盒极简模式，模拟并发负荷极小，运行完美。
+            </p>
+          </div>
+
+          <!-- 虚拟操作控制台 (Virtual Code/Log Terminal) -->
+          <div class="bg-white rounded-2xl p-4 cute-glow-shadow md:col-span-2 flex flex-col justify-between space-y-2">
+            <div class="flex justify-between items-center border-b border-gray-50 pb-1.5">
+              <h4 class="text-xs font-bold text-theme-dark flex items-center gap-1.5">
+                <span>💻</span> 交互终端流日志 (Mochi Virtual Terminal)
+              </h4>
+              <span class="text-[8px] bg-theme-dark text-[#8EE4D5] px-2 py-0.5 rounded-full font-mono font-bold">STDOUT / active</span>
+            </div>
+
+            <!-- 终端展示框 -->
+            <div id="virtual-terminal" class="bg-[#2E2830] rounded-xl p-3 h-32 font-mono text-[9px] text-[#A2E8DD] overflow-y-auto leading-relaxed space-y-1 select-all">
+              <p class="text-gray-400">>> [system] initializing mochi engine core v4.0.0-release...</p>
+              <p class="text-gray-400">>> [system] background bubble matrix float loading... ok</p>
+              <p class="text-gray-400">>> [system] web audio synthesizer mapped to window context.</p>
+              <p class="text-yellow-200">>> [auth] master user "桃子酱" loaded successfully via bypass token.</p>
+              <p class="text-pink-300">>> [database] matching 3 contractual records with indexed TMDB entities...</p>
+            </div>
+
+            <div class="flex justify-between items-center text-[9px] text-theme-darkLight font-bold">
+              <span>点击番剧、加集、改变主题即可实时在此捕获微运行机制！</span>
+              <button onclick="clearTerminal()" class="text-theme-pinkDeep hover:underline">清除终端</button>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- ================= 标签页 6: 设置工坊 (Settings Panel) ================= -->
+      <div id="tab-content-settings" class="hidden bg-white rounded-2xl p-6 cute-glow-shadow space-y-6">
+        <div class="border-b border-dashed border-pink-100 pb-4">
+          <h2 class="text-base font-cute text-theme-dark flex items-center gap-2">
+            <span>⚙️</span> 齿轮设置中心 (Mochi Workshop)
+          </h2>
+          <p class="text-[10px] text-theme-darkLight mt-0.5">调整系统的刮削参数、提示音、看板娘状态等高级配置。</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <!-- 子标签选择 -->
+          <div class="md:col-span-1 flex flex-col space-y-1">
+            <button onclick="switchSettingsSection('scraping')" id="sub-btn-scraping" class="py-2 px-3 rounded-lg text-left text-[11px] font-bold bg-theme-pinkLight text-theme-pinkDeep">
+              🔍 刮削代理配置
+            </button>
+            <button onclick="switchSettingsSection('visual')" id="sub-btn-visual" class="py-2 px-3 rounded-lg text-left text-[11px] font-bold text-theme-darkLight hover:bg-slate-50">
+              🎨 视效灵敏调节
+            </button>
+            <button onclick="switchSettingsSection('sound')" id="sub-btn-sound" class="py-2 px-3 rounded-lg text-left text-[11px] font-bold text-theme-darkLight hover:bg-slate-50">
+              🎵 声效合成测试
+            </button>
+          </div>
+
+          <!-- 主要内容区 -->
+          <div class="md:col-span-3 bg-slate-50/50 rounded-xl p-4 text-[10px] font-bold text-theme-dark space-y-6 border border-theme-border">
+            
+            <!-- 子段 1: 刮削管理 -->
+            <div id="sub-section-scraping" class="space-y-4">
+              <h4 class="text-xs text-theme-pinkDeep border-b border-pink-100 pb-1.5 flex items-center gap-1.5">
+                <span>🔍</span> 刮削代理与数据同步设置
+              </h4>
+              
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-theme-dark">刮削智能元信息填充</p>
+                  <p class="text-[9px] text-theme-darkLight font-normal">添加动漫时自动查找封面、制作声优与上映周历</p>
+                </div>
+                <input type="checkbox" checked class="rounded border-gray-300 accent-theme-pink w-4 h-4">
+              </div>
+
+              <div class="space-y-2 pt-2">
+                <div class="flex justify-between items-center text-[10px]">
+                  <span>刮削超时断定限制：</span>
+                  <span id="timeout-val" class="bg-theme-pink px-2 py-0.5 rounded-full text-white text-[9px]">8s</span>
+                </div>
+                <input type="range" min="3" max="30" value="8" oninput="document.getElementById('timeout-val').innerText = this.value + 's'" class="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-theme-pink">
+              </div>
+            </div>
+
+            <!-- 子段 2: 视效微调 -->
+            <div id="sub-section-visual" class="hidden space-y-4">
+              <h4 class="text-xs text-theme-purple border-b border-purple-100 pb-1.5 flex items-center gap-1.5">
+                <span>🎨</span> 极软视觉外观配置
+              </h4>
+              
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-theme-dark">启动背景微小粒子漂浮动画</p>
+                  <p class="text-[9px] text-theme-darkLight font-normal">若追求省电、低系统开销可关闭</p>
+                </div>
+                <input type="checkbox" checked id="particle-anim-toggle" onchange="toggleParticles()" class="rounded border-gray-300 accent-theme-pink w-4 h-4">
+              </div>
+
+              <div class="space-y-2">
+                <p class="text-theme-dark">圆角深度预设样式</p>
+                <div class="grid grid-cols-3 gap-2">
+                  <button onclick="showToast('已更换：极软Q弹弧度 (3xl)')" class="p-2 rounded-xl bg-white border border-theme-pink text-theme-pinkDeep text-[9px]">极软Q弹 (3xl)</button>
+                  <button onclick="showToast('已更换：经典萌系圆角 (2xl)')" class="p-2 rounded-xl bg-white border border-theme-border text-theme-dark text-[9px] hover:bg-white">经典萌 (2xl)</button>
+                  <button onclick="showToast('已更换：高冷微角度 (lg)')" class="p-2 rounded-xl bg-white border border-theme-border text-theme-dark text-[9px] hover:bg-white">简约微角 (lg)</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 子段 3: 声音测试 -->
+            <div id="sub-section-sound" class="hidden space-y-4">
+              <h4 class="text-xs text-theme-blue border-b border-blue-100 pb-1.5 flex items-center gap-1.5">
+                <span>🎵</span> Web Audio 软萌音效合成器
+              </h4>
+              <p class="text-[9px] text-theme-darkLight leading-relaxed">系统采用了纯代码底层合成的高频软音，您无需加载外部 MP3 音频，可以在这里测试不同波形声效：</p>
+              
+              <div class="grid grid-cols-2 gap-2 pt-1">
+                <button onclick="playCuteSound('jump')" class="py-2 rounded-xl bg-white border border-theme-border text-theme-dark hover:border-theme-pink hover:text-theme-pinkDeep soft-transition">🔊 Q弹跳跃 (Jump)</button>
+                <button onclick="playCuteSound('pop')" class="py-2 rounded-xl bg-white border border-theme-border text-theme-dark hover:border-theme-pink hover:text-theme-pinkDeep soft-transition">🔊 气泡碎裂 (Pop)</button>
+                <button onclick="playCuteSound('bell')" class="py-2 rounded-xl bg-white border border-theme-border text-theme-dark hover:border-theme-pink hover:text-theme-pinkDeep soft-transition">🔊 风铃微风 (Bell)</button>
+                <button onclick="playCuteSound('magic')" class="py-2 rounded-xl bg-white border border-theme-border text-theme-dark hover:border-theme-pink hover:text-theme-pinkDeep soft-transition">🔊 魔法洗礼 (Magic)</button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <div class="flex justify-end pt-4 border-t border-dashed border-pink-100">
+          <button onclick="saveAllSettings()" class="px-5 py-2.5 bg-theme-pink text-white font-bold rounded-xl cute-glow-shadow-sm hover-jelly text-xs">保存全部工坊设置 💾</button>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- ================= 编辑/新增契约模态窗口 (Anime Edit Modal) ================= -->
+  <div id="edit-anime-modal" class="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+    <div class="bg-white rounded-2xl p-5 max-w-lg w-full cute-glow-shadow relative animate-bounce-short">
+      
+      <!-- 猫耳装饰 -->
+      <div class="absolute -top-4 left-6 w-8 h-8 bg-white transform -rotate-12 rounded" style="clip-path: polygon(50% 0%, 0% 100%, 100% 100%);"></div>
+      <div class="absolute -top-4 right-6 w-8 h-8 bg-white transform rotate-12 rounded" style="clip-path: polygon(50% 0%, 0% 100%, 100% 100%);"></div>
+
+      <!-- 关闭按钮 -->
+      <button onclick="closeEditModal()" class="absolute -top-2.5 -right-2.5 w-7 h-7 rounded-full bg-theme-yellow text-theme-dark font-bold hover:scale-105 soft-transition flex items-center justify-center border border-[#E9C66B]">
+        ✕
+      </button>
+
+      <div class="space-y-4">
+        <div class="border-b border-dashed border-pink-50 pb-2 text-center">
+          <h3 class="text-sm font-cute text-theme-dark" id="modal-title-text">编辑次元神作</h3>
+          <p class="text-[9px] text-theme-darkLight">填写番剧信息契约书，一键载入收藏墙。</p>
+        </div>
+
+        <input type="hidden" id="edit-anime-id" value="">
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <!-- 海报预览 -->
+          <div class="sm:col-span-1 flex flex-col items-center space-y-2">
+            <span class="text-[9px] font-bold text-theme-darkLight">封面预览</span>
+            <div class="w-full aspect-[3/4] rounded-xl border border-theme-border bg-slate-50 flex flex-col items-center justify-center text-center overflow-hidden relative cursor-pointer" onclick="document.getElementById('poster-file-input').click()">
+              <img id="modal-poster-preview" src="" class="w-full h-full object-cover hidden">
+              <div id="modal-poster-placeholder" class="space-y-1">
+                <span class="text-2xl">🖼️</span>
+                <p class="text-[9px] font-bold text-theme-darkLight">点击更换</p>
+              </div>
+            </div>
+            <input type="file" id="poster-file-input" onchange="previewPoster(event)" class="hidden" accept="image/*">
+          </div>
+
+          <!-- 表单表单 -->
+          <div class="sm:col-span-2 space-y-3 font-bold text-[10px]">
+            <div>
+              <label class="text-theme-darkLight">作品正式名称：</label>
+              <input type="text" id="edit-anime-name" placeholder="例：葬送的芙莉莲" class="w-full px-3 py-2 rounded-xl border border-theme-border bg-white text-theme-dark focus:outline-none focus:ring-2 focus:ring-theme-pink/40 mt-1">
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-theme-darkLight">追番状态：</label>
+                <select id="edit-anime-status" class="w-full px-3 py-1.5 rounded-xl border border-theme-border bg-white text-theme-dark focus:outline-none mt-1">
+                  <option value="watching">正在追 📺</option>
+                  <option value="plan">想要看 🌟</option>
+                  <option value="completed">已看毕 🎓</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-theme-darkLight">类别标签：</label>
+                <select id="edit-anime-tag" class="w-full px-3 py-1.5 rounded-xl border border-theme-border bg-white text-theme-dark focus:outline-none mt-1">
+                  <option value="✨ 魔法 奇幻">✨ 魔法 奇幻</option>
+                  <option value="🔥 热血 少年">🔥 热血 少年</option>
+                  <option value="🎵 治愈 音乐">🎵 治愈 音乐</option>
+                  <option value="💖 恋爱 搞笑">💖 恋爱 搞笑</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-theme-darkLight">观影进度 (已看/总集)：</label>
+                <div class="flex items-center space-x-1 mt-1">
+                  <input type="number" id="edit-anime-ep-curr" min="0" value="1" class="w-full px-3 py-1.5 rounded-xl border border-theme-border bg-white text-theme-dark text-center focus:outline-none">
+                  <span>/</span>
+                  <input type="number" id="edit-anime-ep-total" min="1" value="12" class="w-full px-3 py-1.5 rounded-xl border border-theme-border bg-white text-theme-dark text-center focus:outline-none">
+                </div>
+              </div>
+              <div>
+                <label class="text-theme-darkLight">星星打分评分：</label>
+                <select id="edit-anime-rating" class="w-full px-3 py-1.5 rounded-xl border border-theme-border bg-white text-theme-dark focus:outline-none mt-1">
+                  <option value="5">⭐⭐⭐⭐⭐ 极力安利</option>
+                  <option value="4">⭐⭐⭐⭐ 有点意思</option>
+                  <option value="3">⭐⭐⭐ 勉强合格</option>
+                  <option value="2">⭐⭐ 避雷绕行</option>
+                  <option value="1">⭐ 精神污染</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-4 flex gap-3 pt-2 border-t border-dashed border-pink-50">
+          <button onclick="closeEditModal()" class="flex-1 py-2 rounded-xl bg-slate-50 border border-theme-border text-theme-dark font-bold text-xs hover:bg-slate-100 soft-transition">
+            放弃
+          </button>
+          <button onclick="saveAnimeFromModal()" class="flex-1 py-2 rounded-xl bg-theme-pink text-white font-bold text-xs cute-glow-shadow-sm hover-jelly">
+            保存契约并同步
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 全局 Toast 提示容器 -->
+  <div id="toast-container" class="fixed bottom-6 right-6 z-50 space-y-2 pointer-events-none"></div>
+
+  <script>
+    // 默认番剧数据库
+    let animeDatabase = [
+      {
+        id: 1,
+        title: "葬送的芙莉莲",
+        status: "watching",
+        currentEp: 21,
+        totalEp: 28,
+        rating: 5,
+        tag: "✨ 魔法 奇幻",
+        poster: "https://placehold.co/300x400/FFF5F6/FF8DA1?text=Frieren"
+      },
+      {
+        id: 2,
+        title: "孤独摇滚！",
+        status: "watching",
+        currentEp: 8,
+        totalEp: 12,
+        rating: 5,
+        tag: "🎵 治愈 音乐",
+        poster: "https://placehold.co/300x400/FFFDF6/FCD77F?text=Bocchi"
+      },
+      {
+        id: 3,
+        title: "鬼灭之刃 柱训练篇",
+        status: "completed",
+        currentEp: 8,
+        totalEp: 8,
+        rating: 4,
+        tag: "🔥 热血 少年",
+        poster: "https://placehold.co/300x400/F3FCFD/82D9ED?text=DemonSlayer"
+      }
+    ];
+
+    // 周历新番排期数据
+    const weeklySchedule = {
+      mon: [
+        { title: "Chainsaw Man II", time: "18:30 首播", tag: "热血 少年", poster: "https://placehold.co/120x160/FAF5FE/C79FE5?text=Chainsaw" },
+        { title: "超能奇兵", time: "22:00 首播", tag: "奇幻 冒险", poster: "https://placehold.co/120x160/FFF5F6/FF8DA1?text=S-Cry-ed" }
+      ],
+      tue: [
+        { title: "我推的孩子 III", time: "23:00 首播", tag: "悬疑 偶像", poster: "https://placehold.co/120x160/FFF5F6/FF8DA1?text=OshiNoKo" }
+      ],
+      wed: [
+        { title: "关于我转生变成史莱姆这档事 III", time: "22:00 首播", tag: "魔法 奇幻", poster: "https://placehold.co/120x160/F3FCFD/82D9ED?text=Slime" }
+      ],
+      thu: [
+        { title: "名侦探柯南", time: "17:30 首播", tag: "推理 探险", poster: "https://placehold.co/120x160/FFFDF6/FCD77F?text=Conan" }
+      ],
+      fri: [
+        { title: "间谍过家家 III", time: "20:00 首播", tag: "喜剧 动作", poster: "https://placehold.co/120x160/FFF5F6/FF8DA1?text=SpyXFamily" }
+      ],
+      sat: [
+        { title: "单人升职记", time: "19:00 首播", tag: "热血 少年", poster: "https://placehold.co/120x160/FAF5FE/C79FE5?text=SoloLeveling" }
+      ],
+      sun: [
+        { title: "鬼灭之刃 新剧场版", time: "21:00 重磅放送", tag: "热血 战斗", poster: "https://placehold.co/120x160/F3FCFD/82D9ED?text=DemonSlayer" }
+      ]
+    };
+
+    let audioContext = null;
+    let musicEnabled = true;
+    let currentFilter = 'all';
+    let currentCalDay = 'mon';
+    
+    // 用户身份状态记录
+    let currentUser = {
+      name: "桃子酱",
+      role: "administrator", // administrator or user
+      badge: "ADMIN",
+      avatar: "👧"
+    };
+
+    // 看板对话文本
+    const foxQuotes = [
+      "呜哇！你戳疼小玉啦！(｡•́︿•̀｡)",
+      "今天也要元气满满哟，指挥官！",
+      "试试看右侧标签里的排期周历，支持一键追加番剧哦！",
+      "今天想带你看的动漫都在卡墙上，快点来点击一下吧！",
+      "咕噜咕噜……肚子在叫了，好想吃拉面和小玉糖～"
+    ];
+
+    function toggleCuteMusic() {
+      const toggle = document.getElementById('music-toggle');
+      musicEnabled = toggle.checked;
+      showToast(musicEnabled ? "🔊 提示音效已开启！" : "🔇 提示音效已静音！");
+      writeTerminalLog(`[audio] output status altered: ${musicEnabled ? "active" : "muted"}`);
+    }
+
+    // 纯代码合成轻巧音效 (Web Audio API)
+    function playCuteSound(type) {
+      if (!musicEnabled) return;
+      try {
+        if (!audioContext) {
+          audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        const osc = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+        osc.connect(gain);
+        gain.connect(audioContext.destination);
+        const now = audioContext.currentTime;
+
+        if (type === 'jump') {
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(320, now);
+          osc.frequency.exponentialRampToValueAtTime(750, now + 0.12);
+          gain.gain.setValueAtTime(0.12, now);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
+          osc.start(now);
+          osc.stop(now + 0.12);
+        } else if (type === 'pop') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(550, now);
+          osc.frequency.exponentialRampToValueAtTime(120, now + 0.15);
+          gain.gain.setValueAtTime(0.15, now);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+          osc.start(now);
+          osc.stop(now + 0.15);
+        } else if (type === 'bell') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(1100, now);
+          osc.frequency.exponentialRampToValueAtTime(750, now + 0.35);
+          gain.gain.setValueAtTime(0.08, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+          osc.start(now);
+          osc.stop(now + 0.35);
+        } else if (type === 'magic') {
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(220, now);
+          osc.frequency.linearRampToValueAtTime(900, now + 0.25);
+          gain.gain.setValueAtTime(0.06, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+          osc.start(now);
+          osc.stop(now + 0.25);
+        }
+      } catch (e) {
+        console.log("Audio trigger failed: ", e);
+      }
+    }
+
+    // 终端日志函数
+    function writeTerminalLog(text, colorClass = "text-gray-400") {
+      const term = document.getElementById('virtual-terminal');
+      if (term) {
+        const p = document.createElement('p');
+        p.className = colorClass;
+        p.innerText = `>> ${text}`;
+        term.appendChild(p);
+        term.scrollTop = term.scrollHeight;
+      }
+    }
+
+    function clearTerminal() {
+      const term = document.getElementById('virtual-terminal');
+      if (term) term.innerHTML = `<p class="text-gray-400">>> terminal log output cleared.</p>`;
+    }
+
+    // 登录业务逻辑
+    function handleLogin() {
+      const user = document.getElementById('login-username').value.trim();
+      const pass = document.getElementById('login-password').value.trim();
+
+      if (user === "桃子酱" && pass === "mochi2026") {
+        loginSuccess("桃子酱", "administrator");
+      } else if (user && pass) {
+        // 自定义或游客用户
+        loginSuccess(user, "user");
+      } else {
+        playCuteSound('bell');
+        showToast("🚧 呜哇！必须要写完魔法召唤名和暗号才能契约成功！");
+      }
+    }
+
+    function bypassLogin(username, role) {
+      loginSuccess(username, role);
+    }
+
+    function loginSuccess(username, role) {
+      currentUser.name = username;
+      currentUser.role = role;
+      currentUser.badge = (role === "administrator") ? "ADMIN" : "GUEST";
+      currentUser.avatar = (role === "administrator") ? "👧" : "🐾";
+
+      // 绑定头部、侧边栏数据
+      document.getElementById('header-user-name').innerText = username;
+      document.getElementById('header-user-badge').innerText = currentUser.badge;
+      document.getElementById('aside-username').innerHTML = `${username} <span class="text-xs text-theme-pink">${role === 'administrator' ? '♀' : '♂'}</span>`;
+      document.getElementById('aside-role').innerText = role === 'administrator' ? "首席特级追番官" : "普通冒险者";
+      document.getElementById('aside-avatar').innerText = currentUser.avatar;
+
+      // 菜单权限限制
+      const adminNavBtn = document.getElementById('nav-admin');
+      if (role === 'administrator') {
+        adminNavBtn.classList.remove('hidden');
+        document.getElementById('admin-ident').innerText = `首席特级追番官（${username}）`;
+      } else {
+        adminNavBtn.classList.add('hidden');
+      }
+
+      // 渐出登录蒙版
+      playCuteSound('magic');
+      const loginScr = document.getElementById('login-screen');
+      loginScr.classList.add('opacity-0', 'pointer-events-none');
+      setTimeout(() => {
+        loginScr.classList.add('hidden');
+      }, 700);
+
+      writeTerminalLog(`[auth] security handshake approved. user: "${username}" with authorization level [${role}]`, "text-green-300");
+      showToast(`🎉 欢迎归来！${username}，契约阵同步载入成功！`);
+    }
+
+    function handleLogout() {
+      playCuteSound('pop');
+      const loginScr = document.getElementById('login-screen');
+      loginScr.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
+      writeTerminalLog(`[auth] contractual session invalidated. logged out.`, "text-yellow-300");
+      showToast("🌸 守护契约已解散，期待下一次重逢！");
+    }
+
+    // 渲染影视墙数据
+    function renderAnimeWall(filterKeyword = "") {
+      const grid = document.getElementById('anime-wall-grid');
+      grid.innerHTML = "";
+
+      let filteredList = animeDatabase;
+
+      // 状态筛选
+      if (currentFilter !== 'all') {
+        filteredList = filteredList.filter(item => item.status === currentFilter);
+      }
+
+      // 关键字搜索
+      if (filterKeyword) {
+        filteredList = filteredList.filter(item => 
+          item.title.toLowerCase().includes(filterKeyword.toLowerCase()) || 
+          item.tag.toLowerCase().includes(filterKeyword.toLowerCase())
+        );
+      }
+
+      if (filteredList.length === 0) {
+        grid.innerHTML = `
+          <div class="col-span-full py-12 text-center bg-white rounded-2xl cute-glow-shadow p-6">
+            <span class="text-4xl block mb-2">🍃</span>
+            <p class="text-xs font-bold text-gray-400">该分类下没有契约任何番剧，快去同步或自己添加吧！</p>
+          </div>
+        `;
+        return;
+      }
+
+      filteredList.forEach(anime => {
+        const percent = Math.min(100, Math.round((anime.currentEp / anime.totalEp) * 100));
+        
+        let statusBadge = "";
+        if (anime.status === 'watching') {
+          statusBadge = `<span class="bg-theme-blueLight text-theme-blue border border-theme-blue/30 px-2 py-0.5 rounded-full text-[9px] font-bold">📺 在看</span>`;
+        } else if (anime.status === 'plan') {
+          statusBadge = `<span class="bg-theme-yellowLight text-amber-700 border border-theme-yellow/40 px-2 py-0.5 rounded-full text-[9px] font-bold">🌟 想看</span>`;
+        } else {
+          statusBadge = `<span class="bg-theme-mintLight text-emerald-700 border border-theme-mint/40 px-2 py-0.5 rounded-full text-[9px] font-bold">🎓 已阅</span>`;
+        }
+
+        let stars = "⭐".repeat(anime.rating);
+
+        const card = document.createElement('div');
+        card.className = "bg-white rounded-2xl p-4 cute-glow-shadow hover:scale-[1.01] transition-all duration-300 group flex flex-col justify-between";
+        card.innerHTML = `
+          <div>
+            <!-- 拍立得卡片框 -->
+            <div class="aspect-[4/3] rounded-xl overflow-hidden relative bg-slate-50 border border-theme-border mb-3">
+              <img src="${anime.poster}" alt="${anime.title}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">
+              <div class="absolute top-2 left-2 flex gap-1 flex-col">
+                ${statusBadge}
+                <span class="bg-theme-dark text-white px-2 py-0.5 rounded-full text-[9px] font-bold border border-theme-darkLight/30">${anime.tag}</span>
+              </div>
+              
+              <!-- 悬浮操作面板 -->
+              <div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                <button onclick="openEditModal(${anime.id})" class="w-8 h-8 rounded-full bg-white text-theme-dark font-bold hover:scale-110 soft-transition flex items-center justify-center text-xs" title="编辑契约">
+                  ✏️
+                </button>
+                <button onclick="deleteAnime(${anime.id})" class="w-8 h-8 rounded-full bg-red-50 text-red-600 font-bold hover:scale-110 soft-transition flex items-center justify-center text-xs" title="解约">
+                  🗑️
+                </button>
+              </div>
+            </div>
+
+            <!-- 卡片正文 -->
+            <h4 class="text-xs font-bold text-theme-dark truncate leading-tight">${anime.title}</h4>
+            <div class="flex justify-between items-center text-[9px] text-theme-darkLight mt-1 font-bold">
+              <span>评级评语: ${stars || '暂无星级'}</span>
+            </div>
+          </div>
+
+          <!-- 集数快进区 -->
+          <div class="mt-3 pt-3 border-t border-dashed border-gray-100">
+            <div class="flex items-center justify-between gap-2 mb-1">
+              <span class="text-[9px] font-bold text-theme-darkLight">
+                看至 ${anime.currentEp}/${anime.totalEp} 话 (${percent}%)
+              </span>
+              
+              <button onclick="incrementEp(event, ${anime.id})" class="px-2.5 py-0.5 bg-theme-pinkLight text-theme-pinkDeep border border-theme-pink/40 rounded-lg text-[9px] font-bold hover:bg-theme-pink hover:text-white transition-all">
+                +1 话
+              </button>
+            </div>
+            
+            <div class="w-full bg-gray-50 h-1.5 rounded-full overflow-hidden border border-gray-100">
+              <div class="bg-theme-pink h-full rounded-full transition-all duration-300" style="width: ${percent}%"></div>
+            </div>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+
+      // 同步侧边统计状态
+      document.getElementById('stats-watching-count').innerText = animeDatabase.filter(a => a.status === 'watching').length;
+      document.getElementById('stats-total-count').innerText = animeDatabase.length;
+    }
+
+    // 切换放映周历天
+    function switchCalendarDay(day) {
+      playCuteSound('pop');
+      currentCalDay = day;
+
+      const days = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+      days.forEach(d => {
+        const btn = document.getElementById(`cal-btn-${d}`);
+        if(d === day) {
+          btn.className = "py-2 rounded-xl bg-theme-pink text-white font-cute text-xs text-center cute-glow-shadow-sm soft-transition";
+        } else {
+          btn.className = "py-2 rounded-xl bg-white text-theme-dark font-cute text-xs text-center border border-theme-border hover:bg-theme-pinkLight soft-transition";
+        }
+      });
+
+      renderWeeklyCalendar();
+    }
+
+    // 渲染放映排期周历
+    function renderWeeklyCalendar() {
+      const showcase = document.getElementById('calendar-showcase');
+      showcase.innerHTML = "";
+
+      const todayShows = weeklySchedule[currentCalDay] || [];
+      if (todayShows.length === 0) {
+        showcase.innerHTML = `<p class="col-span-full text-xs font-bold text-gray-400 text-center py-6">今天暂无放送哦，去找点完结番补一下吧～</p>`;
+        return;
+      }
+
+      todayShows.forEach((show, index) => {
+        const item = document.createElement('div');
+        item.className = "flex bg-slate-50/50 rounded-xl p-3 border border-theme-border items-center justify-between";
+        item.innerHTML = `
+          <div class="flex items-center space-x-3">
+            <img src="${show.poster}" class="w-12 h-16 object-cover rounded-lg border border-theme-border">
+            <div>
+              <h4 class="text-xs font-bold text-theme-dark">${show.title}</h4>
+              <p class="text-[9px] text-theme-pinkDeep font-bold mt-0.5">${show.time}</p>
+              <span class="inline-block text-[8px] bg-white text-theme-darkLight px-1.5 py-0.5 rounded border border-theme-border mt-1">${show.tag}</span>
+            </div>
+          </div>
+          <button onclick="signCalendarContract('${show.title}', '${show.tag}', '${show.poster}')" class="px-2.5 py-1 bg-white text-theme-dark hover:bg-theme-pink hover:text-white border border-theme-border hover:border-theme-pink text-[9px] font-bold rounded-lg soft-transition">
+            加入追番 ➕
+          </button>
+        `;
+        showcase.appendChild(item);
+      });
+    }
+
+    // 从周历直接缔结契约
+    function signCalendarContract(title, tag, poster) {
+      playCuteSound('magic');
+      const isExist = animeDatabase.find(a => a.title === title);
+      if(isExist) {
+        showToast(`🌸 《${title}》已经在你的影视墙中了哦！`);
+        return;
+      }
+      const newAnime = {
+        id: Date.now(),
+        title: title,
+        status: 'watching',
+        currentEp: 0,
+        totalEp: 12,
+        rating: 5,
+        tag: `✨ ${tag}`,
+        poster: poster
+      };
+      animeDatabase.push(newAnime);
+      renderAnimeWall();
+      showToast(`🎉 成功从周历签入新番《${title}》，开始追番吧！`);
+      writeTerminalLog(`[calendar] anime契约 added dynamically: "${title}"`, "text-pink-300");
+    }
+
+    // 搜番
+    function searchAnime(keyword) {
+      renderAnimeWall(keyword);
+    }
+
+    // 筛番
+    function filterAnime(status) {
+      playCuteSound('bell');
+      currentFilter = status;
+      
+      const states = ['all', 'watching', 'plan', 'completed'];
+      states.forEach(st => {
+        const btn = document.getElementById(`btn-filter-${st}`);
+        if (st === status) {
+          btn.className = "px-4 py-1.5 rounded-lg text-xs font-bold bg-theme-pink text-white cute-glow-shadow-sm hover-jelly";
+        } else {
+          btn.className = "px-4 py-1.5 rounded-lg text-xs font-bold text-theme-darkLight hover:text-theme-dark hover:bg-theme-pinkLight transition-all";
+        }
+      });
+
+      renderAnimeWall();
+      writeTerminalLog(`[gallery] altered filter mode to: "${status}"`);
+    }
+
+    // 进度自增
+    function incrementEp(e, id) {
+      e.stopPropagation();
+      const anime = animeDatabase.find(a => a.id === id);
+      if (anime) {
+        if (anime.currentEp < anime.totalEp) {
+          anime.currentEp += 1;
+          playCuteSound('jump');
+          triggerSplash(e, "❤");
+          
+          writeTerminalLog(`[progress] modified currentEp of id: ${id} -> ${anime.currentEp}/${anime.totalEp}`, "text-blue-300");
+
+          if (anime.currentEp === anime.totalEp) {
+            anime.status = 'completed';
+            showToast(`🎉 恭喜！《${anime.title}》已顺利大结局毕业！`);
+            writeTerminalLog(`[progress] anime graduation! completed: "${anime.title}"`, "text-green-300");
+          }
+          renderAnimeWall();
+        } else {
+          playCuteSound('bell');
+          showToast(`该番剧已播放到最大话数 ${anime.totalEp} 了哟！`);
+        }
+      }
+    }
+
+    // 删除
+    function deleteAnime(id) {
+      playCuteSound('pop');
+      const target = animeDatabase.find(a => a.id === id);
+      const title = target ? target.title : id;
+      animeDatabase = animeDatabase.filter(a => a.id !== id);
+      showToast("🗑️ 已解除与该番剧的放映契约。");
+      renderAnimeWall();
+      writeTerminalLog(`[database] terminated contractual index for: "${title}"`, "text-red-300");
+    }
+
+    // 任务系统互动
+    function completeQuest(type) {
+      if(type === 'watch') {
+        const chk = document.getElementById('quest-watch');
+        if(chk.checked) {
+          playCuteSound('magic');
+          showToast("🏆 每日任务达成！进度+1，经验点数激增！");
+          writeTerminalLog(`[quest] quest "watch anime progress" resolved successfully!`, "text-yellow-300");
+        }
+      } else if(type === 'poke') {
+        const chk = document.getElementById('quest-poke');
+        if(chk.checked) {
+          playCuteSound('magic');
+          showToast("🏆 每日任务达成！看板狐好感度 +10点！");
+          writeTerminalLog(`[quest] quest "poked fox buddy" resolved successfully!`, "text-yellow-300");
+        }
+      }
+    }
+
+    // 打开编辑窗
+    function openEditModal(animeId) {
+      playCuteSound('bell');
+      const modal = document.getElementById('edit-anime-modal');
+      const preview = document.getElementById('modal-poster-preview');
+      const placeholder = document.getElementById('modal-poster-placeholder');
+      
+      if (animeId !== null) {
+        const anime = animeDatabase.find(a => a.id === animeId);
+        if (anime) {
+          document.getElementById('edit-anime-id').value = anime.id;
+          document.getElementById('edit-anime-name').value = anime.title;
+          document.getElementById('edit-anime-status').value = anime.status;
+          document.getElementById('edit-anime-tag').value = anime.tag;
+          document.getElementById('edit-anime-ep-curr').value = anime.currentEp;
+          document.getElementById('edit-anime-ep-total').value = anime.totalEp;
+          document.getElementById('edit-anime-rating').value = anime.rating;
+          
+          preview.src = anime.poster;
+          preview.classList.remove('hidden');
+          placeholder.classList.add('hidden');
+          
+          document.getElementById('modal-title-text').innerText = "编纂：修改作品放映契约";
+        }
+      } else {
+        document.getElementById('edit-anime-id').value = "";
+        document.getElementById('edit-anime-name').value = "";
+        document.getElementById('edit-anime-status').value = "watching";
+        document.getElementById('edit-anime-tag').value = "✨ 魔法 奇幻";
+        document.getElementById('edit-anime-ep-curr').value = "1";
+        document.getElementById('edit-anime-ep-total').value = "12";
+        document.getElementById('edit-anime-rating').value = "5";
+        
+        preview.src = "";
+        preview.classList.add('hidden');
+        placeholder.classList.remove('hidden');
+        
+        document.getElementById('modal-title-text').innerText = "仪式：召唤全新作品契约";
+      }
+
+      modal.classList.remove('hidden');
+    }
+
+    function closeEditModal() {
+      playCuteSound('pop');
+      document.getElementById('edit-anime-modal').classList.add('hidden');
+    }
+
+    // 预览
+    function previewPoster(event) {
+      const file = event.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const preview = document.getElementById('modal-poster-preview');
+          const placeholder = document.getElementById('modal-poster-placeholder');
+          preview.src = e.target.result;
+          preview.classList.remove('hidden');
+          placeholder.classList.add('hidden');
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+
+    // 保存
+    function saveAnimeFromModal() {
+      const id = document.getElementById('edit-anime-id').value;
+      const title = document.getElementById('edit-anime-name').value.trim();
+      const status = document.getElementById('edit-anime-status').value;
+      const tag = document.getElementById('edit-anime-tag').value;
+      const currentEp = parseInt(document.getElementById('edit-anime-ep-curr').value) || 0;
+      const totalEp = parseInt(document.getElementById('edit-anime-ep-total').value) || 12;
+      const rating = parseInt(document.getElementById('edit-anime-rating').value) || 5;
+      
+      const previewImg = document.getElementById('modal-poster-preview');
+      let poster = previewImg.src;
+
+      if (!title) {
+        showToast("🌸 名字未填，召唤咒文无法成立！");
+        return;
+      }
+
+      if (!poster || previewImg.classList.contains('hidden')) {
+        poster = `https://placehold.co/300x400/FFF5F6/FF8DA1?text=${encodeURIComponent(title)}`;
+      }
+
+      if (id) {
+        const anime = animeDatabase.find(a => a.id == id);
+        if (anime) {
+          anime.title = title;
+          anime.status = status;
+          anime.tag = tag;
+          anime.currentEp = currentEp;
+          anime.totalEp = totalEp;
+          anime.rating = rating;
+          anime.poster = poster;
+          showToast(`✨ 契约已更新：《${title}》数据载入大成功！`);
+          writeTerminalLog(`[database] contractual index modified: "${title}"`, "text-blue-300");
+        }
+      } else {
+        const newAnime = {
+          id: Date.now(),
+          title,
+          status,
+          tag,
+          currentEp,
+          totalEp,
+          rating,
+          poster
+        };
+        animeDatabase.push(newAnime);
+        showToast(`🎉 召唤阵契约成立！《${title}》加入画廊墙！`);
+        writeTerminalLog(`[database] created completely new contract: "${title}"`, "text-green-300");
+      }
+
+      closeEditModal();
+      renderAnimeWall();
+    }
+
+    // 导航选项卡切换
+    function switchTab(tabName) {
+      playCuteSound('bell');
+      
+      const tabs = ['dashboard', 'wall', 'calendar', 'import', 'admin', 'settings'];
+      tabs.forEach(tn => {
+        const targetTab = document.getElementById(`tab-content-${tn}`);
+        if (targetTab) targetTab.classList.add('hidden');
+        
+        const btn = document.getElementById(`nav-${tn}`);
+        if (btn) {
+          if (tn === 'admin') {
+            btn.className = "w-full flex items-center justify-between p-2.5 rounded-xl text-theme-dark hover:bg-theme-pinkLight font-bold soft-transition text-left text-xs";
+          } else {
+            btn.className = "w-full flex items-center space-x-3 p-2.5 rounded-xl text-theme-dark hover:bg-theme-pinkLight font-bold soft-transition text-left text-xs";
+          }
+        }
+      });
+
+      const currentTab = document.getElementById(`tab-content-${tabName}`);
+      if (currentTab) currentTab.classList.remove('hidden');
+
+      const activeBtn = document.getElementById(`nav-${tabName}`);
+      if (activeBtn) {
+        if (tabName === 'admin') {
+          activeBtn.className = "w-full flex items-center justify-between p-2.5 rounded-xl bg-theme-pink text-white font-bold soft-transition text-left text-xs";
+        } else {
+          activeBtn.className = "w-full flex items-center space-x-3 p-2.5 rounded-xl bg-theme-pink text-white font-bold soft-transition text-left text-xs";
+        }
+      }
+
+      writeTerminalLog(`[router] navigation altered -> "#/tab/${tabName}"`);
+    }
+
+    // 戳狐狸
+    function pokeFox() {
+      playCuteSound('pop');
+      const textElem = document.getElementById('korean-tips');
+      const randomQuote = foxQuotes[Math.floor(Math.random() * foxQuotes.length)];
+      textElem.innerText = `"${randomQuote}"`;
+      
+      textElem.parentElement.parentElement.classList.add('scale-95');
+      setTimeout(() => {
+        textElem.parentElement.parentElement.classList.remove('scale-95');
+      }, 100);
+
+      writeTerminalLog(`[interaction] poked fox "小玉" successfully.`);
+    }
+
+    // 换肤：甜桃粉 / 薄荷绿
+    function changeTheme(theme) {
+      playCuteSound('bell');
+      const body = document.getElementById('app-body');
+      const btnPink = document.getElementById('theme-btn-pink');
+      const btnMint = document.getElementById('theme-btn-mint');
+
+      if (theme === 'pink') {
+        body.classList.remove('bg-[#F0FAF7]');
+        body.classList.add('bg-[#FDF9F9]');
+        btnPink.className = "px-3 py-1 rounded-lg text-xs font-bold soft-transition bg-theme-pink text-white";
+        btnMint.className = "px-3 py-1 rounded-lg text-xs font-bold soft-transition text-theme-darkLight hover:text-theme-dark";
+        
+        tailwind.config.theme.extend.colors.theme.pink = '#FF8DA1';
+        tailwind.config.theme.extend.colors.theme.pinkLight = '#FFF5F6';
+        tailwind.config.theme.extend.colors.theme.pinkDeep = '#FF5E7E';
+        
+        showToast("🌸 软萌蜜桃粉界面装载成功！");
+      } else {
+        body.classList.remove('bg-[#FDF9F9]');
+        body.classList.add('bg-[#F0FAF7]');
+        btnMint.className = "px-3 py-1 rounded-lg text-xs font-bold soft-transition bg-theme-mint text-white";
+        btnPink.className = "px-3 py-1 rounded-lg text-xs font-bold soft-transition text-theme-darkLight hover:text-theme-dark";
+        
+        tailwind.config.theme.extend.colors.theme.pink = '#8EE4D5';
+        tailwind.config.theme.extend.colors.theme.pinkLight = '#F2FCFA';
+        tailwind.config.theme.extend.colors.theme.pinkDeep = '#52C7B3';
+        
+        showToast("🌿 清凉冰爽薄荷界面装载成功！");
+      }
+
+      writeTerminalLog(`[theme] skin modified to value: "${theme}"`);
+    }
+
+    // 传送门数据导入
+    let selectedImportSource = 'bilibili';
+    function selectImportSource(source) {
+      playCuteSound('pop');
+      selectedImportSource = source;
+      
+      ['bilibili', 'bangumi', 'local'].forEach(src => {
+        const card = document.getElementById(`source-${src}`);
+        if(src === source) {
+          card.className = "p-4 rounded-xl border border-theme-pink bg-theme-pinkLight cursor-pointer text-center hover-jelly transition-all";
+          card.querySelector('p').className = "text-xs font-bold text-theme-pinkDeep";
+        } else {
+          card.className = "p-4 rounded-xl border border-theme-border bg-white cursor-pointer text-center hover-jelly transition-all";
+          card.querySelector('p').className = "text-xs font-bold text-theme-dark";
+        }
+      });
+
+      const inputLabel = document.getElementById('wizard-input-label');
+      const wizardInput = document.getElementById('wizard-source-input');
+      if (source === 'bilibili') {
+        inputLabel.innerText = "第二步：提供 Bilibili 追番 UID 或是个人空间地址";
+        wizardInput.placeholder = "例：请输入 bilibili UID，如 22881223";
+      } else if (source === 'bangumi') {
+        inputLabel.innerText = "第二步：提供 Bangumi.tv 用户账号名";
+        wizardInput.placeholder = "例：请输入 Bangumi 用户名，如 mochishana";
+      } else {
+        inputLabel.innerText = "第二步：指定本地媒体库刮除扫描路径 (NAS / 盘路径)";
+        wizardInput.placeholder = "例：/mnt/user/downloads/anime_2026";
+      }
+    }
+
+    // 步骤跳转
+    function goToWizardStep(step) {
+      playCuteSound('bell');
+      
+      const progress = document.getElementById('wizard-step-progress');
+      progress.style.width = `${(step - 1) * 50}%`;
+
+      for (let i = 1; i <= 3; i++) {
+        const ind = document.getElementById(`wizard-step-${i}-indicator`);
+        if (i <= step) {
+          ind.className = "w-7 h-7 rounded-full bg-theme-pink text-white flex items-center justify-center text-xs font-bold shadow-sm";
+        } else {
+          ind.className = "w-7 h-7 rounded-full bg-white border border-theme-border text-theme-darkLight flex items-center justify-center text-xs font-bold shadow-sm";
+        }
+      }
+
+      document.getElementById('wizard-panel-1').classList.add('hidden');
+      document.getElementById('wizard-panel-2').classList.add('hidden');
+      document.getElementById('wizard-panel-3').classList.add('hidden');
+      
+      document.getElementById(`wizard-panel-${step}`).classList.remove('hidden');
+    }
+
+    // 激活契约扫描
+    function triggerMagicScan() {
+      const input = document.getElementById('wizard-source-input').value.trim();
+      if (!input) {
+        showToast("🚧 请输入密钥或ID进行连结同步，不可以空着哦！");
+        return;
+      }
+
+      playCuteSound('magic');
+      document.getElementById('btn-start-scan').classList.add('hidden');
+      document.getElementById('magic-scan-loader').classList.remove('hidden');
+
+      writeTerminalLog(`[portal] wizard sync initiated. scraping path/uid: "${input}"`, "text-yellow-300");
+
+      // 模拟刮削同步
+      setTimeout(() => {
+        let mockScrapedAnime = {
+          id: Date.now(),
+          title: selectedImportSource === 'local' ? "孤独摇滚！剧场版 Re:Re:" : "我推的孩子 第二季",
+          status: "watching",
+          currentEp: 4,
+          totalEp: 13,
+          rating: 5,
+          tag: "💖 恋爱 搞笑",
+          poster: "https://placehold.co/300x400/FFF5F6/FF8DA1?text=OshiNoKoS2"
+        };
+        
+        animeDatabase.push(mockScrapedAnime);
+        renderAnimeWall();
+
+        document.getElementById('magic-scan-loader').classList.add('hidden');
+        document.getElementById('btn-start-scan').classList.remove('hidden');
+        goToWizardStep(3);
+
+        writeTerminalLog(`[portal] dynamic scraper output synced 1 entry to database: "${mockScrapedAnime.title}"`, "text-green-300");
+      }, 2500);
+    }
+
+    function completeWizard() {
+      goToWizardStep(1);
+      switchTab('wall');
+    }
+
+    // 管理员模块专属功能
+    function auditAction(id, action) {
+      playCuteSound('pop');
+      const item = document.getElementById(`audit-item-${id}`);
+      if (item) {
+        item.style.opacity = '0';
+        item.style.transform = 'translateX(-30px)';
+        setTimeout(() => {
+          item.remove();
+          writeTerminalLog(`[admin] moderated audit queue ID: ${id} with decision -> "${action}"`, "text-yellow-300");
+          showToast(action === 'approve' ? "✓ 番剧评价已安全归档，同步到主广场！" : "✗ 已将不雅评价成功清理，维护次元和平！");
+        }, 300);
+      }
+    }
+
+    function addModerator() {
+      playCuteSound('jump');
+      const mList = document.getElementById('moderators-list');
+      const names = ["酸奶酱", "泡泡", "露露子", "御坂万号"];
+      const avatars = ["👩", "🐱", "🐰", "⚡"];
+      const rBadge = ["协理神官", "实习神官", "初级稽查官", "代码维护菌"];
+      const randomIndex = Math.floor(Math.random() * names.length);
+
+      const div = document.createElement('div');
+      div.className = "flex justify-between items-center p-2 bg-slate-50/50 rounded-xl border border-theme-border animate-pulse";
+      div.innerHTML = `
+        <div class="flex items-center space-x-2">
+          <span>${avatars[randomIndex]}</span>
+          <div>
+            <p>${names[randomIndex]}</p>
+            <span class="text-[8px] text-theme-pinkDeep">${rBadge[randomIndex]}</span>
+          </div>
+        </div>
+        <span class="text-[9px] text-green-500">在线 🟢</span>
+      `;
+      mList.appendChild(div);
+      writeTerminalLog(`[admin] newly recruited virtual moderator "${names[randomIndex]}" into active roster.`, "text-green-300");
+      showToast(`✨ 成功招募契约虚拟神官 [${names[randomIndex]}]！`);
+      setTimeout(() => div.classList.remove('animate-pulse'), 1000);
+    }
+
+    function upgradeAllModerators() {
+      playCuteSound('magic');
+      writeTerminalLog(`[admin] triggered holy activation. all virtual curators boosted to "Lvl 99 Supreme Overlords"`, "text-pink-300");
+      showToast("👑 所有在线神官已成功激发真名契约！觉醒上限突破！");
+    }
+
+    function exportDatabase() {
+      playCuteSound('magic');
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(animeDatabase, null, 2));
+      const dlAnchorElem = document.createElement('a');
+      dlAnchorElem.setAttribute("href", dataStr);
+      dlAnchorElem.setAttribute("download", "MochiAnime_Database_Backup.json");
+      dlAnchorElem.click();
+      writeTerminalLog(`[admin] database successfully compiled and exported as JSON file format.`);
+      showToast("💾 备份导出成功！已开始触发JSON file本地下载。");
+    }
+
+    function clearDatabaseAndReset() {
+      playCuteSound('pop');
+      if (confirm("🚨 警告：此操作将清空本地沙盒数据库中所有影视契约，确定重置吗？")) {
+        animeDatabase = [];
+        renderAnimeWall();
+        writeTerminalLog(`[database] completely formatted all contractual tables. zero records.`, "text-red-300");
+        showToast("🧹 数据库已格式化，影视契约已经全部归零。");
+      }
+    }
+
+    // 设置中心子板块切换
+    function switchSettingsSection(sectionName) {
+      playCuteSound('pop');
+      ['scraping', 'visual', 'sound'].forEach(sec => {
+        const panel = document.getElementById(`sub-section-${sec}`);
+        const btn = document.getElementById(`sub-btn-${sec}`);
+        
+        if (sec === sectionName) {
+          panel.classList.remove('hidden');
+          btn.className = "py-2 px-3 rounded-lg text-left text-[11px] font-bold bg-theme-pinkLight text-theme-pinkDeep";
+        } else {
+          panel.classList.add('hidden');
+          btn.className = "py-2 px-3 rounded-lg text-left text-[11px] font-bold text-theme-darkLight hover:bg-slate-50";
+        }
+      });
+      writeTerminalLog(`[settings] switched sub-panel configuration to: "${sectionName}"`);
+    }
+
+    function saveAllSettings() {
+      playCuteSound('magic');
+      showToast("💾 所有的刮削引擎和外观设置保存完毕！");
+      writeTerminalLog(`[settings] settings written down into mock persistent storage.`, "text-green-300");
+    }
+
+    // 自定义轻量Toast提示
+    function showToast(message) {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = "p-3 bg-white border border-theme-pink/30 rounded-xl cute-glow-shadow-sm flex items-center gap-3 transition-all duration-300 transform translate-x-20 opacity-0 max-w-xs pointer-events-auto";
+      toast.innerHTML = `
+        <div class="text-xl">🍓</div>
+        <div>
+          <p class="text-[10px] font-bold text-theme-dark leading-tight">${message}</p>
+        </div>
+      `;
+
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.classList.remove('translate-x-20', 'opacity-0');
+      }, 50);
+
+      setTimeout(() => {
+        toast.classList.add('translate-x-20', 'opacity-0');
+        setTimeout(() => toast.remove(), 300);
+      }, 3500);
+    }
+
+    // 泡泡爆破粒子特效
+    function triggerSplash(e, emoji) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX || (rect.left + rect.width / 2);
+      const y = e.clientY || (rect.top + rect.height / 2);
+
+      for (let i = 0; i < 6; i++) {
+        const p = document.createElement('div');
+        p.className = 'fixed text-xs pointer-events-none z-50 select-none transition-all duration-500 ease-out';
+        p.innerText = emoji;
+        p.style.left = `${x}px`;
+        p.style.top = `${y}px`;
+        document.body.appendChild(p);
+
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 20 + Math.random() * 30;
+        const tx = Math.cos(angle) * speed;
+        const ty = Math.sin(angle) * speed;
+
+        setTimeout(() => {
+          p.style.transform = `translate(${tx}px, ${ty}px) scale(0)`;
+          p.style.opacity = '0';
+        }, 10);
+
+        setTimeout(() => p.remove(), 500);
+      }
+    }
+
+    // 模拟运行诊断仪监控器
+    function runSimulatedDiagnostics() {
+      setInterval(() => {
+        // 随机波动
+        const cpuVal = Math.floor(20 + Math.random() * 15);
+        const memVal = Math.floor(58 + Math.random() * 8);
+        const pingVal = Math.floor(40 + Math.random() * 10);
+
+        const cpuEl = document.getElementById('diagnostics-cpu');
+        const cpuBar = document.getElementById('diagnostics-cpu-bar');
+        const memEl = document.getElementById('diagnostics-mem');
+        const memBar = document.getElementById('diagnostics-mem-bar');
+        const pingEl = document.getElementById('diagnostics-ping');
+        const pingBar = document.getElementById('diagnostics-ping-bar');
+
+        if (cpuEl) { cpuEl.innerText = `${cpuVal}%`; cpuBar.style.width = `${cpuVal}%`; }
+        if (memEl) { memEl.innerText = `${memVal}%`; memBar.style.width = `${memVal}%`; }
+        if (pingEl) { pingEl.innerText = `${pingVal}ms`; pingBar.style.width = `${pingVal}%`; }
+      }, 3000);
+    }
+
+    // 默认自渲染
+    window.onload = function() {
+      renderAnimeWall();
+      renderWeeklyCalendar();
+      runSimulatedDiagnostics();
+      
+      writeTerminalLog(`[system] system is running in sandbox state. ready.`, "text-green-300");
+    }
+  </script>
+</body>
+</html>
