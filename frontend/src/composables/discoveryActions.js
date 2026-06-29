@@ -224,8 +224,10 @@ export function createDiscoveryActions(app, deps) {
       app.mediaWizardSubtitleItems = []
       app.mediaWizardDraft.resources_text = app.mediaWizardResourceItems.map(item => item.source_ref).filter(Boolean).join('\n')
       app.mediaWizardDraft.subtitles_text = app.mediaWizardSubtitleItems.map(item => item.subtitle_ref).filter(Boolean).join('\n')
+      return true
     } catch (error) {
       ElMessage.error(apiErrorMessage(error))
+      return false
     }
   }
 
@@ -270,13 +272,22 @@ export function createDiscoveryActions(app, deps) {
     }
   }
 
-  async function downloadDiscoveryPackage(result) {
+  async function downloadDiscoveryPackage(result, boundEntryId = 0) {
     const resultId = Number(result?.id || 0)
     if (!resultId) return
+    const entryId = Number(boundEntryId || app.discoveryState.backfill_entry_id || 0)
+    if (!entryId) {
+      const opened = await openDiscoveryCollectDraft(result)
+      if (opened) {
+        app.discoveryState.pending_package_result_id = resultId
+        ElMessage.info('请先匹配或收录作品，完成后会自动下载资源包')
+      }
+      return
+    }
     app.resourcePackageLoading = true
     try {
       const payload = {
-        entry_id: Number(app.discoveryState.backfill_entry_id || 0),
+        entry_id: entryId,
       }
       const data = await postAction(`/discovery/results/${resultId}/package-download`, payload)
       setResourcePackageDetail(data)

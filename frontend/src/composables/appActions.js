@@ -560,6 +560,7 @@ export function createAppActions(app, deps) {
   }
 
   function openMediaWizard(mode = 'collect') {
+    if (app.discoveryState) app.discoveryState.pending_package_result_id = 0
     app.mediaWizardMode = mode
     app.mediaWizardStep = 0
     app.mediaWizardSeed = ''
@@ -998,7 +999,7 @@ export function createAppActions(app, deps) {
         tags_json: jsonFromListText(app.mediaWizardDraft.tags_text || ''),
         genres_json: jsonFromListText(app.mediaWizardDraft.genres_text || ''),
       }
-      await postAction(`/media/${app.currentMediaType}/collect`, {
+      const detail = await postAction(`/media/${app.currentMediaType}/collect`, {
         entry,
         resources: resourceItems.map(item => ({
           kind: item.local_path ? (String(item.local_path).includes('/uploads/') ? 'upload_temp' : 'server_file') : 'link',
@@ -1019,8 +1020,18 @@ export function createAppActions(app, deps) {
         auto_download: true,
         auto_organize: true,
       })
-      ElMessage.success('媒体已收录')
+      const entryId = Number(detail?.entry?.id || 0)
+      const pendingPackageResultId = Number(app.discoveryState?.pending_package_result_id || 0)
+      ElMessage.success(pendingPackageResultId ? '媒体已收录，正在提交资源包下载' : '媒体已收录')
       app.mediaWizardOpen = false
+      if (pendingPackageResultId) {
+        app.discoveryState.pending_package_result_id = 0
+        if (entryId && typeof app.downloadDiscoveryPackage === 'function') {
+          await app.downloadDiscoveryPackage({ id: pendingPackageResultId }, entryId)
+        } else {
+          ElMessage.warning('媒体已收录，但未取得作品 ID，资源包未提交下载')
+        }
+      }
       await app.reload()
     } catch (error) {
       ElMessage.error(apiErrorMessage(error))

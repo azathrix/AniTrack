@@ -277,6 +277,7 @@ const discoveryState = reactive({
   items: [],
   backfill_entry_id: 0,
   best_result_id: 0,
+  pending_package_result_id: 0,
 })
 const resourcePackageDialogOpen = ref(false)
 const resourcePackageLoading = ref(false)

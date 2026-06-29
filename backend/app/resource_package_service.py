@@ -20,10 +20,9 @@ from .downloader_service import (
     submit_download,
 )
 from .library import expected_local_episode_path
-from .media_service import create_media_entry
 from .nfo_service import generate_jellyfin_nfo_for_entry
 from .parser import parse_episode
-from .schemas import DiscoveryPackageDownloadPayload, MediaCreatePayload, ResourcePackageApplyPayload
+from .schemas import DiscoveryPackageDownloadPayload, ResourcePackageApplyPayload
 from .sync_service import synthetic_task_id
 from .utils import row_to_dict
 
@@ -62,32 +61,15 @@ def _child_dir(base_dir: str, item_id: int) -> str:
     return f"{base_dir.rstrip('/')}/resource-{item_id}"
 
 
-def _ensure_entry_for_result(result: dict[str, Any], payload: DiscoveryPackageDownloadPayload) -> int:
+def _ensure_entry_for_package(payload: DiscoveryPackageDownloadPayload) -> int:
     entry_id = int(payload.entry_id or 0)
-    if entry_id > 0:
-        with connect() as conn:
-            exists = conn.execute("SELECT id FROM entries WHERE id=?", (entry_id,)).fetchone()
-        if not exists:
-            raise ValueError("绑定的媒体条目不存在")
-        return entry_id
-    media_type = str(result.get("media_type") or "anime")
-    detail = create_media_entry(
-        media_type,
-        MediaCreatePayload(
-            mode="metadata",
-            title=result.get("title") or result.get("original_title") or "",
-            bangumi_id=result.get("bangumi_id") or "",
-            tmdb_id=result.get("tmdb_id") or "",
-            year=int(result.get("year") or 0),
-            poster_url=result.get("poster_url") or "",
-            summary=result.get("summary") or "",
-            tags_json=result.get("tags_json") or "[]",
-        ),
-    )
-    created_id = int((detail.get("entry") or {}).get("id") or 0)
-    if created_id <= 0:
-        raise ValueError("作品收录失败，无法创建资源包")
-    return created_id
+    if entry_id <= 0:
+        raise ValueError("请先匹配或收录作品后再下载资源包")
+    with connect() as conn:
+        exists = conn.execute("SELECT id FROM entries WHERE id=?", (entry_id,)).fetchone()
+    if not exists:
+        raise ValueError("绑定的媒体条目不存在")
+    return entry_id
 
 
 def create_package_from_discovery(result_id: int, payload: DiscoveryPackageDownloadPayload) -> dict[str, Any]:
@@ -105,7 +87,7 @@ def create_package_from_discovery(result_id: int, payload: DiscoveryPackageDownl
             (result_id,),
         ).fetchall()
     result = row_to_dict(result_row)
-    entry_id = _ensure_entry_for_result(result, payload)
+    entry_id = _ensure_entry_for_package(payload)
     refs: set[str] = set()
     resources = []
     for row in resource_rows:

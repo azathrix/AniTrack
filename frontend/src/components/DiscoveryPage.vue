@@ -165,7 +165,7 @@ function fileKindText(kind) {
                   :loading="app.resourcePackageLoading"
                   @click="app.downloadDiscoveryPackage(item)"
                 >
-                  下载资源包
+                  {{ app.discoveryState.backfill_entry_id ? '下载资源包' : '匹配后下载' }}
                 </el-button>
               </div>
             </div>
